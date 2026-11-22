@@ -2,7 +2,7 @@
 
 Aplikasi web untuk **memecah, mengekstrak, menggabungkan, dan mengompres** PDF. **Semua proses berjalan di browser** — file tidak pernah diunggah ke server mana pun.
 
-> **Dikarya oleh Putra.** Kreditnya tercantum di antarmuka web — di header, di footer, dan di `<title>` halaman. File PDF yang dihasilkan **tidak** memuat kredit/stempel apa pun di dalamnya; metadata Producer/Creator hanya berisi nama aplikasi (`Pemisah PDF`).
+> **Dibuat oleh Putra.** Kreditnya tercantum di antarmuka web — di header, di footer, dan di `<title>` halaman. File PDF yang dihasilkan **tidak** memuat kredit/stempel apa pun di dalamnya; metadata Producer/Creator hanya berisi nama aplikasi (`Pemisah PDF`).
 
 ### Di mana kreditnya?
 
