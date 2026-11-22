@@ -245,6 +245,7 @@
       <div class="merge-stat">
         <span class="chip" id="mergeInfo">0 file</span>
         <span class="muted tiny" id="mergePagesInfo">0 halaman total</span>
+        <span class="chip merge-est" id="mergeSizeEst" hidden></span>
       </div>
       <div class="merge-foot-actions">
         <button class="btn btn-ghost" id="mergeReverseBtn" type="button">Balik urutan</button>
@@ -344,13 +345,14 @@
           </select>
         </label>
         <label class="slider-row" id="dpiRangeRow">
-          <span>Resolusi <b id="dpiVal">150 DPI</b></span>
-          <input type="range" id="dpiRange" min="72" max="300" step="6" value="150" />
+          <span>Resolusi <b id="dpiVal">200 DPI</b></span>
+          <input type="range" id="dpiRange" min="72" max="400" step="4" value="200" />
         </label>
-        <label class="slider-row">
+        <label class="slider-row" id="qRangeRow">
           <span>Kualitas gambar <b id="qVal">82%</b></span>
-          <input type="range" id="qRange" min="30" max="95" step="2" value="82" />
+          <input type="range" id="qRange" min="30" max="98" step="2" value="82" />
         </label>
+        <p class="muted tiny" id="customHint"></p>
       </div>
 
       <label class="check" style="margin-top:12px"><input type="checkbox" id="grayChk" /> Ubah ke hitam-putih (grayscale)</label>

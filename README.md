@@ -26,6 +26,7 @@ Aplikasi web untuk **memecah, mengekstrak, menggabungkan, dan mengompres** PDF. 
 | **Aksesibilitas** | Navigasi tab dengan tombol panah, `role="tabpanel"`, label ARIA, dan fokus yang jelas. |
 | **Pesan error ramah** | PDF terenkripsi, rusak, terpotong, atau bukan PDF ditolak dengan pesan Bahasa Indonesia yang jelas — bukan error internal pustaka. |
 | **Perkiraan ukuran hasil** | Tiap tingkat kompresi menampilkan perkiraan ukuran file setelah dikompresi (+ % penghematan) sebelum dijalankan, supaya mudah memilih yang paling hemat. |
+| **Perkiraan ukuran gabungan** | Menu Gabung PDF menampilkan perkiraan ukuran file gabungan yang akan dihasilkan, dihitung dengan proses gabungan yang sama persis. |
 
 ## Cara pakai
 
@@ -56,6 +57,14 @@ Pendukung: multi-file (halaman bisa digabung lintas file, urutan bisa diatur), t
 
 Hasil gabungan mempertahankan ukuran & rotasi tiap halaman aslinya (tidak dirasterisasi).
 
+### Perkiraan ukuran file gabungan
+
+Sambil file ditambahkan, panel bawah menampilkan **perkiraan ukuran file yang akan dihasilkan** (chip `7.8 MB dari 7.8 MB — pasti`):
+
+- Angka ini **bukan perkiraan statis**: file gabungan benar-benar dibangun di latar belakang memakai proses gabungan yang **sama persis** dengan tombol "Gabungkan PDF" (`copyPages` + `save`), lalu ukurannya diukur. Karena itu angkanya nyaris identik dengan berkas yang benar-benar diunduh.
+- Perkiraan dihitung ulang otomatis begitu file ditambah, dihapus, atau urutannya berubah (tombol ▲ ▼ / **Balik urutan** / seret baris). Selama dihitung, chip menampilkan status "Menghitung hasil…" supaya angka lama tidak ditampilkan.
+- Bila total berkas lebih besar dari ±150 MB, perkiraan dilewati (chip menjelaskan) agar memori peramban tidak meledak.
+
 ## Tab 3 — Kompres PDF
 
 | Tingkat | Cara kerja | Cocok untuk |
@@ -64,7 +73,7 @@ Hasil gabungan mempertahankan ukuran & rotasi tiap halaman aslinya (tidak dirast
 | **Optimal** (disarankan) | Ringan + hanya gambar raster yang melebihi **200 DPI** diperkecil ke 200 DPI (diperkecil bertahap agar tetap tajam). Teks & font tetap vektor. | Mayoritas PDF — hasil tajam **dan** jauh lebih kecil |
 | **Seimbang** | Raster 150 DPI, JPEG 78% (kualitas dinaikkan otomatis untuk halaman berteks). | PDF lama hasil pindai |
 | **Kuat** | Raster 110 DPI, JPEG 62%. | Ukuran paling kecil, detail menurun |
-| **Kustom** | Pilih strategi (Optimal / Ringan / Raster), DPI 72–300, kualitas 30–95%, grayscale. | Kontrol penuh |
+| **Kustom** | Pilih strategi (Optimal / Ringan / Raster), DPI 72–400, kualitas 30–98%, grayscale. | Kontrol penuh |
 
 Pilihan tambahan: **grayscale**, **bersihkan metadata**, dan **jangan pernah memperbesar file**.
 Setelah selesai muncul ringkasan *% lebih kecil* (mis. `64% lebih kecil — 393 KB → 143 KB`), detail per file, dan tombol unduh (ZIP bila lebih dari satu file).
@@ -85,13 +94,26 @@ Teks & font tetap vektor (tetap tajam & bisa dicari)…
 - Angka otomatis diperbarui saat file ditambah/diubah/dihapus atau saat opsi (grayscale, metadata, jangan-perbesar, DPI, kualitas) berubah.
 - Baris ringkasan di bawah daftar menandai tingkat yang **paling hemat**.
 
+### Panel Kustom — slider hanya aktif bila relevan
+
+Saat tingkat **Kustom** dipilih, panelnya memuat tiga kontrol: strategi, **resolusi (DPI)**, dan **kualitas gambar**. Status setiap slider mengikuti strategi yang dipilih, bukan riwayat pemakaian sebelumnya:
+
+| Strategi | Resolusi (DPI) | Kualitas gambar | Penjelasan |
+|---|---|---|---|
+| **Optimal** — teks & font tetap vektor | ✅ aktif | ✅ aktif | DPI = batas resolusi gambar raster yang diperkecil; kualitas = mutu JPEG hasil downsampling |
+| **Ringan** — struktur file saja | ⛔ nonaktif | ⛔ nonaktif | Dokumen tidak diolah ulang sama sekali, jadi kedua slider tidak dipakai |
+| **Raster** — halaman jadi gambar | ✅ aktif | ✅ aktif | DPI = resolusi render halaman; kualitas = mutu JPEG hasil render |
+
+Saat slider dinonaktifkan, muncul keterangan singkat di bawahnya yang menjelaskan alasannya. Rentang slider (DPI 72–400, kualitas 30–98%) selalu sama dengan batas yang dipakai mesin kompresi, jadi angka yang tampil dan angka yang dikerjakan tidak pernah berbeda.
+
 ### Cara kerja kompresi (detail teknis)
 
 1. **Struktur** — objek PDF yang tidak lagi dirujuk (orphan) dibuang; metadata XMP/title/author dibersihkan bila diminta; objek ditulis ulang memakai object stream.
 2. **Analisis DPI** — content stream tiap halaman diparse (tokenizer sendiri, termasuk Form XObject) untuk mengetahui **ukuran penempatan** tiap gambar dalam poin. Dari situ dihitung DPI efektifnya. Gambar yang dipakai di beberapa halaman memakai penempatan **terbesar** di seluruh dokumen, jadi tidak diperkecil berulang.
 3. **Perkecil gambar** — gambar yang DPI efektifnya di atas target diperkecil **bertahap** (setengah demi setengah, `imageSmoothingQuality: high`) lalu dikodekan ulang sebagai JPEG. Format sumber yang didukung: JPEG (DCTDecode) dan data mentah (Flate/ASCII) dengan ruang warna **DeviceRGB, DeviceGray, DeviceCMYK, Indexed**, serta 1/2/4/8 bit per komponen. Gambar dengan alpha (`SMask`), stencil mask (`ImageMask`), atau JPEG yang lebih kecil dari aslinya **tidak disentuh**.
 4. **Anti-membengkak** — hasil hanya dipakai bila benar-benar lebih kecil; jika tidak, gambar asli dipertahankan. Bila seluruh berkas masih lebih besar dari aslinya, berkas asli dikembalikan. Mode raster juga mencoba ulang dengan kualitas/DPI lebih rendah sebelum menyerah.
-5. **Perkiraan ukuran** — untuk dokumen ≤ 30 halaman, mesin kompresi dijalankan utuh pada dokumen terpisah untuk memperoleh angka pasti. Untuk dokumen lebih besar, halaman sampel diproses (halaman paling berat + halaman tersebar), lalu rasio gambar dan non-gambar dihitung terpisah sehingga estimasi tetap akurat walau halaman foto berada di luar sampel.
+5. **Perkiraan ukuran** — untuk dokumen ≤ 30 halaman, mesin kompresi dijalankan utuh pada dokumen terpisah untuk memperoleh angka pasti. Untuk dokumen lebih besar, halaman sampel diproses (halaman paling berat + halaman tersebar), lalu rasio gambar dan non-gambar dihitung terpisah sehingga estimasi tetap akurat walau halaman foto berada di luar sampel. Untuk bagian non-gambar dipakai **model dua titik** (`biaya = A + B × jumlah halaman`) dari dua sampel berbeda, sehingga biaya tetap (font, sumber daya bersama) tidak ikut dikali dua kali — tanpa ini, dokumen tanpa gambar bisa meleset puluhan persen.
+6. **Perkiraan ukuran gabungan** — file gabungan benar-benar dibangun di latar belakang (proses `copyPages` + `save` yang sama dengan tombol gabung) lalu ukurannya diukur, sehingga angkanya bukan tebakan.
 
 ## Struktur
 

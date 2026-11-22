@@ -1271,6 +1271,21 @@
     return [...chosen].sort((a, b) => a - b);
   }
 
+  /* Perlebar sampel: tambah halaman sehingga jumlah sampel menjadi dua
+     kali lipat. Dipakai sebagai titik kedua pada model extrapolasi
+     bagian non-gambar (biaya tetap vs biaya per halaman). */
+  function widenSample(picked, pageCount) {
+    const set = new Set(picked);
+    const out = [...picked];
+    const want = Math.min(pageCount, picked.length * 2);
+    for (let i = 0; i < pageCount && out.length < want; i++) {
+      if (set.has(i)) continue;
+      set.add(i);
+      out.push(i);
+    }
+    return out.sort((a, b) => a - b);
+  }
+
   async function estimate(inputBytes, opts = {}) {
     const settings = {
       mode: opts.mode || "optimal",
@@ -1316,47 +1331,89 @@
 
     /*_byte gambar unik_ (gambar bersama dihitung sekali) */
     const totalImg = await uniqueImageBytes(doc, pages);
-    const samplePages = picked.map((i) => pages[i]);
-    const sampleImg = await uniqueImageBytes(doc, samplePages);
 
-    let baseBytes;
-    try {
+    /* Bangun sampel berisi halaman terpilih, lalu sampel yang lebih luas.
+       Dua titik ini dipakai untuk memisahkan biaya tetap (font, sumber
+       daya bersama) dari biaya per halaman. Tanpa pemisahan ini,
+       dokumen yang tidak punya gambar bisa meleset jauh karena sumber
+       daya bersama hanya tersimpan sekali di berkas akhir. */
+    const buildSample = async (indices) => {
       const sdoc = await PDFDocument.create();
-      const copied = await sdoc.copyPages(doc, picked);
+      const copied = await sdoc.copyPages(doc, indices);
       copied.forEach((p) => sdoc.addPage(p));
-      baseBytes = await sdoc.save({ useObjectStreams: true, addDefaultPage: false });
+      const bytes = await sdoc.save({ useObjectStreams: true, addDefaultPage: false });
+      const img = await uniqueImageBytes(doc, indices.map((i) => pages[i]));
+      return { n: indices.length, bytes, img };
+    };
+
+    /* Kompres satu sampel lalu pisahkan kontribusi gambar & non-gambar. */
+    const runSample = async (sample) => {
+      const res = await compress(sample.bytes, inner);
+      if (!res || !res.bytes || !res.bytes.length) return null;
+      let outImg = 0;
+      try {
+        const outDoc = await PDFDocument.load(res.bytes, { updateMetadata: false, throwOnInvalidObject: false });
+        outImg = await uniqueImageBytes(outDoc, outDoc.getPages());
+      } catch (_) {
+        outImg = 0;
+      }
+      return {
+        n: sample.n,
+        img: sample.img,
+        outImg,
+        outTotal: res.bytes.length,
+        outNon: Math.max(0, res.bytes.length - outImg),
+      };
+    };
+
+    let s1;
+    let s2;
+    try {
+      s1 = await buildSample(picked);
+      const wide = widenSample(picked, pages.length);
+      s2 = wide.length > s1.n ? await buildSample(wide) : null;
     } catch (_) {
       return null;
     }
-    if (!baseBytes || !baseBytes.length) return null;
+    if (!s1 || !s1.bytes || !s1.bytes.length) return null;
 
-    let res;
+    let r1;
     try {
-      res = await compress(baseBytes, inner);
+      r1 = await runSample(s1);
     } catch (_) {
-      return null;
+      r1 = null;
     }
-    if (!res || !res.bytes || !res.bytes.length) return null;
+    if (!r1) return null;
 
-    const outBytes = res.bytes.length;
+    /* Rasio gambar: berapa byte gambar yang tersisa per byte gambar
+       sebelum dikompresi. Berlaku untuk seluruh dokumen karena gambar
+       dikompresi satu per satu. */
+    const rImg = r1.img > 0 ? r1.outImg / r1.img : 1;
 
-    /* Pisahkan kontribusi gambar dan non-gambar pada sampel. */
-    let outImg = 0;
-    try {
-      const outDoc = await PDFDocument.load(res.bytes, { updateMetadata: false, throwOnInvalidObject: false });
-      outImg = await uniqueImageBytes(outDoc, outDoc.getPages());
-    } catch (_) {
-      outImg = 0;
+    let size;
+    if (s2) {
+      let r2 = null;
+      try {
+        r2 = await runSample(s2);
+      } catch (_) {
+        r2 = null;
+      }
+      if (r2 && r2.n > r1.n) {
+        /* Model dua titik untuk bagian non-gambar: out(P) = A + B*P */
+        const B = (r2.outNon - r1.outNon) / (r2.n - r1.n);
+        const A = r1.outNon - B * r1.n;
+        const estNon = Math.max(0, A + B * pageCount);
+        size = Math.round(rImg * totalImg + estNon);
+      } else {
+        size = Math.round(rImg * totalImg + (r1.outNon / Math.max(1, r1.n)) * pageCount);
+      }
+    } else {
+      /* Cadangan: hitung per halaman bila sampel kedua tidak tersedia. */
+      const perPage = r1.outNon / Math.max(1, r1.n);
+      size = Math.round(rImg * totalImg + perPage * pageCount);
     }
 
-    const sampleNon = Math.max(0, baseBytes.length - sampleImg);
-    const outNon = Math.max(0, outBytes - outImg);
-
-    const totalNon = Math.max(0, totalIn - totalImg);
-    const rImg = sampleImg > 0 ? outImg / sampleImg : 1;
-    const rNon = sampleNon > 0 ? outNon / sampleNon : 1;
-
-    let size = Math.round(rImg * totalImg + rNon * totalNon);
+    if (!Number.isFinite(size) || size <= 0) return null;
     if (settings.neverBigger) size = Math.min(size, totalIn);
     return {
       size,
@@ -1384,6 +1441,7 @@
       pageImageWeights,
       uniqueImageBytes,
       chooseSamplePages,
+      widenSample,
     },
   };
 })(typeof window !== "undefined" ? window : globalThis);
