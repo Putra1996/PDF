@@ -5,11 +5,69 @@
 (() => {
   "use strict";
 
-  const { PDFDocument, degrees } = PDFLib;
+  const { PDFDocument } = PDFLib;
+
+  /* ---------- kredit aplikasi ---------- */
+  const CREDIT = "Pemisah PDF by Putra";
 
   /* ---------- pdf.js worker ---------- */
   if (window.pdfjsLib) {
     pdfjsLib.GlobalWorkerOptions.workerSrc = "vendor/pdf.worker.min.js";
+  }
+
+  /* ============================================================
+     Mode gelap / terang
+     ============================================================ */
+  const THEME_KEY = "pemisah-pdf:theme";
+  const THEME_COLORS = { light: "#ffffff", dark: "#0e1117" };
+
+  function applyTheme(theme) {
+    const root = document.documentElement;
+    root.setAttribute("data-theme", theme);
+    root.style.colorScheme = theme;
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", THEME_COLORS[theme] || THEME_COLORS.light);
+    const btn = $("#themeBtn");
+    if (btn) {
+      const dark = theme === "dark";
+      btn.setAttribute("aria-pressed", dark ? "true" : "false");
+      btn.setAttribute("aria-label", dark ? "Ganti ke mode terang" : "Ganti ke mode gelap");
+      btn.title = dark ? "Mode gelap aktif — klik untuk mode terang" : "Mode terang — klik untuk mode gelap";
+      btn.querySelector(".theme-moon").hidden = !dark;
+      btn.querySelector(".theme-sun").hidden = dark;
+    }
+    document.dispatchEvent(new CustomEvent("themechange", { detail: { theme } }));
+  }
+
+  function readStoredTheme() {
+    try {
+      return localStorage.getItem(THEME_KEY);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function storeTheme(theme) {
+    try {
+      localStorage.setItem(THEME_KEY, theme);
+    } catch (_) {
+      /* mode privat: abaikan */
+    }
+  }
+
+  function initTheme() {
+    const saved = readStoredTheme();
+    const prefersDark =
+      window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const theme = saved === "dark" || saved === "light" ? saved : prefersDark ? "dark" : "light";
+    applyTheme(theme);
+  }
+
+  function toggleTheme() {
+    const current = document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+    const next = current === "dark" ? "light" : "dark";
+    storeTheme(next);
+    applyTheme(next);
   }
 
   /* ---------- elemen ---------- */
@@ -30,6 +88,7 @@
   const zipAllBtn = $("#zipAllBtn");
   const chunkOpt = $("#chunkOpt");
   const rangeOpt = $("#rangeOpt");
+  const eachOpt = $("#eachOpt");
 
   /* ---------- state ---------- */
   const state = {
@@ -137,6 +196,7 @@
   async function addOne(file) {
     const bytes = new Uint8Array(await file.arrayBuffer());
     if (!bytes.length) throw new Error("File kosong.");
+    if (!looksLikePdf(bytes)) throw new Error("Berkas ini bukan PDF yang valid.");
 
     let doc = null;
     try {
@@ -179,6 +239,23 @@
     return /encrypt|password|decrypt/i.test(String(err?.message || err));
   }
 
+  /* cek magic bytes "%PDF-" ( tolerate junk di depan header ) */
+  function looksLikePdf(bytes) {
+    if (!bytes || bytes.length < 5) return false;
+    const n = Math.min(bytes.length, 1024);
+    for (let i = 0; i + 4 < n; i++) {
+      if (
+        bytes[i] === 0x25 && // %
+        bytes[i + 1] === 0x50 && // P
+        bytes[i + 2] === 0x44 && // D
+        bytes[i + 3] === 0x46 && // F
+        bytes[i + 4] === 0x2d // -
+      )
+        return true;
+    }
+    return false;
+  }
+
   function askPassword(name) {
     return new Promise((resolve) => {
       const pw = window.prompt(`PDF "${name}" terkunci password.\nMasukkan password PDF:`, "");
@@ -193,6 +270,23 @@
       isEvalSupported: false,
     });
     const doc = await task.promise;
+
+    // Cara terbaik: pdf.js mengembalikan berkas asli yang sudah didekripsi,
+    // sehingga teks, font, dan vektor tetap utuh (tidak dirasterisasi).
+    try {
+      if (typeof doc.saveDocument === "function") {
+        const raw = await doc.saveDocument();
+        if (raw && raw.length) {
+          try { await doc.destroy(); } catch (_) {}
+          toast("PDF terkunci berhasil dibuka (teks & vektor tetap utuh).", "ok", 4000);
+          return new Uint8Array(raw);
+        }
+      }
+    } catch (err) {
+      console.warn("saveDocument gagal, memakai rasterisasi:", err);
+    }
+
+    // Cadangan: rasterisasi halaman (teks tidak lagi bisa dicari).
     const out = await PDFDocument.create();
     for (let i = 1; i <= doc.numPages; i++) {
       overlayText.textContent = `Membuka halaman ${i} dari ${doc.numPages}…`;
@@ -274,11 +368,31 @@
     const has = state.files.length > 0;
     workspace.hidden = !has || activeTab !== "split";
     dropzone.style.display = has || activeTab !== "split" ? "none" : "";
+    releaseThumbs(filesEl);
     filesEl.innerHTML = "";
     state.files.forEach((f) => filesEl.appendChild(fileBlock(f)));
     updateSelectionUI();
     updateRunState();
     zipAllBtn.hidden = state.results.length < 2;
+  }
+
+  /* lepaskan thumbnail lama (observer + object URL) supaya tidak bocor */
+  function releaseThumbs(root) {
+    if (!root) return;
+    root.querySelectorAll("img[data-object-url]").forEach((img) => {
+      try {
+        URL.revokeObjectURL(img.src);
+      } catch (_) {
+        /* abaikan */
+      }
+    });
+    root.querySelectorAll(".thumb").forEach((t) => {
+      try {
+        thumbObserver.unobserve(t);
+      } catch (_) {
+        /* abaikan */
+      }
+    });
   }
 
   function fileBlock(f) {
@@ -356,6 +470,7 @@
     if (i < 0) return;
     const [removed] = state.files.splice(i, 1);
     for (let p = 0; p < removed.pageCount; p++) state.selected.delete(key(fid, p));
+    dropPdfjsDoc(fid);
     if (!state.files.length) clearWorkspace();
     else render();
   }
@@ -369,6 +484,9 @@
   }
 
   function clearWorkspace() {
+    releaseThumbs(filesEl);
+    state.files.forEach((f) => dropPdfjsDoc(f.id));
+    revokeResults(state.results);
     state.files = [];
     state.selected.clear();
     state.results = [];
@@ -377,6 +495,19 @@
     workspace.hidden = true;
     dropzone.style.display = activeTab === "split" ? "" : "none";
     resultCard.hidden = true;
+    resultsEl.innerHTML = "";
+  }
+
+  function revokeResults(list) {
+    (list || []).forEach((r) => {
+      if (r && r.url) {
+        try {
+          URL.revokeObjectURL(r.url);
+        } catch (_) {
+          /* abaikan */
+        }
+      }
+    });
   }
 
   /* ---------- thumbnail lazy render ---------- */
@@ -408,8 +539,8 @@
       const btn = thumbQueue.shift();
       try {
         await renderThumb(btn);
-      } catch (_) {
-        /* biarkan placeholder */
+      } catch (err) {
+        console.warn("Thumbnail halaman gagal dirender:", err);
       }
       await tick();
     }
@@ -422,6 +553,18 @@
     const p = pdfjsLib.getDocument({ data: f.bytes.slice(0), isEvalSupported: false }).promise;
     pdfCache.set(f.id, p);
     return p;
+  }
+
+  async function dropPdfjsDoc(fid) {
+    const entry = pdfCache.get(fid);
+    pdfCache.delete(fid);
+    if (!entry) return;
+    try {
+      const doc = await entry;
+      if (doc && typeof doc.destroy === "function") await doc.destroy();
+    } catch (_) {
+      /* abaikan */
+    }
   }
 
   async function renderThumb(btn) {
@@ -438,16 +581,26 @@
     canvas.width = Math.ceil(vp.width);
     canvas.height = Math.ceil(vp.height);
     await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
-    const url = canvas.toDataURL("image/jpeg", 0.72);
+    if (!btn.isConnected) {
+      canvas.width = canvas.height = 0;
+      return;
+    }
     const ph = btn.querySelector(".ph");
-    if (!ph) return;
+    if (!ph) {
+      canvas.width = canvas.height = 0;
+      return;
+    }
+    // blob URL lebih hemat memori daripada data-URL base64
+    const blob = await new Promise((res) => canvas.toBlob(res, "image/jpeg", 0.72));
+    canvas.width = canvas.height = 0;
+    if (!blob || !btn.isConnected) return;
     const img = document.createElement("img");
-    img.src = url;
+    img.src = URL.createObjectURL(blob);
     img.alt = "";
     img.loading = "lazy";
     img.decoding = "async";
+    img.dataset.objectUrl = "1";
     ph.replaceWith(img);
-    canvas.width = canvas.height = 0;
   }
 
   /* ============================================================
@@ -557,6 +710,7 @@
       const m = currentMode();
       chunkOpt.hidden = m !== "chunk";
       rangeOpt.hidden = m !== "range";
+      eachOpt.hidden = m !== "each";
       if (m === "range" && !$("#rangeInput").value.trim()) {
         $("#rangeInput").value = suggestRanges();
       }
@@ -566,15 +720,16 @@
 
   $("#chunkSize").addEventListener("input", updateRunState);
   $("#chunkUseSel").addEventListener("change", updateRunState);
+  $("#eachUseSel").addEventListener("change", updateRunState);
   $("#rangeInput").addEventListener("input", updateRunState);
 
   function suggestRanges() {
-    const first = state.files[0];
-    if (!first) return "1-3, 4-6, 7-9";
+    const total = state.files.reduce((s, f) => s + f.pageCount, 0);
+    if (!total) return "1-3, 4-6, 7-9";
     const cuts = [];
     let start = 1;
-    while (start <= first.pageCount) {
-      const end = Math.min(first.pageCount, start + 2);
+    while (start <= total) {
+      const end = Math.min(total, start + 2);
       cuts.push(start === end ? `${start}` : `${start}-${end}`);
       start = end + 1;
     }
@@ -594,9 +749,14 @@
       enabled = enabled && nSel > 0;
       hint = nSel ? `${nf(nSel)} halaman akan digabung.` : "Pilih minimal 1 halaman.";
     } else if (mode === "each") {
-      const eff = nSel || total;
+      const useSel = $("#eachUseSel").checked;
+      const eff = useSel ? nSel : total;
       label = "Pisah tiap halaman";
-      hint = `${nf(eff)} file PDF dalam satu ZIP.`;
+      hint = useSel
+        ? nSel
+          ? `${nf(eff)} file PDF (halaman terpilih) dalam satu ZIP.`
+          : "Pilih minimal 1 halaman."
+        : `${nf(eff)} file PDF dalam satu ZIP.`;
       enabled = enabled && eff > 0;
     } else if (mode === "chunk") {
       const N = Math.max(1, parseInt($("#chunkSize").value, 10) || 1);
@@ -656,19 +816,25 @@
   async function buildPdf(pages) {
     if (!pages.length) throw new Error("Tidak ada halaman untuk ditulis.");
     const out = await PDFDocument.create();
-    out.setProducer("Pemisah PDF");
-    out.setCreator("Pemisah PDF (pdf-lib)");
+    out.setProducer(CREDIT);
+    out.setCreator(CREDIT + " (pdf-lib)");
     out.setCreationDate(new Date());
 
-    // kelompokkan per file agar copyPages efisien
+    // Kelompokkan per file agar copyPages efisien, tetapi urutan
+    // halaman akhir tetap persis seperti urutan yang diminta.
     const groups = new Map();
     for (const p of pages) {
       if (!groups.has(p.file.id)) groups.set(p.file.id, { file: p.file, idx: [] });
       groups.get(p.file.id).idx.push(p.page);
     }
+    const copied = new Map(); // "fileId:pageIndex" -> PDFPage
     for (const { file, idx } of groups.values()) {
-      const copied = await out.copyPages(file.doc, idx);
-      for (const cp of copied) out.addPage(cp);
+      const list = await out.copyPages(file.doc, idx);
+      list.forEach((cp, i) => copied.set(key(file.id, idx[i]), cp));
+    }
+    for (const p of pages) {
+      const cp = copied.get(key(p.file.id, p.page));
+      if (cp) out.addPage(cp);
     }
     const bytes = await out.save({ useObjectStreams: true, addDefaultPage: false });
     return new Blob([bytes], { type: "application/pdf" });
@@ -701,7 +867,7 @@
         const name = resultNameForExtract(sel);
         made.push({ name, blob, url: URL.createObjectURL(blob), size: blob.size });
       } else if (mode === "each") {
-        const list = state.selected.size ? selectedPages() : allPages();
+        const list = $("#eachUseSel").checked ? selectedPages() : allPages();
         const zip = new JSZip();
         const pad = String(list.length).length;
         for (let i = 0; i < list.length; i++) {
@@ -728,11 +894,7 @@
         });
       } else if (mode === "chunk") {
         const N = Math.max(1, parseInt($("#chunkSize").value, 10) || 1);
-        const list = $("#chunkUseSel").checked
-          ? selectedPages()
-          : state.selected.size && !$("#chunkUseSel").checked
-          ? allPages()
-          : allPages();
+        const list = $("#chunkUseSel").checked ? selectedPages() : allPages();
         const groups = [];
         for (let i = 0; i < list.length; i += N) groups.push(list.slice(i, i + N));
         const zip = new JSZip();
@@ -826,6 +988,7 @@
       }
 
       setProgress(100);
+      revokeResults(state.results);
       state.results = made;
       showResults(made);
 
@@ -890,7 +1053,10 @@
     try {
       showOverlay("Membuat ZIP…");
       const zip = new JSZip();
-      for (const r of state.results) zip.file(r.name, r.blob);
+      // jangan masukkan ZIP ke dalam ZIP (lebih hemat dan rapi)
+      for (const r of state.results) {
+        if (!r.isZip) zip.file(r.name, r.blob);
+      }
       const blob = await zip.generateAsync({ type: "blob", compression: "STORE" }, (m) =>
         setProgress(m.percent)
       );
@@ -912,7 +1078,6 @@
   $("#clearBtn").addEventListener("click", () => {
     if (!state.files.length) return;
     if (confirm("Kosongkan semua file yang sudah dimuat?")) {
-      pdfCache.clear();
       clearWorkspace();
       toast("Workspace dikosongkan.");
     }
@@ -1066,9 +1231,26 @@
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  const tabButtons = Array.from(document.querySelectorAll(".tab"));
   document.querySelector(".tabs").addEventListener("click", (e) => {
     const t = e.target.closest(".tab");
     if (t) setTab(t.dataset.tab);
+  });
+
+  /* navigasi keyboard antar tab (standar WAI-ARIA) */
+  document.querySelector(".tabs").addEventListener("keydown", (e) => {
+    const idx = tabButtons.indexOf(document.activeElement);
+    if (idx < 0) return;
+    let next = -1;
+    if (e.key === "ArrowRight") next = (idx + 1) % tabButtons.length;
+    else if (e.key === "ArrowLeft") next = (idx - 1 + tabButtons.length) % tabButtons.length;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = tabButtons.length - 1;
+    if (next >= 0) {
+      e.preventDefault();
+      tabButtons[next].focus();
+      setTab(tabButtons[next].dataset.tab);
+    }
   });
 
   /* ---------- state gabung ---------- */
@@ -1086,6 +1268,7 @@
 
   function mergeRender() {
     const listEl = $("#mlist");
+    releaseThumbs(listEl);
     listEl.innerHTML = "";
     merge.files.forEach((f, i) => listEl.appendChild(mergeRow(f, i)));
     setMergeDropVisible();
@@ -1138,6 +1321,7 @@
       if (!act) return;
       if (act === "remove") {
         merge.files = merge.files.filter((x) => x.uid !== f.uid);
+        dropThumbDoc(f.uid);
         mergeRender();
       } else {
         const idx = merge.files.findIndex((x) => x.uid === f.uid);
@@ -1187,9 +1371,29 @@
     $("#mlist").querySelectorAll(".mrow").forEach((r) => r.classList.remove("drop-target", "dragging"));
   }
 
+  /* cache dokumen pdf.js untuk thumbnail (dibuka satu kali per file) */
+  const thumbCache = new Map();
+  function getThumbDoc(f) {
+    if (thumbCache.has(f.uid)) return thumbCache.get(f.uid);
+    const p = pdfjsLib.getDocument({ data: f.bytes.slice(0), isEvalSupported: false }).promise;
+    thumbCache.set(f.uid, p);
+    return p;
+  }
+  async function dropThumbDoc(uid) {
+    const p = thumbCache.get(uid);
+    thumbCache.delete(uid);
+    if (!p) return;
+    try {
+      const d = await p;
+      if (d && typeof d.destroy === "function") await d.destroy();
+    } catch (_) {
+      /* abaikan */
+    }
+  }
+
   async function renderMergeThumb(el, f) {
     try {
-      const pdf = await pdfjsLib.getDocument({ data: f.bytes.slice(0), isEvalSupported: false }).promise;
+      const pdf = await getThumbDoc(f);
       const page = await pdf.getPage(1);
       const base = page.getViewport({ scale: 1 });
       const vp = page.getViewport({ scale: Math.min(1.4, 52 / base.height) * 2 });
@@ -1197,15 +1401,21 @@
       canvas.width = Math.ceil(vp.width);
       canvas.height = Math.ceil(vp.height);
       await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
+      if (!el.isConnected) {
+        canvas.width = canvas.height = 0;
+        return;
+      }
+      const blob = await new Promise((r) => canvas.toBlob(r, "image/jpeg", 0.7));
+      canvas.width = canvas.height = 0;
+      if (!blob) return;
       const img = document.createElement("img");
-      img.src = canvas.toDataURL("image/jpeg", 0.7);
+      img.src = URL.createObjectURL(blob);
       img.alt = "";
       img.className = "mthumb";
-      if (el.isConnected) el.replaceWith(img);
-      try { pdf.destroy(); } catch (_) {}
-      canvas.width = canvas.height = 0;
+      img.dataset.objectUrl = "1";
+      el.replaceWith(img);
     } catch (err) {
-      console.error("Thumbnail gabung gagal:", err);
+      console.error("Thumbnail gagal:", err);
     }
   }
 
@@ -1224,6 +1434,7 @@
       setProgress(((i + 0.5) / files.length) * 100);
       try {
         const bytes = new Uint8Array(await file.arrayBuffer());
+        if (!looksLikePdf(bytes)) throw new Error("Berkas ini bukan PDF yang valid.");
         let doc;
         try {
           doc = await PDFDocument.load(bytes, { updateMetadata: false });
@@ -1289,6 +1500,8 @@
   $("#mergeClearBtn").addEventListener("click", () => {
     if (!merge.files.length) return;
     if (!confirm("Kosongkan daftar file yang akan digabung?")) return;
+    merge.files.forEach((f) => dropThumbDoc(f.uid));
+    revokeResults(merge.results);
     merge.files = [];
     merge.results = [];
     $("#mergeResultCard").hidden = true;
@@ -1328,6 +1541,7 @@
       const blob = new Blob([bytes], { type: "application/pdf" });
       const name = mergeFileName();
       const item = { name, blob, url: URL.createObjectURL(blob), size: blob.size };
+      revokeResults(merge.results);
       merge.results = [item];
 
       const card = $("#mergeResultCard");
@@ -1407,25 +1621,27 @@
   let compressUid = 0;
 
   const PRESETS = {
-    lossless: { mode: "lossless", label: "Ringan" },
-    balanced: { mode: "raster", dpi: 150, quality: 0.7, label: "Seimbang" },
-    strong: { mode: "raster", dpi: 110, quality: 0.5, label: "Kuat" },
+    lossless: { mode: "lossless", label: "Ringan", dpi: 0, quality: 0 },
+    optimal: { mode: "optimal", label: "Optimal", dpi: 200, quality: 0.82 },
+    balanced: { mode: "raster", label: "Seimbang", dpi: 150, quality: 0.78 },
+    strong: { mode: "raster", label: "Kuat", dpi: 110, quality: 0.62 },
   };
 
   function compressSettings() {
     const level = document.querySelector('input[name="clevel"]:checked').value;
     const gray = $("#grayChk").checked;
+    const cleanMeta = $("#cleanMetaChk").checked;
+    const neverBigger = $("#neverBiggerChk").checked;
+
     if (level === "custom") {
-      return {
-        mode: "raster",
-        dpi: parseInt($("#dpiRange").value, 10) || 150,
-        quality: (parseInt($("#qRange").value, 10) || 70) / 100,
-        gray,
-        label: "Kustom",
-      };
+      const strategy = $("#cStrategy").value;
+      const dpi = Math.max(72, Math.min(400, parseInt($("#dpiRange").value, 10) || 150));
+      const quality = Math.max(30, Math.min(95, parseInt($("#qRange").value, 10) || 80)) / 100;
+      const mode = strategy === "raster" ? "raster" : strategy;
+      return { mode, dpi, quality, gray, cleanMeta, neverBigger, label: "Kustom" };
     }
-    const p = PRESETS[level];
-    return { ...p, gray };
+    const p = PRESETS[level] || PRESETS.optimal;
+    return { ...p, gray, cleanMeta, neverBigger };
   }
 
   document.querySelectorAll('input[name="clevel"]').forEach((r) => {
@@ -1434,6 +1650,10 @@
       $("#customOpts").hidden = lvl !== "custom";
       compressUpdateNote();
     });
+  });
+  $("#cStrategy").addEventListener("change", () => {
+    compressUpdateNote();
+    compressSyncSliders();
   });
   $("#dpiRange").addEventListener("input", () => {
     $("#dpiVal").textContent = $("#dpiRange").value + " DPI";
@@ -1444,19 +1664,38 @@
     compressUpdateNote();
   });
   $("#grayChk").addEventListener("change", compressUpdateNote);
+  $("#cleanMetaChk").addEventListener("change", compressUpdateNote);
+  $("#neverBiggerChk").addEventListener("change", compressUpdateNote);
+
+  /* slider DPI hanya relevan untuk mode raster */
+  function compressSyncSliders() {
+    const st = compressSettings();
+    const raster = st.mode === "raster";
+    $("#dpiRange").disabled = !raster;
+    $("#dpiRangeRow").classList.toggle("disabled", !raster);
+  }
 
   function compressUpdateNote() {
     const st = compressSettings();
     const note = $("#compressNote");
+    const meta = st.cleanMeta ? " Metadata (judul, penulis, XMP) ikut dibersihkan." : "";
     if (st.mode === "lossless") {
-      note.textContent = "Mode ringan hanya membuang data tak terpakai — hasil bisa sama besar atau sedikit lebih kecil, tergantung PDF.";
+      note.textContent =
+        "Struktur file dioptimalkan: objek yatim dibuang. " +
+        "Teks, font, dan gambar sama sekali tidak berubah (100% aman, bukan rasterisasi)." + meta;
+    } else if (st.mode === "optimal") {
+      note.textContent =
+        `Teks & font tetap vektor (tetap tajam dan bisa dicari). Hanya gambar raster yang melebihi ${st.dpi} DPI diperkecil ke ${st.dpi} DPI — hasil tidak pernah lebih buram dari aslinya.${meta}`;
     } else {
-      note.textContent = `Halaman akan dirasterisasi ke ${st.dpi} DPI, kualitas ${Math.round(st.quality * 100)}%${st.gray ? ", hitam-putih" : ""}. Teks tidak lagi bisa dicari/di-copy.`;
+      note.textContent =
+        `Halaman dirender ke ${st.dpi} DPI dengan kualitas ${Math.round(st.quality * 100)}%${st.gray ? ", hitam-putih" : ""}. ` +
+        `Halaman hasil pindai otomatis tidak di-upsample. Teks menjadi gambar (tidak bisa dicari/disalin).${meta}`;
     }
   }
 
   function compressRender() {
     const listEl = $("#clist");
+    releaseThumbs(listEl);
     listEl.innerHTML = "";
     compress.files.forEach((f, i) => listEl.appendChild(compressRow(f, i)));
     const has = compress.files.length > 0;
@@ -1510,6 +1749,7 @@
       if (act === "remove") {
         compress.files = compress.files.filter((x) => x.uid !== f.uid);
         compress.results = compress.results.filter((r) => r.uid !== f.uid);
+        dropThumbDoc(f.uid);
         compressShowResults();
         compressRender();
       } else {
@@ -1537,6 +1777,7 @@
       setProgress(((i + 0.5) / files.length) * 100);
       try {
         const bytes = new Uint8Array(await file.arrayBuffer());
+        if (!looksLikePdf(bytes)) throw new Error("Berkas ini bukan PDF yang valid.");
         let doc;
         try {
           doc = await PDFDocument.load(bytes, { updateMetadata: false });
@@ -1587,6 +1828,8 @@
   $("#compressClearBtn").addEventListener("click", () => {
     if (!compress.files.length) return;
     if (!confirm("Kosongkan daftar file?")) return;
+    compress.files.forEach((f) => dropThumbDoc(f.uid));
+    revokeResults(compress.results);
     compress.files = [];
     compress.results = [];
     compressShowResults();
@@ -1594,88 +1837,14 @@
     toast("Daftar dikosongkan.");
   });
 
-  /* ---------- mesin kompres ---------- */
-  async function loadPdfjs(bytes) {
-    return pdfjsLib.getDocument({ data: bytes.slice(0), isEvalSupported: false }).promise;
-  }
-
-  function canvasToBlob(canvas, type, quality) {
-    return new Promise((resolve, reject) => {
-      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Gagal mengubah gambar."))), type, quality);
-    });
-  }
-
-  async function rasterize(srcBytes, st, label, onPage) {
-    const src = await loadPdfjs(srcBytes);
-    const out = await PDFDocument.create();
-    out.setProducer("Pemisah PDF");
-    out.setCreator("Pemisah PDF (kompres)");
-    out.setCreationDate(new Date());
-    const CONCURRENCY = 3;
-    let next = 0, done = 0;
-
-    async function worker() {
-      while (true) {
-        const i = next++;
-        if (i >= src.numPages) return;
-        const page = await src.getPage(i + 1);
-        const base = page.getViewport({ scale: 1 });
-        const scale = st.dpi / 72;
-        const vp = page.getViewport({ scale, rotation: page.rotate });
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.max(1, Math.ceil(vp.width));
-        canvas.height = Math.max(1, Math.ceil(vp.height));
-        const ctx = canvas.getContext("2d", { alpha: false });
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        await page.render({ canvasContext: ctx, viewport: vp, background: "#ffffff" }).promise;
-
-        // grayscale via CSS filter saat menggambar ulang
-        let target = canvas;
-        if (st.gray) {
-          target = document.createElement("canvas");
-          target.width = canvas.width;
-          target.height = canvas.height;
-          const tctx = target.getContext("2d", { alpha: false });
-          tctx.filter = "grayscale(1)";
-          tctx.drawImage(canvas, 0, 0);
-        }
-
-        const blob = await canvasToBlob(target, "image/jpeg", st.quality);
-        const jpg = await out.embedJpg(new Uint8Array(await blob.arrayBuffer()));
-        // ukuran halaman tetap dalam poin (identitas)
-        const wPt = base.width;
-        const hPt = base.height;
-        const pg = out.addPage([wPt, hPt]);
-        pg.drawImage(jpg, { x: 0, y: 0, width: wPt, height: hPt });
-
-        canvas.width = canvas.height = 0;
-        if (target !== canvas) { target.width = target.height = 0; }
-        page.cleanup();
-        done++;
-        onPage(done, src.numPages);
-      }
-    }
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, src.numPages) }, worker));
-    try { src.destroy(); } catch (_) {}
-    const bytes = await out.save({ useObjectStreams: true, addDefaultPage: false });
-    return { blob: new Blob([bytes], { type: "application/pdf" }), pageCount: out.getPageCount(), label };
-  }
-
-  async function losslessCompress(srcBytes) {
-    const doc = await PDFDocument.load(srcBytes, { updateMetadata: false });
-    const count = doc.getPageCount();
-    const bytes = await doc.save({ useObjectStreams: true, addDefaultPage: false });
-    return { blob: new Blob([bytes], { type: "application/pdf" }), pageCount: count, label: "Ringan" };
-  }
-
-  function fnv1a(str) {
-    let h = 0x811c9dc5;
-    for (let i = 0; i < str.length; i++) {
-      h ^= str.charCodeAt(i);
-      h = (h * 0x01000193) >>> 0;
-    }
-    return h;
+  /* ---------- mesin kompres ----------
+     Logika kompresi berada di compressor.js (window.PDFCompressor)
+     Supaya hasil kompresi tetap tajam: teks & font tidak pernah
+     dirasterisasi pada mode "Optimal", dan hasil tidak pernah
+     lebih besar daripada berkas asli.
+     ------------------------------------------------ */
+  function compressEngine() {
+    return window.PDFCompressor || null;
   }
 
   function compressFileName(f, label, used) {
@@ -1692,6 +1861,11 @@
 
   async function compressRun() {
     if (compress.busy || !compress.files.length) return;
+    const engine = compressEngine();
+    if (!engine) {
+      toast("Mesin kompresi tidak termuat (compressor.js).", "err", 6000);
+      return;
+    }
     const st = compressSettings();
     compress.busy = true;
     $("#compressRunBtn").disabled = true;
@@ -1702,39 +1876,50 @@
       const list = compress.files.slice();
       for (let i = 0; i < list.length; i++) {
         const f = list[i];
-        overlayText.textContent =
-          st.mode === "lossless" ? `Optimasi ${f.name}…` : `Mengompres ${f.name} (${f.pageCount} halaman)…`;
+        overlayText.textContent = `Mengompres ${f.name} (${f.pageCount} halaman)…`;
         setProgress((i / list.length) * 100);
         let res;
         try {
-          res =
-            st.mode === "lossless"
-              ? await losslessCompress(f.bytes)
-              : await rasterize(f.bytes, st, st.label, (done, total) => {
-                  const per = 100 / list.length;
-                  setProgress(i * per + (done / total) * per);
-                  overlayText.textContent = `Mengompres ${f.name} — halaman ${done}/${total}`;
-                });
+          res = await engine.compress(
+            f.bytes,
+            {
+              mode: st.mode,
+              dpi: st.dpi,
+              quality: st.quality,
+              gray: st.gray,
+              cleanMeta: st.cleanMeta,
+              neverBigger: st.neverBigger,
+            },
+            (text, ratio) => {
+              const per = 100 / list.length;
+              const r = Math.max(0, Math.min(1, ratio || 0));
+              setProgress(i * per + r * per);
+              if (text) overlayText.textContent = `${f.name} — ${text}`;
+            }
+          );
         } catch (err) {
           console.error(err);
           toast(`Gagal mengompres "${f.name}". ${err?.message || err}`.trim(), "err", 6000);
           continue;
         }
         const name = compressFileName(f, st.label, usedNames);
+        const blob = new Blob([res.bytes], { type: "application/pdf" });
         const item = {
           uid: f.uid,
           name,
-          blob: res.blob,
-          url: URL.createObjectURL(res.blob),
-          size: res.blob.size,
+          blob,
+          url: URL.createObjectURL(blob),
+          size: blob.size,
           original: f.size,
           pageCount: res.pageCount,
           label: st.label,
-          hash: fnv1a(f.uid + "|" + st.label + "|" + st.dpi + "|" + st.quality + "|" + st.gray),
+          unchanged: !!res.unchanged,
+          stats: res.stats || null,
         };
         results.push(item);
       }
       if (!results.length) throw new Error("Tidak ada file yang berhasil dikompres.");
+      revokeResults(compress.results);
       compress.results = results;
       setProgress(100);
       compressShowResults();
@@ -1754,7 +1939,7 @@
       toast(
         pct > 0
           ? `Selesai — total ${pct}% lebih kecil (${fmtSize(totalIn)} → ${fmtSize(totalOut)}).`
-          : `Selesai. Tidak ada penurunan ukuran (${fmtSize(totalOut)}) — coba mode Seimbang/Kuat.`,
+          : `Selesai. Berkas asli dipertahankan (${fmtSize(totalOut)}) agar ukuran tidak membengkak.`,
         pct > 0 ? "ok" : "",
         5200
       );
@@ -1790,8 +1975,17 @@
         const diff = r.original - r.size;
         const pct = r.original ? Math.round((1 - r.size / r.original) * 100) : 0;
         const badge = document.createElement("span");
-        badge.className = "crow-badge " + (pct > 0 ? "good" : "bad");
-        badge.textContent = `${fmtSize(r.original)} → ${fmtSize(r.size)}` + (diff !== 0 ? ` (${pct > 0 ? "−" : "+"}${Math.abs(pct)}%)` : "");
+        badge.className = "crow-badge " + (pct > 0 ? "good" : r.unchanged ? "" : "bad");
+        badge.textContent = r.unchanged
+          ? "tidak berubah"
+          : `${fmtSize(r.original)} → ${fmtSize(r.size)}` +
+            (diff !== 0 ? ` (${pct > 0 ? "−" : "+"}${Math.abs(pct)}%)` : "");
+        if (r.stats && r.stats.images) {
+          const im = r.stats.images;
+          row.title =
+            `Gambar diperkecil: ${im.replaced} · dipertahankan: ${im.kept} · dilewati: ${im.skipped}\n` +
+            `Hemat: ${fmtSize(im.savedBytes)}`;
+        }
         const a = document.createElement("a");
         a.className = "rl";
         a.textContent = "Unduh";
@@ -1860,10 +2054,33 @@
   /* ============================================================
      Init
      ============================================================ */
+  initTheme();
+  const themeBtn = $("#themeBtn");
+  if (themeBtn) themeBtn.addEventListener("click", toggleTheme);
+
+  /* ikuti perubahan tema sistem selama pengguna belum memilih manual */
+  if (window.matchMedia) {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onSystemTheme = () => {
+      const saved = readStoredTheme();
+      if (saved !== "dark" && saved !== "light") {
+        applyTheme(mq.matches ? "dark" : "light");
+      }
+    };
+    if (typeof mq.addEventListener === "function") mq.addEventListener("change", onSystemTheme);
+    else if (typeof mq.addListener === "function") mq.addListener(onSystemTheme);
+  }
+
   if (!window.PDFLib) {
     document.body.insertAdjacentHTML(
       "afterbegin",
       '<div style="padding:16px;background:#fdeceb;color:#a3301f;font:14px system-ui">Library gagal dimuat. Pastikan folder <b>vendor/</b> ada di samping file HTML ini.</div>'
+    );
+  }
+  if (!window.PDFCompressor) {
+    document.body.insertAdjacentHTML(
+      "afterbegin",
+      '<div style="padding:16px;background:#fdeceb;color:#a3301f;font:14px system-ui">Mesin kompresi gagal dimuat. Pastikan berkas <b>compressor.js</b> ada di samping file HTML ini.</div>'
     );
   }
   updateRunState();
