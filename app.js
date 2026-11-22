@@ -1264,6 +1264,18 @@
   let mergeUid = 0;
   let dragUid = null;
 
+  /* ---------- state perkiraan ukuran hasil gabung ---------- */
+  const MERGE_EST_MAX_BYTES = 150 * 1024 * 1024; // batas aman agar memori tidak meledak
+
+  const mergeEst = {
+    key: null,      // uid+jumlah halaman+ukuran tiap file, sesuai urutan saat ini
+    size: 0,        // ukuran file gabungan dalam byte
+    state: "idle",  // idle | loading | ok | error | skipped
+    running: false,
+    pending: false,
+    timer: null,
+  };
+
   function setMergeDropVisible() {
     $("#mergeDrop").hidden = merge.files.length > 0;
   }
@@ -1281,6 +1293,13 @@
     $("#mergePagesInfo").textContent = n ? `${nf(pages)} halaman akan digabung` : "Tarik file PDF untuk mulai";
     $("#mergeRunBtn").disabled = n < 2 || pages === 0;
     $("#mergeInfo").classList.toggle("active", n > 0);
+
+    // begitu daftar/urutan berubah, angka lama langsung ditandai kedaluwarsa
+    // supaya yang tampil bukan angka basi.
+    if (n >= 2 && mergeEstKey() !== mergeEst.key) mergeEst.state = "loading";
+
+    mergeEstRender();
+    mergeEstimateSchedule();
 
   }
 
@@ -1513,34 +1532,49 @@
   });
 
   /* ---------- proses gabung ---------- */
+  /* Bangun PDF gabungan.
+     Fungsi ini dipakai oleh proses gabung sungguhan DAN oleh
+     perkiraan ukuran hasil, sehingga angka yang ditampilkan dijamin
+     sama persis dengan berkas yang benar-benar dihasilkan. */
+  async function mergeBuildBytes(files, hooks = {}) {
+    const out = await PDFDocument.create();
+    out.setProducer(PRODUCER);
+    out.setCreator(PRODUCER + " (pdf-lib)");
+    out.setCreationDate(new Date());
+
+    const totalPages = files.reduce((n, f) => n + f.pageCount, 0);
+    let done = 0;
+
+    for (const f of files) {
+      if (hooks.onFile) await hooks.onFile(f, done, totalPages);
+      const pages = await out.copyPages(f.doc, f.doc.getPageIndices());
+      pages.forEach((pg) => out.addPage(pg));
+      done += pages.length;
+      if (hooks.onProgress) hooks.onProgress((done / totalPages) * 100);
+      await tick();
+    }
+
+    if (!out.getPageCount()) throw new Error("Tidak ada halaman yang bisa digabung.");
+
+    const bytes = await out.save({ useObjectStreams: true, addDefaultPage: false });
+    return { bytes, pageCount: out.getPageCount() };
+  }
+
   $("#mergeRunBtn").addEventListener("click", async () => {
     if (merge.busy || merge.files.length < 2) return;
     merge.busy = true;
     $("#mergeRunBtn").disabled = true;
     showOverlay("Menggabungkan PDF…");
     try {
-      const out = await PDFDocument.create();
-      out.setProducer(PRODUCER);
-      out.setCreator(PRODUCER + " (pdf-lib)");
-      out.setCreationDate(new Date());
+      const res = await mergeBuildBytes(merge.files, {
+        onFile: (f, done, totalPages) => {
+          overlayText.textContent = `Menggabungkan ${f.name}…`;
+          setProgress((done / totalPages) * 100);
+        },
+        onProgress: (pct) => setProgress(pct),
+      });
 
-      const totalPages = merge.files.reduce((n, f) => n + f.pageCount, 0);
-      let done = 0;
-
-      for (const f of merge.files) {
-        overlayText.textContent = `Menggabungkan ${f.name}…`;
-        setProgress((done / totalPages) * 100);
-        const pages = await out.copyPages(f.doc, f.doc.getPageIndices());
-        pages.forEach((pg) => out.addPage(pg));
-        done += pages.length;
-        setProgress((done / totalPages) * 100);
-        await tick();
-      }
-
-      if (!out.getPageCount()) throw new Error("Tidak ada halaman yang bisa digabung.");
-
-      const bytes = await out.save({ useObjectStreams: true, addDefaultPage: false });
-      const blob = new Blob([bytes], { type: "application/pdf" });
+      const blob = new Blob([res.bytes], { type: "application/pdf" });
       const name = mergeFileName();
       const item = { name, blob, url: URL.createObjectURL(blob), size: blob.size };
       revokeResults(merge.results);
@@ -1569,7 +1603,7 @@
 
       setProgress(100);
       if ($("#mergeAutoDl").checked) downloadBlob(blob, name);
-      toast(`Selesai — ${nf(out.getPageCount())} halaman digabung.`, "ok");
+      toast(`Selesai — ${nf(res.pageCount)} halaman digabung.`, "ok");
     } catch (err) {
       console.error(err);
       toast("Gagal menggabungkan: " + (err?.message || err), "err", 6000);
@@ -1585,6 +1619,161 @@
     if (names.length === 1) return safe(names[0]) + "-gabungan.pdf";
     const first = safe(names[0]).slice(0, 40);
     return `${first}-dan-${names.length - 1}-lainnya-gabungan.pdf`;
+  }
+
+  /* ============================================================
+     Perkiraan ukuran hasil gabung
+     ------------------------------------------------------------
+     Angka dihitung dengan build PDF yang PERSIS sama dengan proses
+     gabung sungguhan (copyPages + save), jadi ini bukan tebakan
+     melainkan ukuran berkas yang akan benar-benar dihasilkan.
+     Dihitung di latar belakang agar antarmuka tetap responsif, dan
+     otomatis dihitung ulang begitu daftar file atau urutannya berubah.
+     ============================================================ */
+  function mergeEstKey() {
+    return merge.files.map((f) => `${f.uid}:${f.pageCount}:${f.size}`).join("|");
+  }
+
+  function mergeEstTotal() {
+    return merge.files.reduce((s, f) => s + f.size, 0);
+  }
+
+  function mergeEstimateSchedule(delay = 450) {
+    clearTimeout(mergeEst.timer);
+    mergeEst.timer = setTimeout(() => {
+      mergeEst.timer = null;
+      mergeEstimateRun();
+    }, delay);
+  }
+
+  /* Hanya satu perhitungan berjalan pada satu waktu; permintaan
+     berikutnya menunggu dan menggantikan hasil yang lama. */
+  async function mergeEstimateRun() {
+    if (mergeEst.running) {
+      mergeEst.pending = true;
+      return;
+    }
+    mergeEst.running = true;
+    try {
+      do {
+        mergeEst.pending = false;
+        await mergeEstimateOnce();
+      } while (mergeEst.pending);
+    } finally {
+      mergeEst.running = false;
+    }
+  }
+
+  async function mergeEstimateOnce() {
+    // jangan jalan bersamaan dengan proses lain yang sedang berjalan
+    if (merge.busy || !overlay.hidden) return;
+
+    const files = merge.files.slice();
+    if (files.length < 2) {
+      mergeEst.key = null;
+      mergeEst.size = 0;
+      mergeEst.state = "idle";
+      mergeEstRender();
+      return;
+    }
+
+    const key = mergeEstKey();
+    // daftar tidak berubah → pakai hasil yang sudah dihitung
+    if (mergeEst.key === key && (mergeEst.state === "ok" || mergeEst.state === "skipped")) return;
+
+    const total = mergeEstTotal();
+    if (total > MERGE_EST_MAX_BYTES) {
+      mergeEst.key = key;
+      mergeEst.size = 0;
+      mergeEst.state = "skipped";
+      mergeEstRender();
+      return;
+    }
+
+    mergeEst.key = key;
+    mergeEst.state = "loading";
+    mergeEstRender();
+    await tick();
+
+    try {
+      const res = await mergeBuildBytes(files);
+      if (mergeEstKey() !== key) {
+        mergeEst.pending = true; // daftar berubah saat dihitung → hitung ulang
+        return;
+      }
+      mergeEst.size = res.bytes.length;
+      mergeEst.state = "ok";
+    } catch (err) {
+      console.error(err);
+      if (mergeEstKey() !== key) {
+        mergeEst.pending = true;
+        return;
+      }
+      mergeEst.size = 0;
+      mergeEst.state = "error";
+    }
+    mergeEstRender();
+  }
+
+  function mergeEstRender() {
+    const chip = $("#mergeSizeEst");
+    if (!chip) return;
+    const n = merge.files.length;
+    const cls = (extra) => "chip merge-est" + (extra ? " " + extra : "");
+    chip.dataset.state = mergeEst.state;
+    chip.dataset.key = mergeEst.key || "";
+    chip.dataset.bytes = String(mergeEst.size || 0);
+
+    if (!n) {
+      chip.hidden = true;
+      chip.className = cls("");
+      chip.textContent = "";
+      chip.removeAttribute("title");
+      return;
+    }
+    chip.hidden = false;
+
+    if (n < 2) {
+      chip.className = cls("muted");
+      chip.innerHTML = "<span>Tambah 1 file lagi untuk menghitung hasil</span>";
+      chip.removeAttribute("title");
+      return;
+    }
+    if (mergeEst.state === "loading") {
+      chip.className = cls("loading");
+      chip.innerHTML = '<span class="est-spin" aria-hidden="true"></span><span>Menghitung hasil…</span>';
+      chip.removeAttribute("title");
+      return;
+    }
+    if (mergeEst.state === "error") {
+      chip.className = cls("warn");
+      chip.innerHTML = "<span>Ukuran hasil belum bisa dihitung</span>";
+      chip.removeAttribute("title");
+      return;
+    }
+    if (mergeEst.state === "skipped") {
+      chip.className = cls("muted");
+      chip.innerHTML = `<span>Total ${fmtSize(mergeEstTotal())} — perkiraan dilewati agar hemat memori</span>`;
+      chip.removeAttribute("title");
+      return;
+    }
+    if (mergeEst.state === "ok") {
+      const size = mergeEst.size;
+      const total = mergeEstTotal();
+      const pct = total ? Math.round((1 - size / total) * 100) : 0;
+      chip.className = cls("ok");
+      chip.innerHTML =
+        `<span class="est-size">${fmtSize(size)}</span>` +
+        `<span class="est-note">dari ${fmtSize(total)}</span>` +
+        `<span class="est-tag">pasti</span>`;
+      chip.title =
+        `Ukuran file gabungan: ${nf(size)} byte dari ${nf(total)} byte ` +
+        `(${pct >= 0 ? "hemat" : "lebih besar"} ${Math.abs(pct)}%)`;
+      return;
+    }
+    chip.className = cls("muted");
+    chip.innerHTML = "<span>Menyiapkan perkiraan…</span>";
+    chip.removeAttribute("title");
   }
 
   /* ---------- drag & drop global di tab gabung ---------- */
@@ -1629,6 +1818,17 @@
     strong: { mode: "raster", label: "Kuat", dpi: 110, quality: 0.62 },
   };
 
+  /* Opsi panel Kustom — satu sumber kebenaran.
+     Dipakai oleh compressSettings() dan compressEstOptions() agar
+     angka kompresi dan perkiraan ukuran tidak pernah melenceng. */
+  function compressCustomOptions() {
+    const strategy = $("#cStrategy").value;
+    const dpi = Math.max(72, Math.min(400, parseInt($("#dpiRange").value, 10) || 200));
+    const quality = Math.max(30, Math.min(98, parseInt($("#qRange").value, 10) || 82)) / 100;
+    const mode = strategy === "raster" ? "raster" : strategy === "lossless" ? "lossless" : "optimal";
+    return { strategy, mode, dpi, quality };
+  }
+
   function compressSettings() {
     const level = document.querySelector('input[name="clevel"]:checked').value;
     const gray = $("#grayChk").checked;
@@ -1636,11 +1836,8 @@
     const neverBigger = $("#neverBiggerChk").checked;
 
     if (level === "custom") {
-      const strategy = $("#cStrategy").value;
-      const dpi = Math.max(72, Math.min(400, parseInt($("#dpiRange").value, 10) || 150));
-      const quality = Math.max(30, Math.min(95, parseInt($("#qRange").value, 10) || 80)) / 100;
-      const mode = strategy === "raster" ? "raster" : strategy;
-      return { mode, dpi, quality, gray, cleanMeta, neverBigger, label: "Kustom" };
+      const c = compressCustomOptions();
+      return { mode: c.mode, dpi: c.dpi, quality: c.quality, gray, cleanMeta, neverBigger, label: "Kustom" };
     }
     const p = PRESETS[level] || PRESETS.optimal;
     return { ...p, gray, cleanMeta, neverBigger };
@@ -1650,6 +1847,7 @@
     r.addEventListener("change", () => {
       const lvl = document.querySelector('input[name="clevel"]:checked').value;
       $("#customOpts").hidden = lvl !== "custom";
+      compressSyncSliders();
       compressUpdateNote();
       compressEstimateSchedule();
     });
@@ -1682,12 +1880,38 @@
     compressEstimateSchedule();
   });
 
-  /* slider DPI hanya relevan untuk mode raster */
+  /* Slider hanya relevan untuk strategi yang benar-benar memakainya:
+       • Ringan (lossless) → DPI & kualitas TIDAK dipakai sama sekali
+       • Optimal            → DPI = ambang downsampling gambar raster,
+                             kualitas = mutu JPEG hasil downsampling
+       • Raster             → DPI = resolusi render halaman,
+                             kualitas = mutu JPEG hasil render
+     Karena itu status slider dihitung dari strategi, bukan dari
+     riwayat pemakaian sebelumnya. */
   function compressSyncSliders() {
-    const st = compressSettings();
-    const raster = st.mode === "raster";
-    $("#dpiRange").disabled = !raster;
-    $("#dpiRangeRow").classList.toggle("disabled", !raster);
+    const c = compressCustomOptions();
+    const usesImage = c.mode !== "lossless";
+
+    $("#dpiRange").disabled = !usesImage;
+    $("#dpiRangeRow").classList.toggle("disabled", !usesImage);
+    $("#qRange").disabled = !usesImage;
+    $("#qRangeRow").classList.toggle("disabled", !usesImage);
+
+    $("#dpiVal").textContent = c.dpi + " DPI";
+    $("#qVal").textContent = Math.round(c.quality * 100) + "%";
+
+    const hint = $("#customHint");
+    if (!hint) return;
+    if (!usesImage) {
+      hint.textContent =
+        "Strategi Ringan hanya merapikan struktur file — teks, font, dan gambar tidak diolah ulang, sehingga resolusi dan kualitas dinonaktifkan.";
+    } else if (c.mode === "optimal") {
+      hint.textContent =
+        `Gambar raster yang melebihi ${c.dpi} DPI diperkecil ke ${c.dpi} DPI dengan kualitas ${Math.round(c.quality * 100)}%. Teks & font tetap vektor (tajam dan bisa dicari).`;
+    } else {
+      hint.textContent =
+        `Setiap halaman dirender pada ${c.dpi} DPI dengan kualitas ${Math.round(c.quality * 100)}%. Teks menjadi gambar (tidak bisa dicari atau disalin).`;
+    }
   }
 
   /* ============================================================
@@ -1721,11 +1945,8 @@
     const cleanMeta = $("#cleanMetaChk").checked;
     const neverBigger = $("#neverBiggerChk").checked;
     if (target === "custom") {
-      const strategy = $("#cStrategy").value;
-      const dpi = Math.max(72, Math.min(400, parseInt($("#dpiRange").value, 10) || 150));
-      const quality = Math.max(30, Math.min(95, parseInt($("#qRange").value, 10) || 80)) / 100;
-      const mode = strategy === "raster" ? "raster" : strategy;
-      return { mode, dpi, quality, gray, cleanMeta, neverBigger };
+      const c = compressCustomOptions();
+      return { mode: c.mode, dpi: c.dpi, quality: c.quality, gray, cleanMeta, neverBigger };
     }
     const p = PRESETS[target] || PRESETS.optimal;
     return { mode: p.mode, dpi: p.dpi || 200, quality: p.quality || 0.82, gray, cleanMeta, neverBigger };
@@ -1747,9 +1968,18 @@
     return compress.files.reduce((s, f) => s + f.size, 0);
   }
 
-  /* Jadwalkan penghitungan ulang (debounce agar tidak terlalu sering). */
+  /* Jadwalkan penghitungan ulang (debounce agar tidak terlalu sering).
+     Nilai lama langsung ditandai "sedang dihitung" supaya yang tampil
+     bukan angka basi. */
   function compressEstimateSchedule(delay = 350) {
     clearTimeout(compressEst.timer);
+    if (compress.files.length) {
+      for (const target of EST_TARGETS) {
+        const v = compressEst.values.get(target);
+        if (v && v.state === "ok") compressEst.values.set(target, { state: "loading" });
+      }
+      compressEstRender();
+    }
     compressEst.timer = setTimeout(() => {
       compressEst.timer = null;
       compressEstimateRun();
@@ -1856,15 +2086,18 @@
       const key = el.dataset.est;
       const v = compressEst.values.get(key);
       el.className = "preset-est";
-      if (!has) { el.textContent = ""; el.classList.remove("show"); return; }
+      el.dataset.state = v ? v.state : "idle";
+      if (!has) { el.textContent = ""; el.classList.remove("show"); el.title = ""; return; }
       el.classList.add("show");
 
       if (!v || v.state === "loading") {
         el.innerHTML = '<span class="est-spin" aria-hidden="true"></span><span>Menghitung perkiraan…</span>';
+        el.title = "";
         return;
       }
       if (v.state === "error") {
         el.innerHTML = "<span>Perkiraan tidak tersedia untuk berkas ini</span>";
+        el.title = "";
         return;
       }
 
@@ -1880,6 +2113,9 @@
         `<span class="est-delta ${cls}">${sign}${Math.abs(pct)}%</span>` +
         `<span class="est-note">dari ${fmtSize(v.total)}</span>` +
         tag;
+      el.title =
+        `Perkiraan ${nf(v.size)} byte dari ${nf(v.total)} byte` +
+        (v.exact ? "" : ` (dihitung dari ${nf(v.sampled || 0)} halaman)`);
     });
 
     /* Ringkasan: preset mana yang paling hemat. */
@@ -2293,6 +2529,7 @@
   });
 
   compressRender();
+  compressSyncSliders();
 
   /* ============================================================
      Init
