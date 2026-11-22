@@ -2,6 +2,30 @@
 
 Aplikasi web untuk **memecah, mengekstrak, menggabungkan, dan mengompres** PDF. **Semua proses berjalan di browser** — file tidak pernah diunggah ke server mana pun.
 
+> **Dikarya oleh Putra.** Kreditnya tercantum di antarmuka web — di header, di footer, dan di `<title>` halaman. File PDF yang dihasilkan **tidak** memuat kredit/stempel apa pun di dalamnya; metadata Producer/Creator hanya berisi nama aplikasi (`Pemisah PDF`).
+
+### Di mana kreditnya?
+
+| Tempat | Ada kredit "Putra"? |
+|---|---|
+| Header web (chip "by Putra") | ✅ |
+| Footer web ("Dikarya oleh Putra") | ✅ |
+| `<title>` & meta tag halaman | ✅ |
+| Isi halaman PDF (teks/stempel) | ❌ — sengaja tidak ada |
+| Metadata PDF (Producer/Creator) | ❌ — hanya `Pemisah PDF` |
+
+## Fitur baru (v2)
+
+| Fitur | Penjelasan |
+|---|---|
+| **Mode gelap / terang** | Tombol bulan/matahari di header. Pilihan disimpan di `localStorage`, mengikuti preferensi sistem bila belum pernah dipilih, dan tidak berkedip saat halaman dimuat. |
+| **Kompresi "Optimal"** | Teks & font tetap **vektor** (tetap tajam, zoom bebas, tetap bisa dicari). Hanya gambar raster yang resolusinya melebihi target DPI yang diperkecil. |
+| **Anti-membengkak** | Hasil kompresi **tidak pernah lebih besar** dari berkas asli — bila lebih besar, berkas asli dipakai kembali. |
+| **Deteksi halaman pindai** | Halaman yang hanya berisi satu foto besar dirender pada resolusi aslinya (tidak pernah di-*upsample*), jadi hasil tetap tajam dan kecil. |
+| **Bersihkan metadata** | Judul, penulis, kata kunci, dan XMP dibuang (opsional). Bila dimatikan, metadata asli dokumen dipertahankan. |
+| **Aksesibilitas** | Navigasi tab dengan tombol panah, `role="tabpanel"`, label ARIA, dan fokus yang jelas. |
+| **Pesan error ramah** | PDF terenkripsi, rusak, terpotong, atau bukan PDF ditolak dengan pesan Bahasa Indonesia yang jelas — bukan error internal pustaka. |
+
 ## Cara pakai
 
 1. Buka `index.html` di browser (Chrome, Edge, Firefox, Safari modern).
@@ -16,12 +40,12 @@ Aplikasi web untuk **memecah, mengekstrak, menggabungkan, dan mengompres** PDF. 
 | Mode | Keluaran |
 |---|---|
 | Ekstrak halaman terpilih | 1 PDF baru berisi halaman terpilih (bisa gabungan beberapa file) |
-| Pisah tiap halaman | ZIP, 1 PDF per halaman |
-| Pisah tiap N halaman | ZIP, tiap file berisi N halaman |
+| Pisah tiap halaman | ZIP, 1 PDF per halaman (pilihan: hanya halaman terpilih) |
+| Pisah tiap N halaman | ZIP, tiap file berisi N halaman (pilihan: hanya halaman terpilih) |
 | Pisah per rentang kustom | ZIP, mis. `1-3, 4-8, 9-12` |
 | Pisah per penanda buku | ZIP, tiap bab/daftar isi jadi file sendiri |
 
-Pendukung: multi-file (halaman bisa digabung lintas file, urutan bisa diatur), thumbnail tiap halaman, tombol cepat Semua/Kosong/Balik/Ganjil/Genap, PDF berpassword diminta password-nya lalu dibuka otomatis.
+Pendukung: multi-file (halaman bisa digabung lintas file, urutan bisa diatur), thumbnail tiap halaman, tombol cepat Semua/Kosong/Balik/Ganjil/Genap, PDF berpassword dibuka tanpa merusak teks & vektor.
 
 ## Tab 2 — Gabung PDF
 
@@ -35,17 +59,21 @@ Hasil gabungan mempertahankan ukuran & rotasi tiap halaman aslinya (tidak dirast
 
 | Tingkat | Cara kerja | Cocok untuk |
 |---|---|---|
-| **Ringan** (teks utuh) | Optimasi struktur file (object streams), tanpa mengubah isi | PDF berisi teks penting; hasil bisa sama besar |
-| **Seimbang** | Rasterisasi 150 DPI, JPEG 70% | Paling umum — biasanya 40–70% lebih kecil |
-| **Kuat** | Rasterisasi 110 DPI, JPEG 50% | Ukuran paling kecil, detail menurun |
-| **Kustom** | Slider 72–300 DPI + kualitas 30–95%, opsi grayscale | Kontrol penuh |
+| **Ringan** (tanpa raster) | Buang objek yatim, optimalkan struktur, bersihkan metadata. Teks/font/gambar 100% utuh. | PDF berisi teks penting; penurunan ukuran bisa kecil |
+| **Optimal** (disarankan) | Ringan + hanya gambar raster yang melebihi **200 DPI** diperkecil ke 200 DPI (diperkecil bertahap agar tetap tajam). Teks & font tetap vektor. | Mayoritas PDF — hasil tajam **dan** jauh lebih kecil |
+| **Seimbang** | Raster 150 DPI, JPEG 78% (kualitas dinaikkan otomatis untuk halaman berteks). | PDF lama hasil pindai |
+| **Kuat** | Raster 110 DPI, JPEG 62%. | Ukuran paling kecil, detail menurun |
+| **Kustom** | Pilih strategi (Optimal / Ringan / Raster), DPI 72–300, kualitas 30–95%, grayscale. | Kontrol penuh |
 
-Cara pakai: tambahkan PDF → pilih tingkat → **Kompres sekarang**. Setelah selesai muncul:
-- Ringkasan **% lebih kecil** dengan bar progres (mis. `86% lebih kecil — 12,6 MB → 1,8 MB`),
-- per file: `ukuran awal → hasil (−%)` + tombol unduh,
-- unduh semua sebagai ZIP bila lebih dari satu file.
+Pilihan tambahan: **grayscale**, **bersihkan metadata**, dan **jangan pernah memperbesar file**.
+Setelah selesai muncul ringkasan *% lebih kecil* (mis. `64% lebih kecil — 393 KB → 143 KB`), detail per file, dan tombol unduh (ZIP bila lebih dari satu file).
 
-Catatan: mode rasterisasi mengubah halaman menjadi gambar, jadi teks tidak lagi bisa dicari/di-copy dan hyperlink hilang. Mode **Ringan** mempertahankan teks utuh.
+### Cara kerja kompresi (detail teknis)
+
+1. **Struktur** — objek PDF yang tidak lagi dirujuk (orphan) dibuang; metadata XMP/title/author dibersihkan bila diminta; objek ditulis ulang memakai object stream.
+2. **Analisis DPI** — content stream tiap halaman diparse (tokenizer sendiri, termasuk Form XObject) untuk mengetahui **ukuran penempatan** tiap gambar dalam poin. Dari situ dihitung DPI efektifnya. Gambar yang dipakai di beberapa halaman memakai penempatan **terbesar** di seluruh dokumen, jadi tidak diperkecil berulang.
+3. **Perkecil gambar** — gambar yang DPI efektifnya di atas target diperkecil **bertahap** (setengah demi setengah, `imageSmoothingQuality: high`) lalu dikodekan ulang sebagai JPEG. Format sumber yang didukung: JPEG (DCTDecode) dan data mentah (Flate/ASCII) dengan ruang warna **DeviceRGB, DeviceGray, DeviceCMYK, Indexed**, serta 1/2/4/8 bit per komponen. Gambar dengan alpha (`SMask`), stencil mask (`ImageMask`), atau JPEG yang lebih kecil dari aslinya **tidak disentuh**.
+4. **Anti-membengkak** — hasil hanya dipakai bila benar-benar lebih kecil; jika tidak, gambar asli dipertahankan. Bila seluruh berkas masih lebih besar dari aslinya, berkas asli dikembalikan. Mode raster juga mencoba ulang dengan kualitas/DPI lebih rendah sebelum menyerah.
 
 ## Struktur
 
@@ -53,7 +81,8 @@ Catatan: mode rasterisasi mengubah halaman menjadi gambar, jadi teks tidak lagi 
 pemisah-pdf/
 ├── index.html
 ├── style.css
-├── app.js
+├── app.js            (antarmuka, tab, pemisahan, penggabungan)
+├── compressor.js     (mesin kompresi: struktur, analisis DPI, gambar)
 └── vendor/
     ├── pdf-lib.min.js       (menulis, memecah, menggabung, menyimpan ulang PDF)
     ├── pdf.min.js           (pdf.js — pratinjau, rasterisasi, dekripsi)

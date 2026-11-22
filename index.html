@@ -3,9 +3,24 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="description" content="Pecah, ekstrak, gabung, dan kompres PDF langsung di browser tanpa upload." />
-<title>Pemisah PDF — pecah, gabung &amp; kompres PDF, 100% di browser</title>
+<meta name="description" content="Pecah, ekstrak, gabung, dan kompres PDF langsung di browser tanpa upload. Mode gelap, kompresi tajam, 100% offline — by Putra." />
+<meta name="theme-color" content="#ffffff" />
+<meta name="author" content="Putra" />
+<title>Pemisah PDF — pecah, gabung &amp; kompres PDF, 100% di browser — by Putra</title>
 <link rel="stylesheet" href="style.css" />
+<script>
+  /* terapkan tema lebih awal supaya tidak ada kedipan saat halaman dimuat */
+  (function () {
+    try {
+      var s = localStorage.getItem("pemisah-pdf:theme");
+      var dark = s ? s === "dark" : !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+      document.documentElement.style.colorScheme = dark ? "dark" : "light";
+    } catch (e) {
+      document.documentElement.setAttribute("data-theme", "light");
+    }
+  })();
+</script>
 </head>
 <body>
 
@@ -28,6 +43,16 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 5 6.4v5.2c0 4.3 2.9 7.3 7 8.9 4.1-1.6 7-4.6 7-8.9V6.4Z"/><path d="m9 12 2.2 2.2L15.4 10"/></svg>
       100% offline — file tidak diunggah
     </span>
+    <span class="credit-chip" title="Aplikasi ini dibuat oleh Putra">by&nbsp;Putra</span>
+    <button class="theme-btn" id="themeBtn" type="button" aria-pressed="false" aria-label="Ganti ke mode gelap" title="Mode terang — klik untuk mode gelap">
+      <svg class="theme-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="4.2"/>
+        <path d="M12 2.6v2.2M12 19.2v2.2M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2.6 12h2.2M19.2 12h2.2M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/>
+      </svg>
+      <svg class="theme-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden>
+        <path d="M20.2 14.6A8.4 8.4 0 0 1 9.4 3.8a8.4 8.4 0 1 0 10.8 10.8Z"/>
+      </svg>
+    </button>
   </div>
 </header>
 
@@ -35,21 +60,24 @@
 
   <!-- ============ TABS ============ -->
   <nav class="tabs" role="tablist" aria-label="Mode aplikasi">
-    <button class="tab active" role="tab" aria-selected="true" data-tab="split" type="button">
+    <button class="tab active" role="tab" id="tab-split" aria-selected="true" aria-controls="splitView" data-tab="split" type="button">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.6v9.2"/><path d="m8.2 9 3.8 3.8L15.8 9"/><path d="M4 16.4v2.2A1.9 1.9 0 0 0 5.9 20.5h3.2"/><path d="M20 16.4v2.2a1.9 1.9 0 0 1-1.9 1.9h-3.2"/></svg>
       Pemisah halaman
     </button>
-    <button class="tab" role="tab" aria-selected="false" data-tab="merge" type="button">
+    <button class="tab" role="tab" id="tab-merge" aria-selected="false" aria-controls="mergeView" data-tab="merge" type="button">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5v5.2c0 1.6 1.3 2.9 2.9 2.9h6.2c1.6 0 2.9 1.3 2.9 2.9v6"/><path d="m14.8 17.3 3.2 3.2 3.2-3.2"/><path d="M18 11.5V6.7"/></svg>
       Gabung PDF
     </button>
-    <button class="tab" role="tab" aria-selected="false" data-tab="compress" type="button">
+    <button class="tab" role="tab" id="tab-compress" aria-selected="false" aria-controls="compressView" data-tab="compress" type="button">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 4.5H5.8A1.3 1.3 0 0 0 4.5 5.8v3.7"/><path d="m4.9 4.9 4.4 4.4"/><path d="M14.5 19.5h3.7a1.3 1.3 0 0 0 1.3-1.3v-3.7"/><path d="m19.1 19.1-4.4-4.4"/><path d="M4.5 14.5v3.7a1.3 1.3 0 0 0 1.3 1.3h3.7"/><path d="m4.9 19.1 4.4-4.4"/><path d="M19.5 9.5V5.8a1.3 1.3 0 0 0-1.3-1.3h-3.7"/><path d="m19.1 4.9-4.4 4.4"/></svg>
       Kompres PDF
     </button>
   </nav>
 
 
+
+  <!-- ============ PANEL PEMISAH ============ -->
+  <div id="splitView" role="tabpanel" aria-labelledby="tab-split">
 
   <!-- ============ DROPZONE ============ -->
   <section id="dropzone" class="dropzone" tabindex="0" aria-label="Tarik file PDF ke sini">
@@ -123,6 +151,9 @@
               <span class="mode-desc">Setiap halaman jadi file PDF sendiri (ZIP).</span>
             </span>
           </label>
+          <div class="opt-row" id="eachOpt" hidden>
+            <label class="check small"><input type="checkbox" id="eachUseSel" /> hanya halaman terpilih</label>
+          </div>
 
           <label class="mode">
             <input type="radio" name="mode" value="chunk" />
@@ -180,9 +211,11 @@
     </div>
   </section>
 
+  </div><!-- /#splitView -->
+
 
   <!-- ============ MERGE PANEL ============ -->
-  <section id="mergeView" class="merge-view" hidden aria-label="Gabung PDF">
+  <section id="mergeView" class="merge-view" hidden role="tabpanel" aria-labelledby="tab-merge">
     <div class="merge-head">
       <div>
         <h2>Gabung PDF</h2>
@@ -231,7 +264,7 @@
 
 
   <!-- ============ COMPRESS PANEL ============ -->
-  <section id="compressView" class="merge-view" hidden aria-label="Kompres PDF">
+  <section id="compressView" class="merge-view" hidden role="tabpanel" aria-labelledby="tab-compress">
     <div class="merge-head">
       <div>
         <h2>Kompres PDF</h2>
@@ -260,45 +293,62 @@
         <label class="preset">
           <input type="radio" name="clevel" value="lossless" />
           <span class="preset-body">
-            <span class="preset-name">Ringan <span class="tag-soft">teks utuh</span></span>
-            <span class="preset-desc">Optimasi struktur file, tanpa mengubah kualitas. Cocok bila PDF berisi teks penting.</span>
+            <span class="preset-name">Ringan <span class="tag-soft">tanpa raster</span></span>
+            <span class="preset-desc">Optimalkan struktur file &amp; buang data tak terpakai. Teks, font, dan gambar 100% utuh.</span>
           </span>
         </label>
         <label class="preset">
-          <input type="radio" name="clevel" value="balanced" checked />
+          <input type="radio" name="clevel" value="optimal" checked />
           <span class="preset-body">
-            <span class="preset-name">Seimbang <span class="tag-soft">disarankan</span></span>
-            <span class="preset-desc">Halaman dirasterisasi 150 DPI, kualitas baik, ukuran jauh lebih kecil.</span>
+            <span class="preset-name">Optimal <span class="tag-soft">disarankan</span></span>
+            <span class="preset-desc">Teks &amp; font tetap vektor (tetap tajam &amp; bisa dicari). Hanya gambar raster yang melebihi 200 DPI diperkecil.</span>
+          </span>
+        </label>
+        <label class="preset">
+          <input type="radio" name="clevel" value="balanced" />
+          <span class="preset-body">
+            <span class="preset-name">Seimbang</span>
+            <span class="preset-desc">Raster 150 DPI kualitas tinggi. Teks jadi gambar; halaman pindai tidak pernah di-upsample.</span>
           </span>
         </label>
         <label class="preset">
           <input type="radio" name="clevel" value="strong" />
           <span class="preset-body">
             <span class="preset-name">Kuat</span>
-            <span class="preset-desc">Rasterisasi 110 DPI, ukuran paling kecil, detail menurun.</span>
+            <span class="preset-desc">Raster 110 DPI — ukuran paling kecil, detail menurun.</span>
           </span>
         </label>
         <label class="preset">
           <input type="radio" name="clevel" value="custom" />
           <span class="preset-body">
             <span class="preset-name">Kustom</span>
-            <span class="preset-desc">Atur sendiri resolusi dan kualitas gambar.</span>
+            <span class="preset-desc">Atur sendiri strategi, resolusi, dan kualitas gambar.</span>
           </span>
         </label>
       </div>
 
       <div class="sliders" id="customOpts" hidden>
-        <label class="slider-row">
+        <label class="slider-row" for="cStrategy">
+          <span>Strategi</span>
+          <select id="cStrategy">
+            <option value="optimal">Optimal — teks &amp; font tetap vektor</option>
+            <option value="lossless">Ringan — struktur file saja</option>
+            <option value="raster">Raster — halaman menjadi gambar</option>
+          </select>
+        </label>
+        <label class="slider-row" id="dpiRangeRow">
           <span>Resolusi <b id="dpiVal">150 DPI</b></span>
           <input type="range" id="dpiRange" min="72" max="300" step="6" value="150" />
         </label>
         <label class="slider-row">
-          <span>Kualitas gambar <b id="qVal">70%</b></span>
-          <input type="range" id="qRange" min="30" max="95" step="5" value="70" />
+          <span>Kualitas gambar <b id="qVal">82%</b></span>
+          <input type="range" id="qRange" min="30" max="95" step="2" value="82" />
         </label>
       </div>
 
       <label class="check" style="margin-top:12px"><input type="checkbox" id="grayChk" /> Ubah ke hitam-putih (grayscale)</label>
+      <label class="check" style="margin-top:8px"><input type="checkbox" id="cleanMetaChk" checked /> Bersihkan metadata (judul, penulis, XMP)</label>
+      <label class="check" style="margin-top:8px"><input type="checkbox" id="neverBiggerChk" checked /> Jangan pernah memperbesar file (pakai berkas asli bila hasilnya lebih besar)</label>
       <label class="check" style="margin-top:8px"><input type="checkbox" id="compressAutoDl" checked /> Unduh otomatis setelah selesai</label>
       <p class="muted tiny" id="compressNote" style="margin-top:10px"></p>
     </div>
@@ -331,6 +381,8 @@
   <footer class="foot">
     <span>Pemisah PDF · dibuat dengan pdf-lib &amp; pdf.js</span>
     <span class="dot">•</span>
+    <span class="credit">Dikarya oleh <b>Putra</b></span>
+    <span class="dot">•</span>
     <span>Jika unduhan diblokir di pratinjau, buka file HTML ini langsung di browser Anda.</span>
   </footer>
 </main>
@@ -350,6 +402,7 @@
 <script src="vendor/pdf-lib.min.js"></script>
 <script src="vendor/jszip.min.js"></script>
 <script src="vendor/pdf.min.js"></script>
+<script src="compressor.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

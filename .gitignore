@@ -1,0 +1,12 @@
+# Harness pengujian lokal (Playwright/Chromium) - tidak ikut ke repo
+.devtest/
+
+# Log & berkas sementara
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# Folder hasil sementara
+tmp/
+temp/
