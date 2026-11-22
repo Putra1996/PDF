@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="description" content="Pecah, ekstrak, gabung, dan kompres PDF langsung di browser tanpa upload." />
+<title>Pemisah PDF — pecah, gabung &amp; kompres PDF, 100% di browser</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="logo" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M7 3.5h6.5L18 8v11.2a1.3 1.3 0 0 1-1.3 1.3H7a1.3 1.3 0 0 1-1.3-1.3V4.8A1.3 1.3 0 0 1 7 3.5Z"/>
+        <path d="M13.3 3.7V8H18"/>
+        <path d="M9 12.2h5.5M9 15.4h3.2"/>
+      </svg>
+    </div>
+    <div class="brand-text">
+      <strong>Pemisah PDF</strong>
+      <span>Pecah, gabung &amp; kompres PDF</span>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <span class="pill pill-green">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 5 6.4v5.2c0 4.3 2.9 7.3 7 8.9 4.1-1.6 7-4.6 7-8.9V6.4Z"/><path d="m9 12 2.2 2.2L15.4 10"/></svg>
+      100% offline — file tidak diunggah
+    </span>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- ============ TABS ============ -->
+  <nav class="tabs" role="tablist" aria-label="Mode aplikasi">
+    <button class="tab active" role="tab" aria-selected="true" data-tab="split" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.6v9.2"/><path d="m8.2 9 3.8 3.8L15.8 9"/><path d="M4 16.4v2.2A1.9 1.9 0 0 0 5.9 20.5h3.2"/><path d="M20 16.4v2.2a1.9 1.9 0 0 1-1.9 1.9h-3.2"/></svg>
+      Pemisah halaman
+    </button>
+    <button class="tab" role="tab" aria-selected="false" data-tab="merge" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5v5.2c0 1.6 1.3 2.9 2.9 2.9h6.2c1.6 0 2.9 1.3 2.9 2.9v6"/><path d="m14.8 17.3 3.2 3.2 3.2-3.2"/><path d="M18 11.5V6.7"/></svg>
+      Gabung PDF
+    </button>
+    <button class="tab" role="tab" aria-selected="false" data-tab="compress" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 4.5H5.8A1.3 1.3 0 0 0 4.5 5.8v3.7"/><path d="m4.9 4.9 4.4 4.4"/><path d="M14.5 19.5h3.7a1.3 1.3 0 0 0 1.3-1.3v-3.7"/><path d="m19.1 19.1-4.4-4.4"/><path d="M4.5 14.5v3.7a1.3 1.3 0 0 0 1.3 1.3h3.7"/><path d="m4.9 19.1 4.4-4.4"/><path d="M19.5 9.5V5.8a1.3 1.3 0 0 0-1.3-1.3h-3.7"/><path d="m19.1 4.9-4.4 4.4"/></svg>
+      Kompres PDF
+    </button>
+  </nav>
+
+
+
+  <!-- ============ DROPZONE ============ -->
+  <section id="dropzone" class="dropzone" tabindex="0" aria-label="Tarik file PDF ke sini">
+    <input id="fileInput" type="file" accept="application/pdf,.pdf" multiple hidden />
+    <div class="dz-inner">
+      <div class="dz-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 16.5V4.8"/><path d="m7.4 9.4 4.6-4.6 4.6 4.6"/>
+          <path d="M4.5 15v3.3A1.7 1.7 0 0 0 6.2 20h11.6a1.7 1.7 0 0 0 1.7-1.7V15"/>
+        </svg>
+      </div>
+      <h1>Tarik file PDF ke sini</h1>
+      <p>atau <button class="linkbtn" id="browseBtn" type="button">pilih file dari perangkat</button></p>
+      <p class="muted small">Bisa beberapa file sekaligus · diproses di browser Anda, tanpa internet</p>
+      <div class="dz-actions">
+        <button class="btn btn-primary" id="pickBtn" type="button">Pilih file PDF</button>
+        <button class="btn btn-ghost" id="demoBtn" type="button">Coba contoh PDF</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ WORKSPACE ============ -->
+  <section id="workspace" class="workspace" hidden>
+    <div class="ws-head">
+      <div>
+        <h2 id="wsTitle">Halaman PDF</h2>
+        <p class="muted small" id="wsSub">Semua halaman terpilih otomatis — klik untuk melepas pilihan.</p>
+      </div>
+      <div class="ws-head-actions">
+        <button class="btn btn-ghost btn-sm" id="addMoreBtn" type="button">+ Tambah file</button>
+        <button class="btn btn-ghost btn-sm danger" id="clearBtn" type="button">Kosongkan</button>
+      </div>
+    </div>
+
+    <div class="layout">
+      <!-- pages -->
+      <div class="col-pages">
+        <div class="selbar">
+          <div class="selbar-left">
+            <span class="chip" id="selInfo">0 halaman dipilih</span>
+            <span class="muted tiny selhint">Klik = pilih · Shift+klik = rentang</span>
+          </div>
+          <div class="selbar-right">
+            <button class="btn btn-tiny" data-sel="all" type="button">Semua</button>
+            <button class="btn btn-tiny" data-sel="none" type="button">Kosong</button>
+            <button class="btn btn-tiny" data-sel="invert" type="button">Balik</button>
+            <button class="btn btn-tiny" data-sel="odd" type="button">Ganjil</button>
+            <button class="btn btn-tiny" data-sel="even" type="button">Genap</button>
+          </div>
+        </div>
+        <div id="files" class="files"></div>
+      </div>
+
+      <!-- sidebar -->
+      <aside class="col-side">
+        <div class="card">
+          <h3 class="card-title">Mode pemisahan</h3>
+
+          <label class="mode">
+            <input type="radio" name="mode" value="extract" checked />
+            <span class="mode-body">
+              <span class="mode-name">Ekstrak halaman terpilih</span>
+              <span class="mode-desc">Halaman yang dipilih digabung jadi satu PDF baru.</span>
+            </span>
+          </label>
+
+          <label class="mode">
+            <input type="radio" name="mode" value="each" />
+            <span class="mode-body">
+              <span class="mode-name">Pisah tiap halaman</span>
+              <span class="mode-desc">Setiap halaman jadi file PDF sendiri (ZIP).</span>
+            </span>
+          </label>
+
+          <label class="mode">
+            <input type="radio" name="mode" value="chunk" />
+            <span class="mode-body">
+              <span class="mode-name">Pisah tiap N halaman</span>
+              <span class="mode-desc">Misal 5 halaman per file (ZIP).</span>
+            </span>
+          </label>
+          <div class="opt-row" id="chunkOpt" hidden>
+            <label for="chunkSize">Halaman per file</label>
+            <input id="chunkSize" type="number" min="1" max="1000" value="5" />
+            <label class="check small"><input type="checkbox" id="chunkUseSel" /> hanya halaman terpilih</label>
+          </div>
+
+          <label class="mode">
+            <input type="radio" name="mode" value="range" />
+            <span class="mode-body">
+              <span class="mode-name">Pisah per rentang kustom</span>
+              <span class="mode-desc">Tentukan sendiri, misal <code>1-3, 4-8, 9</code>.</span>
+            </span>
+          </label>
+          <div class="opt-row" id="rangeOpt" hidden>
+            <input id="rangeInput" type="text" placeholder="1-3, 4-8, 9-12" />
+          </div>
+
+          <label class="mode">
+            <input type="radio" name="mode" value="bookmark" />
+            <span class="mode-body">
+              <span class="mode-name">Pisah per penanda buku</span>
+              <span class="mode-desc">Mengikuti daftar isi / bookmark PDF (ZIP).</span>
+            </span>
+          </label>
+
+          <div class="divider"></div>
+
+          <label class="check">
+            <input type="checkbox" id="autoDownload" checked />
+            <span>Unduh otomatis setelah diproses</span>
+          </label>
+
+          <button class="btn btn-primary btn-block" id="runBtn" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.6v11"/><path d="m7.6 10.4 4.4 4.4 4.4-4.4"/><path d="M4.8 19.4h14.4"/></svg>
+            <span id="runLabel">Proses</span>
+          </button>
+          <p class="muted tiny center" id="runHint">Halaman terpilih belum ada.</p>
+        </div>
+
+        <div class="card" id="resultCard" hidden>
+          <h3 class="card-title">Hasil</h3>
+          <div id="results" class="results"></div>
+          <button class="btn btn-ghost btn-block btn-sm" id="zipAllBtn" type="button" hidden>Unduh semua (.zip)</button>
+        </div>
+
+      </aside>
+    </div>
+  </section>
+
+
+  <!-- ============ MERGE PANEL ============ -->
+  <section id="mergeView" class="merge-view" hidden aria-label="Gabung PDF">
+    <div class="merge-head">
+      <div>
+        <h2>Gabung PDF</h2>
+        <p class="muted small">Kumpulkan beberapa PDF, atur urutannya, lalu gabungkan jadi satu file.</p>
+      </div>
+      <div class="merge-head-actions">
+        <label class="check small merge-opt"><input type="checkbox" id="mergeAutoDl" checked /> unduh otomatis</label>
+      </div>
+    </div>
+
+    <div id="mergeDrop" class="dropzone merge-drop" tabindex="0" aria-label="Tarik file PDF ke sini">
+      <div class="dz-inner compact">
+        <div class="dz-icon sm">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 16.5V4.8"/><path d="m7.4 9.4 4.6-4.6 4.6 4.6"/>
+            <path d="M4.5 15v3.3A1.7 1.7 0 0 0 6.2 20h11.6a1.7 1.7 0 0 0 1.7-1.7V15"/>
+          </svg>
+        </div>
+        <p><strong>Tarik beberapa PDF ke sini</strong> atau <button class="linkbtn" id="mergeBrowseBtn" type="button">pilih file</button></p>
+        <p class="muted tiny">Urutan bisa diubah dengan tombol ▲ ▼ · file tidak diunggah ke server</p>
+      </div>
+    </div>
+
+    <div id="mlist" class="mlist"></div>
+
+    <div class="merge-foot">
+      <div class="merge-stat">
+        <span class="chip" id="mergeInfo">0 file</span>
+        <span class="muted tiny" id="mergePagesInfo">0 halaman total</span>
+      </div>
+      <div class="merge-foot-actions">
+        <button class="btn btn-ghost" id="mergeReverseBtn" type="button">Balik urutan</button>
+        <button class="btn btn-ghost danger" id="mergeClearBtn" type="button">Kosongkan</button>
+        <button class="btn btn-primary" id="mergeRunBtn" type="button" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7h9l-2.5-2.5"/><path d="M16 17H7l2.5 2.5"/><path d="M17 7v10"/></svg>
+          <span>Gabungkan PDF</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="card" id="mergeResultCard" hidden style="margin-top:14px">
+      <h3 class="card-title">Hasil</h3>
+      <div id="mergeResults" class="results"></div>
+    </div>
+  </section>
+
+
+  <!-- ============ COMPRESS PANEL ============ -->
+  <section id="compressView" class="merge-view" hidden aria-label="Kompres PDF">
+    <div class="merge-head">
+      <div>
+        <h2>Kompres PDF</h2>
+        <p class="muted small">Perkecil ukuran file. Pilih mode ringan (teks tetap utuh) atau rasterisasi (paling kecil).</p>
+      </div>
+    </div>
+
+    <div id="compressDrop" class="dropzone merge-drop" tabindex="0" aria-label="Tarik file PDF ke sini">
+      <div class="dz-inner compact">
+        <div class="dz-icon sm">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 16.5V4.8"/><path d="m7.4 9.4 4.6-4.6 4.6 4.6"/>
+            <path d="M4.5 15v3.3A1.7 1.7 0 0 0 6.2 20h11.6a1.7 1.7 0 0 0 1.7-1.7V15"/>
+          </svg>
+        </div>
+        <p><strong>Tarik PDF ke sini</strong> atau <button class="linkbtn" id="compressBrowseBtn" type="button">pilih file</button></p>
+        <p class="muted tiny">Bisa beberapa file sekaligus · semua diproses di browser</p>
+      </div>
+    </div>
+
+    <div id="clist" class="mlist"></div>
+
+    <div class="card" id="compressOpts" hidden>
+      <h3 class="card-title">Tingkat kompresi</h3>
+      <div class="presets">
+        <label class="preset">
+          <input type="radio" name="clevel" value="lossless" />
+          <span class="preset-body">
+            <span class="preset-name">Ringan <span class="tag-soft">teks utuh</span></span>
+            <span class="preset-desc">Optimasi struktur file, tanpa mengubah kualitas. Cocok bila PDF berisi teks penting.</span>
+          </span>
+        </label>
+        <label class="preset">
+          <input type="radio" name="clevel" value="balanced" checked />
+          <span class="preset-body">
+            <span class="preset-name">Seimbang <span class="tag-soft">disarankan</span></span>
+            <span class="preset-desc">Halaman dirasterisasi 150 DPI, kualitas baik, ukuran jauh lebih kecil.</span>
+          </span>
+        </label>
+        <label class="preset">
+          <input type="radio" name="clevel" value="strong" />
+          <span class="preset-body">
+            <span class="preset-name">Kuat</span>
+            <span class="preset-desc">Rasterisasi 110 DPI, ukuran paling kecil, detail menurun.</span>
+          </span>
+        </label>
+        <label class="preset">
+          <input type="radio" name="clevel" value="custom" />
+          <span class="preset-body">
+            <span class="preset-name">Kustom</span>
+            <span class="preset-desc">Atur sendiri resolusi dan kualitas gambar.</span>
+          </span>
+        </label>
+      </div>
+
+      <div class="sliders" id="customOpts" hidden>
+        <label class="slider-row">
+          <span>Resolusi <b id="dpiVal">150 DPI</b></span>
+          <input type="range" id="dpiRange" min="72" max="300" step="6" value="150" />
+        </label>
+        <label class="slider-row">
+          <span>Kualitas gambar <b id="qVal">70%</b></span>
+          <input type="range" id="qRange" min="30" max="95" step="5" value="70" />
+        </label>
+      </div>
+
+      <label class="check" style="margin-top:12px"><input type="checkbox" id="grayChk" /> Ubah ke hitam-putih (grayscale)</label>
+      <label class="check" style="margin-top:8px"><input type="checkbox" id="compressAutoDl" checked /> Unduh otomatis setelah selesai</label>
+      <p class="muted tiny" id="compressNote" style="margin-top:10px"></p>
+    </div>
+
+    <div class="merge-foot" id="compressFoot" hidden>
+      <div class="merge-stat">
+        <span class="chip" id="compressInfo">0 file</span>
+        <span class="muted tiny" id="compressPagesInfo"></span>
+      </div>
+      <div class="merge-foot-actions">
+        <button class="btn btn-ghost danger" id="compressClearBtn" type="button">Kosongkan</button>
+        <button class="btn btn-primary" id="compressRunBtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4.5v11"/><path d="m7.6 11 4.4 4.4 4.4-4.4"/><path d="M4.8 19.4h14.4"/></svg>
+          <span>Kompres sekarang</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="card" id="compressResultCard" hidden>
+      <h3 class="card-title">Hasil</h3>
+      <div class="saving" id="savingBar" hidden>
+        <div class="saving-text"><b id="savingPct">0%</b> lebih kecil <span class="muted tiny" id="savingAbs"></span></div>
+        <div class="saving-track"><div id="savingFill"></div></div>
+      </div>
+      <div id="compressResults" class="results"></div>
+      <button class="btn btn-ghost btn-block btn-sm" id="compressZipBtn" type="button" hidden>Unduh semua (.zip)</button>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <span>Pemisah PDF · dibuat dengan pdf-lib &amp; pdf.js</span>
+    <span class="dot">•</span>
+    <span>Jika unduhan diblokir di pratinjau, buka file HTML ini langsung di browser Anda.</span>
+  </footer>
+</main>
+
+<input id="mergeInput" type="file" accept="application/pdf,.pdf" multiple hidden />
+<input id="compressInput" type="file" accept="application/pdf,.pdf" multiple hidden />
+<div id="toasts" class="toasts" aria-live="polite"></div>
+
+<div id="overlay" class="overlay" hidden>
+  <div class="loader-card">
+    <div class="spinner"></div>
+    <p id="overlayText">Memproses…</p>
+    <div class="progress"><div id="progressBar"></div></div>
+  </div>
+</div>
+
+<script src="vendor/pdf-lib.min.js"></script>
+<script src="vendor/jszip.min.js"></script>
+<script src="vendor/pdf.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
