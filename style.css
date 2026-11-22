@@ -667,3 +667,171 @@ code{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;
   .slider-row input[type=range]{height:32px}
   .chip{min-height:32px;display:inline-flex;align-items:center}
 }
+
+/* ============================================================
+   Menu alat + ruang kerja alat
+   ============================================================ */
+.tools-view{padding-bottom:26px}
+.tools-head{margin:6px 0 18px}
+.tools-head h2{margin:0 0 4px;font-size:20px}
+
+.tool-cat{margin:0 0 26px}
+.tool-cat-title{
+  margin:0 0 10px;font-size:12px;font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ink-3);
+}
+.tool-grid{
+  display:grid;gap:10px;
+  grid-template-columns:repeat(auto-fill,minmax(230px,1fr));
+}
+.tool-card{
+  display:flex;flex-direction:column;gap:4px;text-align:left;
+  padding:14px;border:1px solid var(--line);border-radius:12px;
+  background:var(--surface);cursor:pointer;color:var(--ink);
+  transition:border-color .15s,box-shadow .15s,transform .15s;
+}
+.tool-card:hover{border-color:var(--brand);box-shadow:0 4px 14px rgba(0,0,0,.07);transform:translateY(-1px)}
+.tool-card:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.tool-ic{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:34px;height:34px;border-radius:9px;margin-bottom:4px;
+  background:var(--brand-soft);color:var(--brand-dark);
+}
+.tool-ic svg{width:19px;height:19px}
+.tool-name{font-weight:600;font-size:14.5px}
+.tool-desc{font-size:12.5px;color:var(--ink-2);line-height:1.45}
+
+/* ---------- ruang kerja ---------- */
+.tool-view{padding-bottom:26px}
+.tool-head{margin:4px 0 16px;display:flex;flex-direction:column;gap:10px}
+.tool-head-main{display:flex;align-items:flex-start;gap:12px}
+.tool-head-ic{
+  display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;
+  width:38px;height:38px;border-radius:10px;background:var(--brand-soft);color:var(--brand-dark);
+}
+.tool-head-ic svg{width:21px;height:21px}
+.tool-head h2{margin:0 0 2px;font-size:19px}
+.tool-head-main .muted{max-width:70ch}
+
+.tool-layout{
+  display:grid;gap:16px;align-items:start;
+  grid-template-columns:minmax(0,1fr) 320px;
+}
+.tool-main{min-width:0}
+.tool-drop{margin-bottom:12px}
+.tool-drop.over{border-color:var(--brand);background:var(--brand-soft)}
+.tool-file-list{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+.tool-file{
+  display:flex;align-items:center;gap:10px;
+  padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);
+}
+.tf-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13.5px}
+.tf-size{font-size:12px;color:var(--ink-3);white-space:nowrap}
+.tf-remove{
+  flex:0 0 auto;width:26px;height:26px;border-radius:7px;border:1px solid var(--line);
+  background:var(--surface-2);color:var(--ink-2);cursor:pointer;font-size:15px;line-height:1;
+}
+.tf-remove:hover{background:var(--danger-soft);color:var(--red);border-color:var(--danger-line)}
+
+/* ---------- opsi ---------- */
+.tool-field{margin-bottom:12px}
+.tool-label{display:block;font-size:12.5px;font-weight:600;color:var(--ink-2);margin-bottom:5px}
+.tool-field input[type=text],
+.tool-field input[type=password],
+.tool-field input[type=number],
+.tool-field select,
+.tool-field textarea,
+.forms-grid input[type=text],
+.forms-grid select{
+  width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;
+  background:var(--surface);color:var(--ink);font:inherit;font-size:13.5px;
+}
+.tool-field input:focus,.tool-field select:focus,.tool-field textarea:focus{
+  outline:2px solid var(--brand);outline-offset:1px;border-color:var(--brand);
+}
+.tool-field textarea{resize:vertical}
+.tool-field input[type=range]{width:100%;accent-color:var(--brand)}
+.tool-field input[type=color]{
+  width:46px;height:32px;padding:2px;border:1px solid var(--line);border-radius:8px;background:var(--surface);
+}
+.tool-range-val{float:right;font-size:12px;color:var(--ink-3);font-weight:600}
+.tool-check{display:flex;align-items:flex-start;gap:8px;margin-bottom:9px;font-size:13px;cursor:pointer;line-height:1.4}
+.tool-check input{width:17px;height:17px;accent-color:var(--brand);flex:0 0 auto;margin-top:1px}
+.tool-warn{
+  margin:8px 0;padding:10px 12px;border-radius:9px;font-size:13px;
+  background:var(--danger-soft);color:var(--red);border:1px solid var(--danger-line);
+}
+
+/* ---------- susun pdf ---------- */
+.organize-wrap{margin-top:6px}
+.organize-bar{display:flex;align-items:center;gap:10px;margin:8px 0 10px}
+.organize-grid{
+  display:grid;gap:10px;
+  grid-template-columns:repeat(auto-fill,minmax(130px,1fr));
+}
+.org-cell{
+  position:relative;border:1px solid var(--line);border-radius:10px;overflow:hidden;
+  background:var(--surface-2);padding:6px;
+}
+.org-cell.deleted{opacity:.35;filter:grayscale(1)}
+.org-cell img{width:100%;display:block;border-radius:6px;background:#fff}
+.org-num{
+  position:absolute;top:10px;left:10px;background:rgba(15,23,42,.75);color:#fff;
+  font-size:11px;font-weight:700;border-radius:6px;padding:1px 6px;
+}
+.org-acts{
+  display:flex;gap:3px;margin-top:6px;justify-content:center;
+}
+.org-btn{
+  flex:1;min-width:0;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);
+  border-radius:7px;padding:4px 0;font-size:12px;cursor:pointer;
+}
+.org-btn:hover{background:var(--surface-2);color:var(--ink)}
+
+/* ---------- formulir ---------- */
+.forms-grid{display:flex;flex-direction:column;gap:10px;margin-top:8px}
+.form-row{display:flex;flex-direction:column;gap:4px}
+
+/* ---------- tanda tangan ---------- */
+.sign-pad{
+  width:100%;max-width:640px;height:auto;aspect-ratio:640/220;
+  border:1px dashed var(--line);border-radius:10px;background:#fff;cursor:crosshair;touch-action:none;
+}
+.sign-actions{display:flex;gap:8px;margin-top:8px}
+
+/* ---------- redaksi ---------- */
+.redact-list{display:flex;flex-direction:column;gap:4px;margin-top:8px;max-height:260px;overflow:auto}
+.redact-row{
+  display:flex;gap:8px;align-items:baseline;padding:6px 9px;border-radius:8px;
+  background:var(--surface-2);font-size:12.5px;
+}
+.rr-page{font-weight:700;color:var(--ink-3);white-space:nowrap}
+.rr-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-2)}
+
+/* ---------- html ---------- */
+.html-frame{margin-top:10px}
+.html-frame iframe{border-radius:10px}
+
+/* ---------- pindai ---------- */
+.scan-video{width:100%;max-width:420px;border-radius:10px;margin-top:10px;background:#000}
+.scan-actions{display:flex;gap:8px;margin-top:8px}
+
+/* ---------- responsif ---------- */
+@media (max-width:900px){
+  .tool-layout{grid-template-columns:minmax(0,1fr)}
+  .tool-grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+  .tool-card{padding:12px}
+}
+@media (max-width:640px){
+  .tool-grid{grid-template-columns:1fr 1fr;gap:8px}
+  .tool-card{padding:11px}
+  .tool-name{font-size:13.5px}
+  .tool-desc{font-size:11.5px}
+  .tool-ic{width:30px;height:30px}
+  .tool-ic svg{width:17px;height:17px}
+  .organize-grid{grid-template-columns:repeat(auto-fill,minmax(104px,1fr))}
+  .tool-field input[type=text],.tool-field select,.tool-field textarea{padding:11px}
+  .tool-field input[type=number]{padding:11px}
+  .btn, .tool-card{min-height:44px}
+  .tf-remove{width:34px;height:34px}
+}

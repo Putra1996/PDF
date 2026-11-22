@@ -1,0 +1,222 @@
+/* ============================================================
+   Inti toolkit PDF — helper yang dipakai semua alat.
+   Semua tetap berjalan di browser (tanpa server).
+   ============================================================ */
+(function () {
+  "use strict";
+
+  const L = window.PDFLib;
+  const {
+    PDFDocument, PDFName, PDFNumber, PDFArray, PDFString, PDFHexString, PDFRef,
+    PDFRawStream, PDFBool, PDFDict, PDFInvalidObject,
+    rgb, degrees, StandardFonts,
+  } = L;
+
+  /* ---------- mendaftarkan alat ---------- */
+  const registry = [];
+  function register(tool) {
+    registry.push(tool);
+    return tool;
+  }
+
+  /* ---------- util umum ---------- */
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+
+  function fmtSize(b) {
+    if (!Number.isFinite(b)) return "-";
+    if (b < 1024) return b + " B";
+    if (b < 1048576) return (b / 1024).toFixed(0) + " KB";
+    return (b / 1048576).toFixed(1) + " MB";
+  }
+
+  function baseName(n) {
+    return String(n || "dokumen").replace(/\.[a-z0-9]+$/i, "") || "dokumen";
+  }
+
+  function safeName(s) {
+    return String(s || "dokumen").replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, " ").trim() || "dokumen";
+  }
+
+  function looksLikePdf(bytes) {
+    if (!bytes || bytes.length < 5) return false;
+    const n = Math.min(bytes.length, 1024);
+    for (let i = 0; i + 4 < n; i++) {
+      if (bytes[i] === 0x25 && bytes[i + 1] === 0x50 && bytes[i + 2] === 0x44 && bytes[i + 3] === 0x46 && bytes[i + 4] === 0x2d) return true;
+    }
+    return false;
+  }
+
+  /* ---------- PDF (pdf-lib) ---------- */
+  async function loadDoc(bytes, opts) {
+    return PDFDocument.load(bytes, Object.assign({
+      updateMetadata: false,
+      throwOnInvalidObject: false,
+    }, opts || {}));
+  }
+
+  async function saveDoc(doc, opts) {
+    return doc.save(Object.assign({ useObjectStreams: true, addDefaultPage: false }, opts || {}));
+  }
+
+  /* ---------- PDF (pdf.js) ---------- */
+  function pdfjsTask(bytes, extra) {
+    return pdfjsLib.getDocument(Object.assign({
+      data: bytes.slice(0),
+      isEvalSupported: false,
+    }, extra || {}));
+  }
+
+  async function openPdfjs(bytes, extra) {
+    const task = pdfjsTask(bytes, extra);
+    return task.promise;
+  }
+
+  async function renderPage(pdfDoc, pageNo, scale, opts) {
+    const page = await pdfDoc.getPage(pageNo);
+    const vp = page.getViewport({ scale: scale || 1 });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.ceil(vp.width));
+    canvas.height = Math.max(1, Math.ceil(vp.height));
+    const ctx = canvas.getContext("2d", { alpha: false });
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (!(opts && opts.skipRender)) {
+      await page.render({ canvasContext: ctx, viewport: vp }).promise;
+    }
+    return { canvas, ctx, viewport: vp, page };
+  }
+
+  async function canvasToBytes(canvas, type, quality) {
+    const mime = type || "image/jpeg";
+    const blob = await new Promise((res) => canvas.toBlob(res, mime, quality == null ? 0.92 : quality));
+    if (!blob) throw new Error("Gagal mengubah halaman menjadi gambar.");
+    return new Uint8Array(await blob.arrayBuffer());
+  }
+
+  /* Teks per halaman + posisi (untuk nomor halaman, redaksi, ringkasan). */
+  async function extractText(pdfDoc, pageNo) {
+    const page = await pdfDoc.getPage(pageNo);
+    const tc = await page.getTextContent();
+    const items = [];
+    for (const it of tc.items) {
+      if (!it.str) continue;
+      const tr = it.transform || [1, 0, 0, 1, 0, 0];
+      items.push({
+        str: it.str,
+        x: tr[4],
+        y: tr[5],
+        w: it.width || 0,
+        h: it.height || Math.abs(tr[3]) || 10,
+        dir: it.dir || "ltr",
+        font: it.fontName || "",
+      });
+    }
+    return items;
+  }
+
+  async function pageText(pdfDoc, pageNo) {
+    const items = await extractText(pdfDoc, pageNo);
+    return items.map((i) => i.str).join(" ").replace(/\s+/g, " ").trim();
+  }
+
+  /* ---------- gambar ---------- */
+  async function decodeImage(bytes, mime) {
+    const blob = new Blob([bytes], { type: mime || "" });
+    if (window.createImageBitmap) {
+      try {
+        return await createImageBitmap(blob);
+      } catch (_) { /* lanjut ke jalur <img> */ }
+    }
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Gambar tidak bisa dibaca.")); };
+      img.src = url;
+    });
+  }
+
+  /* ---------- ZIP ---------- */
+  async function makeZip(entries) {
+    const zip = new JSZip();
+    for (const e of entries) {
+      zip.file(e.name, e.blob != null ? e.blob : e.bytes);
+    }
+    return zip.generateAsync({ type: "blob", compression: "DEFLATE", compressionOptions: { level: 6 } });
+  }
+
+  /* ---------- font ---------- */
+  const fontCache = new Map();
+  async function getFont(doc, kind) {
+    if (!fontCache.has(kind)) fontCache.set(kind, doc.embedFont(StandardFonts[kind || "Helvetica"]));
+    return fontCache.get(kind);
+  }
+  /* Font harus di-embed per dokumen, jadi cache per dokumen. */
+  const docFonts = new WeakMap();
+  async function fontFor(doc, kind) {
+    let m = docFonts.get(doc);
+    if (!m) { m = new Map(); docFonts.set(doc, m); }
+    const k = kind || "Helvetica";
+    if (!m.has(k)) m.set(k, await doc.embedFont(StandardFonts[k]));
+    return m.get(k);
+  }
+
+  /* Menulis teks; bila font standar tidak bisa (_"Helvetica" tidak punya
+     karakter itu) kembalikan false supaya pemanggil bisa memberi
+     tahu pengguna, bukan meledak dengan error internal. */
+  async function drawTextSafe(page, text, opts) {
+    if (!text) return true;
+    const doc = page.doc;
+    const font = await fontFor(doc, opts.font || "Helvetica");
+    try {
+      page.drawText(text, Object.assign({ font, size: 12, color: rgb(0, 0, 0) }, opts, { font }));
+      return true;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  /* ---------- ukuran halaman ---------- */
+  const MM = 72 / 25.4;
+  const A4 = { w: 595.28, h: 841.89 };
+  const LETTER = { w: 612, h: 792 };
+
+  function pageSizeName(w, h) {
+    if (Math.abs(w - A4.w) < 3 && Math.abs(h - A4.h) < 3) return "A4";
+    if (Math.abs(w - LETTER.w) < 3 && Math.abs(h - LETTER.h) < 3) return "Letter";
+    return "custom";
+  }
+
+  /* ---------- kurangi ukuran stream ---------- */
+  function compactBytes(bytes) {
+    return bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  }
+
+  /* ---------- daftar sah untuk color input ---------- */
+  function parseColor(v, fallback) {
+    const s = String(v || "").trim();
+    const m = /^#?([0-9a-f]{6})$/i.exec(s);
+    if (m) {
+      const n = parseInt(m[1], 16);
+      return rgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
+    }
+    const named = {
+      hitam: [0, 0, 0], putih: [1, 1, 1], merah: [0.85, 0.2, 0.2], biru: [0.2, 0.4, 0.85],
+      hijau: [0.15, 0.6, 0.3], kuning: [0.95, 0.8, 0.15], abu: [0.5, 0.5, 0.5], oranye: [0.95, 0.55, 0.15],
+    }[s.toLowerCase()];
+    if (named) return rgb(named[0], named[1], named[2]);
+    return fallback || rgb(0, 0, 0);
+  }
+
+  window.PDFToolsCore = {
+    L, PDFDocument, PDFName, PDFNumber, PDFArray, PDFString, PDFHexString, PDFRef,
+    PDFRawStream, PDFBool, PDFDict, PDFInvalidObject,
+    rgb, degrees, StandardFonts,
+    registry, register, tick,
+    fmtSize, baseName, safeName, looksLikePdf,
+    loadDoc, saveDoc, pdfjsTask, openPdfjs, renderPage, canvasToBytes,
+    extractText, pageText, decodeImage, makeZip,
+    fontFor, drawTextSafe, getFont,
+    MM, A4, LETTER, pageSizeName, compactBytes, parseColor,
+  };
+})();
