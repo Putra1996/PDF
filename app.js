@@ -7,8 +7,10 @@
 
   const { PDFDocument } = PDFLib;
 
-  /* ---------- kredit aplikasi ---------- */
-  const CREDIT = "Pemisah PDF by Putra";
+  /* ---------- identitas perangkat lunak di metadata PDF ----------
+     Kredit "by Putra" sengaja hanya tampil di antarmuka web
+     (header + footer), tidak ditulis ke dalam file PDF. */
+  const PRODUCER = "Pemisah PDF";
 
   /* ---------- pdf.js worker ---------- */
   if (window.pdfjsLib) {
@@ -816,8 +818,8 @@
   async function buildPdf(pages) {
     if (!pages.length) throw new Error("Tidak ada halaman untuk ditulis.");
     const out = await PDFDocument.create();
-    out.setProducer(CREDIT);
-    out.setCreator(CREDIT + " (pdf-lib)");
+    out.setProducer(PRODUCER);
+    out.setCreator(PRODUCER + " (pdf-lib)");
     out.setCreationDate(new Date());
 
     // Kelompokkan per file agar copyPages efisien, tetapi urutan
@@ -1518,8 +1520,8 @@
     showOverlay("Menggabungkan PDF…");
     try {
       const out = await PDFDocument.create();
-      out.setProducer("Pemisah PDF");
-      out.setCreator("Pemisah PDF (pdf-lib)");
+      out.setProducer(PRODUCER);
+      out.setCreator(PRODUCER + " (pdf-lib)");
       out.setCreationDate(new Date());
 
       const totalPages = merge.files.reduce((n, f) => n + f.pageCount, 0);

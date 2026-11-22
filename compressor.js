@@ -34,7 +34,10 @@
     PDFNumber,
   } = L;
 
-  const CREDIT = "Pemisah PDF by Putra";
+  /* Nama perangkat lunak yang ditulis ke metadata PDF.
+     Catatan: kredit "by Putra" sengaja TIDAK ditulis ke dalam file PDF —
+     kredit hanya tampil di antarmuka web, sesuai permintaan pemilik. */
+  const PRODUCER = "Pemisah PDF";
   const MAX_INLINE_FORM_DEPTH = 5;
 
   /* ============================================================
@@ -551,8 +554,8 @@
         for (const key of ["Title", "Author", "Subject", "Keywords", "CreationDate", "ModDate", "Trapped"]) {
           info.delete(PDFName.of(key));
         }
-        info.set(PDFName.of("Producer"), PDFString.of(CREDIT));
-        info.set(PDFName.of("Creator"), PDFString.of(CREDIT));
+        info.set(PDFName.of("Producer"), PDFString.of(PRODUCER));
+        info.set(PDFName.of("Creator"), PDFString.of(PRODUCER));
       }
     } catch (_) {
       /* metadata opsional */
@@ -945,8 +948,8 @@
     }).promise;
 
     const out = await PDFDocument.create();
-    out.setProducer(CREDIT);
-    out.setCreator(CREDIT);
+    out.setProducer(PRODUCER);
+    out.setCreator(PRODUCER);
     out.setCreationDate(new Date());
 
     const total = src.numPages;
@@ -1175,7 +1178,7 @@
 
   global.PDFCompressor = {
     compress,
-    CREDIT,
+    PRODUCER,
     // dipakai untuk pengujian internal
     _internals: {
       collectPlacements,
