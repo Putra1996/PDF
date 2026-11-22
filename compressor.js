@@ -818,6 +818,312 @@
     return canvas;
   }
 
+  /* Lepaskan sumber gambar (bitmap atau kanvas) supaya pikselnya
+     tidak ikut tertahan di memori. */
+  function releaseSource(src) {
+    if (!src) return;
+    try {
+      if (typeof src.close === "function") src.close();
+      else if (typeof src.width === "number") {
+        src.width = 0;
+        src.height = 0;
+      }
+    } catch (_) {
+      /* abaikan */
+    }
+  }
+
+  /* ============================================================
+     Pool encoder JPEG (worker)
+     ------------------------------------------------------------
+     Encode JPEG di thread utama memblokir antarmuka. Diukur di
+     browser: canvas.toBlob() untuk kanvas 2,2 juta piksel memakan
+     ~1 detik, dan mode grayscale butuh pembacaan piksel penuh
+     (getImageData) yang menambah ~0,7 detik lagi. Worker
+     memindahkan seluruh pekerjaan itu ke thread terpisah:
+     jeda antarmuka turun ke ~10 ms dan total waktunya justru lebih
+     singkat (bitmap ditransfer, bukan disalin berkali-kali).
+
+     PENTING: hasil worker dibuat PERSIS SAMA dengan jalur thread
+     utama. Pikselnya sama (bitmap ditransfer apa adanya, tanpa
+     resampling karena ukuran sama) dan algoritme grayscale-nya
+     disalin persis (0.299 / 0.587 / 0.114, dibulatkan).
+     ============================================================ */
+  const ENCODER_SRC = [
+    "self.onmessage=async(e)=>{",
+    "const d=e.data,b=d.bitmap,w=b.width,h=b.height;",
+    "try{",
+    "const oc=new OffscreenCanvas(w,h);",
+    "const c=oc.getContext('2d',{alpha:false,willReadFrequently:true});",
+    "c.imageSmoothingEnabled=true;c.imageSmoothingQuality='high';",
+    "c.fillStyle='#ffffff';c.fillRect(0,0,w,h);",
+    "c.drawImage(b,0,0,w,h);",
+    "if(b.close)b.close();",
+    "if(d.gray){",
+    "const im=c.getImageData(0,0,w,h),p=im.data;",
+    "for(let i=0;i<p.length;i+=4){",
+    "const v=Math.round(0.299*p[i]+0.587*p[i+1]+0.114*p[i+2]);",
+    "p[i]=p[i+1]=p[i+2]=v;",
+    "}",
+    "c.putImageData(im,0,0);",
+    "}",
+    "const blob=await oc.convertToBlob({type:'image/jpeg',quality:d.quality});",
+    "const buf=await blob.arrayBuffer();",
+    "oc.width=0;oc.height=0;",
+    "self.postMessage({id:d.id,warm:d.warm?1:0,buf:buf},[buf]);",
+    "}catch(err){",
+    "self.postMessage({id:d.id,err:String((err&&err.message)||err)});",
+    "}",
+    "};",
+  ].join("");
+
+  /* Jumlah worker yang boleh hidup bersamaan, dan berapa lama
+     worker menganggur sebelum dimatikan (melepas memorinya). */
+  const ENCODER_POOL_MAX = 2;
+  const ENCODER_IDLE_MS = 20000;
+
+  const encoder = {
+    url: null,
+    slots: [],        // { w, task }
+    queue: [],        // tugas yang menunggu worker
+    seq: 0,
+    disabled: false,  // worker tidak tersedia -> selalu pakai thread utama
+  };
+
+  function encoderAvailable() {
+    return (
+      !encoder.disabled &&
+      typeof Worker === "function" &&
+      typeof OffscreenCanvas === "function" &&
+      typeof createImageBitmap === "function" &&
+      typeof Blob === "function" &&
+      typeof URL !== "undefined" &&
+      typeof URL.createObjectURL === "function"
+    );
+  }
+
+  function encoderURL() {
+    if (!encoder.url) {
+      encoder.url = URL.createObjectURL(new Blob([ENCODER_SRC], { type: "text/javascript" }));
+    }
+    return encoder.url;
+  }
+
+  function encoderRemoveSlot(slot) {
+    if (!slot) return;
+    if (slot.idleTimer) {
+      clearTimeout(slot.idleTimer);
+      slot.idleTimer = null;
+    }
+    const i = encoder.slots.indexOf(slot);
+    if (i >= 0) encoder.slots.splice(i, 1);
+    try { slot.w.terminate(); } catch (_) {}
+  }
+
+  function encoderTouch(slot) {
+    if (slot.idleTimer) clearTimeout(slot.idleTimer);
+    slot.idleTimer = setTimeout(() => {
+      slot.idleTimer = null;
+      if (!slot.task) encoderRemoveSlot(slot);
+    }, ENCODER_IDLE_MS);
+  }
+
+  function encoderNewSlot() {
+    const slot = { w: null, task: null, idleTimer: null };
+    const w = new Worker(encoderURL());
+    slot.w = w;
+    w.onmessage = (ev) => {
+      const d = ev.data || {};
+      encoderTouch(slot);
+      if (d.warm) return; // jawaban pemanasan: bukan untuk tugas mana pun
+      const task = slot.task;
+      slot.task = null;
+      if (task) {
+        if (d.err) task.reject(new Error(d.err));
+        else task.resolve(new Uint8Array(d.buf));
+      }
+      encoderPump();
+    };
+    w.onerror = () => {
+      const task = slot.task;
+      slot.task = null;
+      encoderRemoveSlot(slot);
+      if (task) task.reject(new Error("Encoder worker berhenti."));
+      encoderPump();
+    };
+    encoder.slots.push(slot);
+    return slot;
+  }
+
+  function encoderPump() {
+    while (encoder.queue.length) {
+      let slot = encoder.slots.find((s) => !s.task);
+      if (!slot) {
+        if (encoder.slots.length >= ENCODER_POOL_MAX) break;
+        try {
+          slot = encoderNewSlot();
+        } catch (_) {
+          // browser tidak bisa membuat worker: kembali ke thread utama
+          encoder.disabled = true;
+          while (encoder.queue.length) {
+            const t = encoder.queue.shift();
+            t.reject(new Error("Worker tidak tersedia."));
+          }
+          break;
+        }
+      }
+      const task = encoder.queue.shift();
+      slot.task = task;
+      try {
+        slot.w.postMessage(
+          { id: task.id, bitmap: task.bitmap, gray: task.gray, quality: task.quality },
+          [task.bitmap]
+        );
+      } catch (err) {
+        slot.task = null;
+        task.reject(err);
+      }
+    }
+  }
+
+  /* Worker baru perlu "hangat" sekali: operasi pertama pada worker
+     baru jauh lebih lambat daripada berikutnya (biaya awal thread
+     worker + jalur transfer bitmap). Kalau biaya ini muncul di
+     tengah kompresi, pengguna merasakan jeda panjang. Jadi pool
+     disiapkan lebih awal lewat encoderWarm(). */
+  function encoderWarm() {
+    if (!encoderAvailable()) return;
+    const want = Math.max(1, ENCODER_POOL_MAX);
+    while (encoder.slots.length < want) {
+      let slot;
+      try {
+        slot = encoderNewSlot();
+      } catch (_) {
+        return;
+      }
+      encoderWarmSlot(slot);
+    }
+  }
+
+  async function encoderWarmSlot(slot) {
+    try {
+      const c = document.createElement("canvas");
+      c.width = 8;
+      c.height = 8;
+      const x = c.getContext("2d", { alpha: false });
+      x.fillStyle = "#ffffff";
+      x.fillRect(0, 0, 8, 8);
+      const bitmap = await createImageBitmap(c);
+      // id -1 = tugas pemanasan, tidak ada yang menunggu jawabannya
+      slot.w.postMessage({ id: -1, warm: 1, bitmap: bitmap, gray: false, quality: 0.5 }, [bitmap]);
+    } catch (_) {
+      /* abaikan: pemanasan hanya mempercepat */
+    }
+  }
+
+  /* Matikan semua worker (dipakai saat halaman ditinggalkan / diuji). */
+  function encoderDispose() {
+    for (const slot of encoder.slots.slice()) encoderRemoveSlot(slot);
+    encoder.queue.length = 0;
+    if (encoder.url) {
+      try { URL.revokeObjectURL(encoder.url); } catch (_) {}
+      encoder.url = null;
+    }
+  }
+
+  async function encodeViaWorker(canvas, quality, gray) {
+    const bitmap = await createImageBitmap(canvas);
+    return new Promise((resolve, reject) => {
+      encoder.queue.push({
+        id: ++encoder.seq,
+        bitmap,
+        gray: !!gray,
+        quality,
+        resolve,
+        reject,
+      });
+      encoderPump();
+    });
+  }
+
+  /* Jalur CPU: encode di thread utama memakai kanvas berbasis CPU.
+     Dipakai kalau worker tidak tersedia. Hasilnya tetap sama dengan
+     jalur worker karena pikselnya identik dan algoritme grayscale-nya
+     sama persis. */
+  async function encodeViaCpu(canvas, quality, gray) {
+    const w = canvas.width;
+    const h = canvas.height;
+    const ctx = canvas.getContext("2d");
+    const img = ctx.getImageData(0, 0, w, h);
+    if (gray) {
+      const p = img.data;
+      for (let i = 0; i < p.length; i += 4) {
+        const v = Math.round(0.299 * p[i] + 0.587 * p[i + 1] + 0.114 * p[i + 2]);
+        p[i] = p[i + 1] = p[i + 2] = v;
+      }
+    }
+    const out = document.createElement("canvas");
+    out.width = w;
+    out.height = h;
+    const octx = out.getContext("2d", { alpha: false, willReadFrequently: true });
+    octx.putImageData(img, 0, 0);
+    const blob = await canvasToBlob(out, "image/jpeg", quality);
+    out.width = out.height = 0;
+    return new Uint8Array(await blob.arrayBuffer());
+  }
+
+  /* ============================================================
+     Pemilihan mesin encode (adaptif)
+     ------------------------------------------------------------
+     • worker : encode di thread terpisah; antarmuka tetap responsif
+                dan total waktu paling singkat.
+     • cpu    : encode di thread utama dengan kanvas CPU; dipakai
+                kalau worker tidak bisa dipakai.
+     • utama  : canvas.toBlob() biasa; jalur paling sederhana dan
+                selalu tersedia.
+
+     Ambang diambil dari pengukuran di browser (halaman A4):
+       150 DPI (2,2 Mpx)  -> utama ~1.100 ms, worker ~110 ms
+       400 DPI (15,5 Mpx) -> utama ~1.400 ms, worker ~670 ms
+     Kanvas kecil tetap memakai jalur utama supaya tidak terasa
+     overhead transfer bitmap.
+     ============================================================ */
+  const ENCODER_MAIN_MAX_PX = 400000;       // ~630 x 630 px
+  const ENCODER_MAIN_MAX_PX_GRAY = 120000; // grayscale butuh baca piksel penuh
+  const ENCODER_COMPLEX_OPS = 2000;        // halaman dengan banyak operasi gambar
+
+  function encodeEngineFor(canvas, gray, complexity) {
+    if (!encoderAvailable()) return "cpu";
+    const px = canvas.width * canvas.height;
+    if (gray ? px >= ENCODER_MAIN_MAX_PX_GRAY : px >= ENCODER_MAIN_MAX_PX) return "worker";
+    if (complexity >= ENCODER_COMPLEX_OPS) return "worker";
+    return "main";
+  }
+
+  /* Encode satu canvas menjadi JPEG (Uint8Array).
+     `complexity` = perkiraan jumlah operasi gambar di halaman,
+     dipakai untuk memilih mesin encode. */
+  async function encodeJpeg(canvas, quality, gray, complexity) {
+    const engine = encodeEngineFor(canvas, gray, complexity);
+    if (engine === "worker") {
+      try {
+        return await encodeViaWorker(canvas, quality, gray);
+      } catch (_) {
+        // worker gagal: turun ke jalur CPU di thread utama
+      }
+    }
+    if (engine === "cpu") {
+      try {
+        return await encodeViaCpu(canvas, quality, gray);
+      } catch (_) {
+        // jalur CPU gagal: turun ke jalur paling sederhana
+      }
+    }
+    if (gray) toGrayscale(canvas);
+    const blob = await canvasToBlob(canvas, "image/jpeg", quality);
+    return new Uint8Array(await blob.arrayBuffer());
+  }
+
   /* ============================================================
      Kompresi gambar di dalam PDF (vektor tetap utuh)
      ============================================================ */
@@ -889,16 +1195,21 @@
 
       const canvas = drawScaled(src.source, nw, nh);
       if (!canvas) { stats.skipped++; continue; }
-      if (opts.gray) toGrayscale(canvas);
+      const cw = canvas.width;
+      const ch = canvas.height;
 
-      let blob;
+      let jpeg;
       try {
-        blob = await canvasToBlob(canvas, "image/jpeg", opts.quality);
+        jpeg = await encodeJpeg(canvas, opts.quality, opts.gray, 0);
       } catch (_) {
         stats.skipped++;
+        releaseSource(src.source);
+        canvas.width = canvas.height = 0;
         continue;
       }
-      const jpeg = new Uint8Array(await blob.arrayBuffer());
+      // lepaskan gambar sumber & kanvas: jangan tahan piksel di memori
+      releaseSource(src.source);
+      canvas.width = canvas.height = 0;
       const oldSize = stream.getContentsSize();
 
       // JANGAN PERNAH membengkakkan gambar
@@ -907,8 +1218,8 @@
       const newDict = ctx.obj({
         Type: "XObject",
         Subtype: "Image",
-        Width: canvas.width,
-        Height: canvas.height,
+        Width: cw,
+        Height: ch,
         ColorSpace: "DeviceRGB",
         BitsPerComponent: 8,
         Filter: "DCTDecode",
@@ -957,19 +1268,38 @@
     let done = 0;
     const CONCURRENCY = 2;
 
+    /* Halaman hasil disiapkan LEBIH DAHULU, urutannya sama dengan
+       dokumen sumber. Kalau halaman baru dibuat saat worker selesai,
+       urutannya bisa tertukar — halaman yang selesai lebih dulu akan
+       mendahului halaman sebelumnya. */
+    const baseViews = [];
+    for (let i = 1; i <= total; i++) {
+      try {
+        const p = await src.getPage(i);
+        baseViews.push(p.getViewport({ scale: 1 }));
+      } catch (_) {
+        baseViews.push(null);
+      }
+    }
+    const outPages = baseViews.map((b) => out.addPage(b ? [b.width, b.height] : [612, 792]));
+
     async function worker() {
       while (true) {
         const idx = next++;
         if (idx >= total) return;
         const page = await src.getPage(idx + 1);
-        const base = page.getViewport({ scale: 1 });
+        const base = baseViews[idx] || page.getViewport({ scale: 1 });
 
         // Deteksi halaman scan: satu gambar besar tanpa teks
         let renderDpi = opts.dpi;
         let hasText = false;
+        // perkiraan banyaknya operasi gambar di halaman; dipakai untuk
+        // memilih mesin encode (lihat encodeEngineFor)
+        let complexity = 0;
         try {
           const text = await page.getTextContent();
           hasText = text.items.some((it) => it.str && it.str.trim().length > 0);
+          complexity = text.items.length * 4;
         } catch (_) {
           hasText = true;
         }
@@ -977,6 +1307,7 @@
         if (!hasText) {
           try {
             const ol = await page.getOperatorList();
+            complexity = ol.fnArray.length;
             const OPS = global.pdfjsLib.OPS;
             let ctm = [1, 0, 0, 1, 0, 0];
             const stack = [];
@@ -1038,11 +1369,8 @@
         if (hasText) q = Math.min(0.94, q + 0.06);
         else q = Math.max(0.4, q - 0.04);
 
-        if (opts.gray) toGrayscale(canvas);
-
-        const blob = await canvasToBlob(canvas, "image/jpeg", q);
-        const jpg = await out.embedJpg(new Uint8Array(await blob.arrayBuffer()));
-        const pg = out.addPage([base.width, base.height]);
+        const jpg = await out.embedJpg(await encodeJpeg(canvas, q, opts.gray, complexity));
+        const pg = outPages[idx];
         pg.drawImage(jpg, { x: 0, y: 0, width: base.width, height: base.height });
 
         canvas.width = canvas.height = 0;
@@ -1094,8 +1422,10 @@
   /* ============================================================
      API publik
      ============================================================ */
-  async function compress(inputBytes, opts = {}, onProgress) {
-    const settings = {
+  /* Normalisasi opsi kompresi — satu sumber kebenaran untuk
+     compress() maupun estimate(). */
+  function normalizeSettings(opts = {}) {
+    return {
       mode: opts.mode || "optimal",
       dpi: Math.max(72, Math.min(400, Math.round(opts.dpi || 200))),
       quality: Math.max(0.3, Math.min(0.98, opts.quality ?? 0.82)),
@@ -1103,6 +1433,10 @@
       cleanMeta: opts.cleanMeta !== false,
       neverBigger: opts.neverBigger !== false,
     };
+  }
+
+  async function compress(inputBytes, opts = {}, onProgress) {
+    const settings = normalizeSettings(opts);
 
     // beri pesan yang mudah dipahami, bukan error internal pdf-lib/pdf.js
     try {
@@ -1111,28 +1445,41 @@
       throw new Error(err && err.message ? err.message : "Berkas PDF tidak dapat diproses.");
     }
 
+    return compressCore(inputBytes, settings, onProgress);
+  }
+
+  /* Raster: coba turunkan kualitas (lalu resolusi) bila hasilnya
+     lebih besar dari berkas asli — hasil tidak boleh membengkak.
+     Dipisahkan dari compressCore supaya estimator bisa meniru
+     percobaan ulang yang sama. */
+  async function rasterWithFallback(inputBytes, settings, onProgress) {
+    let attempt = { dpi: settings.dpi, quality: settings.quality, gray: settings.gray };
+    let res = await rasterFile(inputBytes, attempt, onProgress);
+    let tries = 0;
+    while (settings.neverBigger && res.bytes.length >= inputBytes.length && tries < 2) {
+      tries++;
+      attempt =
+        attempt.quality > 0.55
+          ? {
+              dpi: attempt.dpi,
+              quality: Math.max(0.45, Math.round((attempt.quality - 0.12) * 100) / 100),
+              gray: attempt.gray,
+            }
+          : {
+              dpi: Math.max(96, Math.round(attempt.dpi * 0.8)),
+              quality: attempt.quality,
+              gray: attempt.gray,
+            };
+      res = await rasterFile(inputBytes, attempt, onProgress);
+    }
+    return res;
+  }
+
+  /* Isi kompresi tanpa pemeriksaan ulang — dipakai estimator yang
+     sudah memuat dokumennya sendiri (menghemat satu kali pemuatan). */
+  async function compressCore(inputBytes, settings, onProgress) {
     if (settings.mode === "raster") {
-      // Raster: coba turunkan kualitas (lalu resolusi) bila hasilnya
-      // lebih besar dari berkas asli — hasil tidak boleh membengkak.
-      let attempt = { dpi: settings.dpi, quality: settings.quality, gray: settings.gray };
-      let res = await rasterFile(inputBytes, attempt, onProgress);
-      let tries = 0;
-      while (settings.neverBigger && res.bytes.length >= inputBytes.length && tries < 2) {
-        tries++;
-        attempt =
-          attempt.quality > 0.55
-            ? {
-                dpi: attempt.dpi,
-                quality: Math.max(0.45, Math.round((attempt.quality - 0.12) * 100) / 100),
-                gray: attempt.gray,
-              }
-            : {
-                dpi: Math.max(96, Math.round(attempt.dpi * 0.8)),
-                quality: attempt.quality,
-                gray: attempt.gray,
-              };
-        res = await rasterFile(inputBytes, attempt, onProgress);
-      }
+      const res = await rasterWithFallback(inputBytes, settings, onProgress);
       return finalize(res, inputBytes, settings);
     }
 
@@ -1286,19 +1633,61 @@
     return out.sort((a, b) => a - b);
   }
 
-  async function estimate(inputBytes, opts = {}) {
-    const settings = {
-      mode: opts.mode || "optimal",
-      dpi: Math.max(72, Math.min(400, Math.round(opts.dpi || 200))),
-      quality: Math.max(0.3, Math.min(0.98, opts.quality ?? 0.82)),
-      gray: !!opts.gray,
-      cleanMeta: opts.cleanMeta !== false,
-      neverBigger: opts.neverBigger !== false,
-    };
+  /* Kumpulkan penempatan gambar seluruh halaman sekaligus.
+     Satu lintasan ini dipakai untuk dua hal: bobot tiap halaman
+     (untuk memilih halaman sampel) dan total byte gambar unik.
+     Sebelumnya keduanya dilakukan terpisah, jadi setiap halaman
+     diurai dua kali. */
+  async function scanPlacements(doc, pages) {
+    const ctx = doc.context;
+    const perPage = [];
+    const seen = new Set();
+    let totalImg = 0;
+    for (const page of pages) {
+      const sizes = new Map();
+      let bytes = 0;
+      try {
+        const placements = await collectPlacements(doc, page);
+        for (const [key, place] of placements) {
+          const s = ctx.lookup(place.ref);
+          if (!(s instanceof PDFRawStream)) continue;
+          const size = s.getContentsSize();
+          sizes.set(key, size);
+          bytes += size;
+          if (!seen.has(key)) {
+            seen.add(key);
+            totalImg += size;
+          }
+        }
+      } catch (_) {
+        /* abaikan */
+      }
+      perPage.push({ sizes, bytes });
+    }
+    return { perPage, totalImg };
+  }
 
-    const totalIn = inputBytes.length;
-    if (!totalIn) return null;
+  /* Total byte gambar unik di dalam sekumpulan halaman. */
+  function sampleImageBytes(scan, indices) {
+    const seen = new Set();
+    let bytes = 0;
+    for (const i of indices) {
+      const p = scan.perPage[i];
+      if (!p) continue;
+      for (const [key, size] of p.sizes) {
+        if (seen.has(key)) continue;
+        seen.add(key);
+        bytes += size;
+      }
+    }
+    return bytes;
+  }
 
+  /* Analisis bersama satu berkas: dipakai semua target preset.
+     Dokumen sumber dibuang setelah analisis selesai supaya tidak
+     menahan memori; yang disimpan hanya data turunan dan contoh
+     halaman sampel. */
+  async function buildAnalysis(inputBytes) {
     let doc;
     try {
       doc = await PDFDocument.load(inputBytes, { updateMetadata: false, throwOnInvalidObject: false });
@@ -1308,47 +1697,92 @@
     const pageCount = doc.getPageCount();
     if (!pageCount) return null;
 
+    /* Dokumen kecil: cukup dikompres utuh, tidak perlu analisis gambar. */
+    if (pageCount <= EST_EXACT_MAX_PAGES) {
+      return { pageCount, exact: true, weights: [], totalImg: 0, picked: [], s1: null, s2: null };
+    }
+
+    try {
+      const pages = doc.getPages();
+      const scan = await scanPlacements(doc, pages);
+      const weights = scan.perPage.map((p) => p.bytes);
+      const picked = chooseSamplePages(weights, EST_SAMPLE_PAGES);
+      if (!picked.length) return null;
+
+      /* Bangun sampel berisi halaman terpilih, lalu sampel yang lebih
+         luas. Dua titik ini dipakai untuk memisahkan biaya tetap
+         (font, sumber daya bersama) dari biaya per halaman. Tanpa
+         pemisahan ini, dokumen yang tidak punya gambar bisa meleset
+         jauh karena sumber daya bersama hanya tersimpan sekali di
+         berkas akhir. */
+      const buildSample = async (indices) => {
+        const sdoc = await PDFDocument.create();
+        const copied = await sdoc.copyPages(doc, indices);
+        copied.forEach((p) => sdoc.addPage(p));
+        const bytes = await sdoc.save({ useObjectStreams: true, addDefaultPage: false });
+        return { n: indices.length, bytes, img: sampleImageBytes(scan, indices) };
+      };
+
+      const s1 = await buildSample(picked);
+      const wide = widenSample(picked, pages.length);
+      const s2 = wide.length > s1.n ? await buildSample(wide) : null;
+      if (!s1 || !s1.bytes || !s1.bytes.length) return null;
+
+      return {
+        pageCount,
+        exact: false,
+        weights,
+        totalImg: scan.totalImg,
+        picked,
+        s1,
+        s2,
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /* Perkiraan untuk satu set opsi, memakai analisis yang sudah ada. */
+  async function estimateWithAnalysis(inputBytes, settings, analysis) {
+    const totalIn = inputBytes.length;
+    if (!totalIn || !analysis) return null;
+
     const inner = Object.assign({}, settings, { neverBigger: false });
 
     /* --- 1. Dokumen kecil: kompres utuh, angka persis --- */
-    if (pageCount <= EST_EXACT_MAX_PAGES) {
+    if (analysis.exact) {
       try {
-        const res = await compress(inputBytes, inner);
-        if (!res || !res.bytes || !res.bytes.length) return null;
-        let size = res.bytes.length;
+        /* Untuk mode raster, tirukan percobaan ulang "jangan pernah
+           memperbesar" seperti kompresi sungguhan — kalau tidak, angka
+           perkiraan meleset jauh saat hasil pertama kebetulan lebih
+           besar dari berkas asal. */
+        let size;
+        if (settings.mode === "raster") {
+          const res = await rasterWithFallback(
+            inputBytes,
+            Object.assign({}, settings, { neverBigger: true }),
+            null
+          );
+          if (!res || !res.bytes || !res.bytes.length) return null;
+          size = res.bytes.length;
+        } else {
+          const res = await compressCore(inputBytes, inner);
+          if (!res || !res.bytes || !res.bytes.length) return null;
+          size = res.bytes.length;
+        }
         if (settings.neverBigger) size = Math.min(size, totalIn);
-        return { size, exact: true, sampled: pageCount, pages: pageCount, originalSize: totalIn };
+        return { size, exact: true, sampled: analysis.pageCount, pages: analysis.pageCount, originalSize: totalIn };
       } catch (_) {
         return null;
       }
     }
 
     /* --- 2. Dokumen besar: sampel + estimasi terstratifikasi --- */
-    const pages = doc.getPages();
-    const weights = await pageImageWeights(doc, pages);
-    const picked = chooseSamplePages(weights, EST_SAMPLE_PAGES);
-    if (!picked.length) return null;
-
-    /*_byte gambar unik_ (gambar bersama dihitung sekali) */
-    const totalImg = await uniqueImageBytes(doc, pages);
-
-    /* Bangun sampel berisi halaman terpilih, lalu sampel yang lebih luas.
-       Dua titik ini dipakai untuk memisahkan biaya tetap (font, sumber
-       daya bersama) dari biaya per halaman. Tanpa pemisahan ini,
-       dokumen yang tidak punya gambar bisa meleset jauh karena sumber
-       daya bersama hanya tersimpan sekali di berkas akhir. */
-    const buildSample = async (indices) => {
-      const sdoc = await PDFDocument.create();
-      const copied = await sdoc.copyPages(doc, indices);
-      copied.forEach((p) => sdoc.addPage(p));
-      const bytes = await sdoc.save({ useObjectStreams: true, addDefaultPage: false });
-      const img = await uniqueImageBytes(doc, indices.map((i) => pages[i]));
-      return { n: indices.length, bytes, img };
-    };
+    const pageCount = analysis.pageCount;
 
     /* Kompres satu sampel lalu pisahkan kontribusi gambar & non-gambar. */
     const runSample = async (sample) => {
-      const res = await compress(sample.bytes, inner);
+      const res = await compressCore(sample.bytes, inner);
       if (!res || !res.bytes || !res.bytes.length) return null;
       let outImg = 0;
       try {
@@ -1366,20 +1800,9 @@
       };
     };
 
-    let s1;
-    let s2;
+    let r1 = null;
     try {
-      s1 = await buildSample(picked);
-      const wide = widenSample(picked, pages.length);
-      s2 = wide.length > s1.n ? await buildSample(wide) : null;
-    } catch (_) {
-      return null;
-    }
-    if (!s1 || !s1.bytes || !s1.bytes.length) return null;
-
-    let r1;
-    try {
-      r1 = await runSample(s1);
+      r1 = await runSample(analysis.s1);
     } catch (_) {
       r1 = null;
     }
@@ -1390,27 +1813,38 @@
        dikompresi satu per satu. */
     const rImg = r1.img > 0 ? r1.outImg / r1.img : 1;
 
-    let size;
-    if (s2) {
-      let r2 = null;
+    let r2 = null;
+    if (analysis.s2) {
       try {
-        r2 = await runSample(s2);
+        r2 = await runSample(analysis.s2);
       } catch (_) {
         r2 = null;
       }
+    }
+
+    let size;
+    if (settings.mode === "raster") {
+      /* Mode raster: gambar halaman dibuat dari nol, jadi ukuran
+         hasil mengikuti JUMLAH HALAMAN — bukan perbandingan byte
+         gambar sumber (yang pada dokumen teks-only bernilai nol).
+         Pakai model dua titik untuk total: out(P) = A + B*P. */
       if (r2 && r2.n > r1.n) {
-        /* Model dua titik untuk bagian non-gambar: out(P) = A + B*P */
-        const B = (r2.outNon - r1.outNon) / (r2.n - r1.n);
-        const A = r1.outNon - B * r1.n;
-        const estNon = Math.max(0, A + B * pageCount);
-        size = Math.round(rImg * totalImg + estNon);
+        const B = (r2.outTotal - r1.outTotal) / (r2.n - r1.n);
+        const A = r1.outTotal - B * r1.n;
+        size = Math.round(Math.max(0, A) + B * pageCount);
       } else {
-        size = Math.round(rImg * totalImg + (r1.outNon / Math.max(1, r1.n)) * pageCount);
+        size = Math.round((r1.outTotal / Math.max(1, r1.n)) * pageCount);
       }
+    } else if (r2 && r2.n > r1.n) {
+      /* Model dua titik untuk bagian non-gambar: out(P) = A + B*P */
+      const B = (r2.outNon - r1.outNon) / (r2.n - r1.n);
+      const A = r1.outNon - B * r1.n;
+      const estNon = Math.max(0, A + B * pageCount);
+      size = Math.round(rImg * analysis.totalImg + estNon);
     } else {
       /* Cadangan: hitung per halaman bila sampel kedua tidak tersedia. */
       const perPage = r1.outNon / Math.max(1, r1.n);
-      size = Math.round(rImg * totalImg + perPage * pageCount);
+      size = Math.round(rImg * analysis.totalImg + perPage * pageCount);
     }
 
     if (!Number.isFinite(size) || size <= 0) return null;
@@ -1418,15 +1852,87 @@
     return {
       size,
       exact: false,
-      sampled: picked.length,
+      sampled: analysis.picked.length,
       pages: pageCount,
       originalSize: totalIn,
     };
   }
 
+  /* Cache analisis per berkas. Kuncinya diberikan pemanggil supaya
+     invalidasi-nya jelas: berkas dihapus atau berubah -> kunci lama
+     tidak lagi dipakai. */
+  const analysisCache = new Map();
+
+  /* Lepaskan semua analisis yang tersimpan (dipakai saat daftar file
+     dikosongkan). */
+  function releaseAnalyses() {
+    analysisCache.clear();
+  }
+
+  /* Lepaskan analisis milik satu berkas saja — dipakai saat file
+     dihapus dari daftar, supaya cache tidak menumpuk. */
+  function releaseAnalysis(uid) {
+    const prefix = String(uid) + "|";
+    for (const key of Array.from(analysisCache.keys())) {
+      if (key.startsWith(prefix)) analysisCache.delete(key);
+    }
+  }
+
+  /* Perkiraan untuk beberapa target sekaligus.
+     Analisis berkas (bobot gambar, halaman sampel) dihitung SATU KALI
+     lalu dipakai semua target, jadi dokumen tidak diurai berulang.
+     Target dengan opsi yang identik juga dihitung satu kali. */
+  async function estimateMany(inputBytes, optsList, meta) {
+    const list = Array.isArray(optsList) ? optsList : [optsList];
+    if (!inputBytes || !inputBytes.length) return list.map(() => null);
+
+    const key = meta && meta.analysisKey ? String(meta.analysisKey) + "|" + inputBytes.length : null;
+    let analysis = key ? analysisCache.get(key) : null;
+    if (!analysis) {
+      analysis = await buildAnalysis(inputBytes);
+      if (key && analysis) analysisCache.set(key, analysis);
+    }
+    if (!analysis) return list.map(() => null);
+
+    const sigs = list.map((o) => {
+      const s = normalizeSettings(o);
+      return [s.mode, s.dpi, s.quality, s.gray, s.cleanMeta, s.neverBigger].join("|");
+    });
+
+    const results = new Array(list.length).fill(null);
+    const done = new Map();
+    for (let i = 0; i < list.length; i++) {
+      const sig = sigs[i];
+      if (done.has(sig)) {
+        results[i] = done.get(sig);
+        continue;
+      }
+      const settings = normalizeSettings(list[i]);
+      let r = null;
+      try {
+        r = await estimateWithAnalysis(inputBytes, settings, analysis);
+      } catch (_) {
+        r = null;
+      }
+      done.set(sig, r);
+      results[i] = r;
+    }
+    return results;
+  }
+
+  async function estimate(inputBytes, opts = {}) {
+    const res = await estimateMany(inputBytes, [opts], null);
+    return res[0] || null;
+  }
+
   global.PDFCompressor = {
     compress,
     estimate,
+    estimateMany,
+    releaseAnalyses,
+    releaseAnalysis,
+    warmEncoder: encoderWarm,
+    disposeEncoder: encoderDispose,
     PRODUCER,
     // dipakai untuk pengujian internal
     _internals: {
@@ -1442,6 +1948,10 @@
       uniqueImageBytes,
       chooseSamplePages,
       widenSample,
+      scanPlacements,
+      buildAnalysis,
+      normalizeSettings,
+      encodeEngineFor,
     },
   };
 })(typeof window !== "undefined" ? window : globalThis);

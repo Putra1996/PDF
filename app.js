@@ -1203,6 +1203,12 @@
 
   function setTab(tab) {
     activeTab = tab;
+    /* Siapkan pool encoder JPEG lebih awal: worker baru butuh
+       "pemasanan" sekali, dan biayanya cukup besar kalau muncul
+       di tengah kompresi. */
+    if (tab === "compress" && window.PDFCompressor && typeof window.PDFCompressor.warmEncoder === "function") {
+      try { window.PDFCompressor.warmEncoder(); } catch (_) {}
+    }
     document.querySelectorAll(".tab").forEach((t) => {
       const on = t.dataset.tab === tab;
       t.classList.toggle("active", on);
@@ -1805,7 +1811,7 @@
      TAB: Kompres PDF
      ============================================================ */
   const compress = {
-    files: [],   // {uid, name, bytes, doc, pageCount, size}
+    files: [],   // {uid, name, bytes, pageCount, size}
     results: [],
     busy: false,
   };
@@ -1934,6 +1940,7 @@
   const compressEst = {
     cache: new Map(),   // kunci -> { size, ratio, exact, sampled, pages }
     values: new Map(),  // target -> { state: "loading"|"ok"|"error", size, total, exact }
+    failed: new Set(),  // target yang perkiraannya gagal
     running: false,
     token: 0,
     timer: null,
@@ -1952,6 +1959,10 @@
     return { mode: p.mode, dpi: p.dpi || 200, quality: p.quality || 0.82, gray, cleanMeta, neverBigger };
   }
 
+  /* Kunci perkiraan.
+     "Jangan pernah memperbesar" SENGAJA tidak ikut: hasil perkiraan
+     dijepit setelah seluruh berkas dijumlahkan, jadi mengubah sakelar
+     itu tidak boleh memicu perhitungan ulang yang tidak perlu. */
   function compressEstKey(uid, o) {
     return [
       uid,
@@ -1960,7 +1971,6 @@
       o.quality,
       o.gray ? 1 : 0,
       o.cleanMeta ? 1 : 0,
-      o.neverBigger ? 1 : 0,
     ].join("|");
   }
 
@@ -1994,6 +2004,40 @@
     }
   }
 
+  /* Jumlahkan perkiraan tiap berkas menjadi satu angka per target. */
+  function compressEstAggregate() {
+    const total = compressEstTotal();
+    for (const target of EST_TARGETS) {
+      if (compressEst.failed.has(target)) {
+        compressEst.values.set(target, { state: "error" });
+        continue;
+      }
+      const opts = compressEstOptions(target);
+      let sum = 0;
+      let ok = true;
+      let exact = true;
+      let sampled = 0;
+      let pages = 0;
+      for (const f of compress.files) {
+        const r = compressEst.cache.get(compressEstKey(f.uid, opts));
+        if (!r) { ok = false; break; }
+        sum += r.size;
+        exact = exact && r.exact;
+        sampled = Math.max(sampled, r.sampled || 0);
+        pages = Math.max(pages, r.pages || 0);
+      }
+      if (!ok) {
+        // belum ada angka untuk semua berkas -> belum bisa dijumlahkan
+        const cur = compressEst.values.get(target);
+        if (!cur || cur.state !== "error") compressEst.values.set(target, { state: "loading" });
+        continue;
+      }
+      let size = sum;
+      if (opts.neverBigger) size = Math.min(size, total);
+      compressEst.values.set(target, { state: "ok", size, total, exact, sampled, pages });
+    }
+  }
+
   async function compressEstimateRun() {
     const engine = window.PDFCompressor;
     if (!engine || typeof engine.estimate !== "function") return;
@@ -2002,6 +2046,7 @@
       compressEst.token++;
       compressEst.cache.clear();
       compressEst.values.clear();
+      compressEst.failed.clear();
       compressEstRender();
       return;
     }
@@ -2017,61 +2062,71 @@
 
     const token = ++compressEst.token;
     compressEst.running = true;
+    compressEst.failed.clear();
     compressEstPrune();
 
     try {
-      for (const target of compressEstOrder()) {
-        if (token !== compressEst.token) return;
-        if (compress.busy) return;
+      /* Analisis tiap berkas (bobot gambar, halaman sampel) dihitung
+         SATU KALI lalu dipakai semua preset — dokumen tidak diurai
+         berulang kali. Preset yang sedang dipilih dihitung lebih dulu
+         supaya angkanya langsung terlihat. */
+      const order = compressEstOrder();
+      const rounds = [order.slice(0, 1), order.slice(1)];
 
-        const opts = compressEstOptions(target);
-        compressEst.values.set(target, { state: "loading" });
-        compressEstRender();
-
-        let sum = 0;
-        let ok = true;
-        let exact = true;
-        let sampled = 0;
-        let pages = 0;
-
+      for (const group of rounds) {
         for (const f of compress.files) {
           if (token !== compressEst.token) return;
           if (compress.busy) return;
 
-          const key = compressEstKey(f.uid, opts);
-          let r = compressEst.cache.get(key);
-          if (!r) {
-            try {
-              // neverBigger diterapkan pada hasil akhir, bukan per sampel,
-              // agar rasio tidak bias oleh fallback berkas asli.
-              r = await engine.estimate(f.bytes, Object.assign({}, opts, { neverBigger: false }));
-            } catch (_) {
-              r = null;
-            }
-            if (r) compressEst.cache.set(key, r);
+          const pending = [];
+          for (const target of group) {
+            const opts = compressEstOptions(target);
+            const key = compressEstKey(f.uid, opts);
+            if (compressEst.cache.has(key)) continue;
+            pending.push({ target, opts, key });
           }
-          if (!r) { ok = false; break; }
-          sum += r.size;
-          exact = exact && r.exact;
-          sampled = Math.max(sampled, r.sampled || 0);
-          pages = Math.max(pages, r.pages || 0);
+          if (!pending.length) continue;
+
+          // neverBigger diterapkan pada hasil akhir, bukan per berkas,
+          // agar rasio tidak bias oleh fallback berkas asli.
+          const wanted = pending.map((p) => Object.assign({}, p.opts, { neverBigger: false }));
+
+          let fresh = [];
+          if (typeof engine.estimateMany === "function") {
+            try {
+              fresh = await engine.estimateMany(f.bytes, wanted, { analysisKey: f.uid });
+            } catch (_) {
+              fresh = [];
+            }
+          }
+          if (!fresh.length) {
+            // mesin tanpa EstimateMany: hitung satu per satu
+            for (const o of wanted) {
+              try {
+                fresh.push(await engine.estimate(f.bytes, o));
+              } catch (_) {
+                fresh.push(null);
+              }
+            }
+          }
+
+          pending.forEach((p, i) => {
+            const r = fresh[i];
+            if (r) compressEst.cache.set(p.key, r);
+            else compressEst.failed.add(p.target);
+          });
+
+          compressEstAggregate();
+          compressEstRender();
           await tick();
         }
-
-        if (token !== compressEst.token) return;
-        if (!ok) {
-          compressEst.values.set(target, { state: "error" });
-          compressEstRender();
-          continue;
-        }
-
-        const total = compressEstTotal();
-        let size = sum;
-        if (opts.neverBigger) size = Math.min(size, total);
-        compressEst.values.set(target, { state: "ok", size, total, exact, sampled, pages });
-        compressEstRender();
-        await tick();
       }
+
+      /* Semua target sudah ada di cache (mis. hanya preset yang
+         diganti) — kembalikan statusnya ke "ok" supaya ringkasan
+         "paling hemat" muncul lagi. */
+      compressEstAggregate();
+      compressEstRender();
     } finally {
       compressEst.running = false;
     }
@@ -2219,6 +2274,10 @@
         compress.files = compress.files.filter((x) => x.uid !== f.uid);
         compress.results = compress.results.filter((r) => r.uid !== f.uid);
         dropThumbDoc(f.uid);
+        // buang analisis berkas ini supaya cache tidak menumpuk
+        if (window.PDFCompressor && typeof window.PDFCompressor.releaseAnalysis === "function") {
+          try { window.PDFCompressor.releaseAnalysis(f.uid); } catch (_) {}
+        }
         compressShowResults();
         compressRender();
         compressEstimateSchedule(120);
@@ -2260,7 +2319,7 @@
             compress.files.push({
               uid: "c" + ++compressUid,
               name: file.name.replace(/\.pdf$/i, "") + " (terbuka).pdf",
-              bytes: opened, doc, pageCount: doc.getPageCount(), size: opened.length,
+              bytes: opened, pageCount: doc.getPageCount(), size: opened.length,
             });
             added++;
             continue;
@@ -2269,9 +2328,13 @@
         }
         const n = doc.getPageCount();
         if (!n) throw new Error("PDF tidak memiliki halaman.");
+        // Dokumen pdf-lib tidak dipakai lagi setelah jumlah halaman
+        // diketahui; melepaskanya menghemat banyak memori untuk
+        // berkas besar (dokumen ini tidak dipakai saat kompresi).
+        doc = null;
         compress.files.push({
           uid: "c" + ++compressUid,
-          name: file.name, bytes, doc, pageCount: n, size: file.size,
+          name: file.name, bytes, pageCount: n, size: file.size,
         });
         added++;
       } catch (err) {
@@ -2309,6 +2372,10 @@
     compressEst.token++;
     compressEst.cache.clear();
     compressEst.values.clear();
+    // analisis berkas tidak dipakai lagi
+    if (window.PDFCompressor && typeof window.PDFCompressor.releaseAnalyses === "function") {
+      try { window.PDFCompressor.releaseAnalyses(); } catch (_) {}
+    }
     compressShowResults();
     compressRender();
     toast("Daftar dikosongkan.");
