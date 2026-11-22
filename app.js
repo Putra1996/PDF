@@ -1651,23 +1651,36 @@
       const lvl = document.querySelector('input[name="clevel"]:checked').value;
       $("#customOpts").hidden = lvl !== "custom";
       compressUpdateNote();
+      compressEstimateSchedule();
     });
   });
   $("#cStrategy").addEventListener("change", () => {
     compressUpdateNote();
     compressSyncSliders();
+    compressEstimateSchedule();
   });
   $("#dpiRange").addEventListener("input", () => {
     $("#dpiVal").textContent = $("#dpiRange").value + " DPI";
     compressUpdateNote();
+    compressEstimateSchedule();
   });
   $("#qRange").addEventListener("input", () => {
     $("#qVal").textContent = $("#qRange").value + "%";
     compressUpdateNote();
+    compressEstimateSchedule();
   });
-  $("#grayChk").addEventListener("change", compressUpdateNote);
-  $("#cleanMetaChk").addEventListener("change", compressUpdateNote);
-  $("#neverBiggerChk").addEventListener("change", compressUpdateNote);
+  $("#grayChk").addEventListener("change", () => {
+    compressUpdateNote();
+    compressEstimateSchedule();
+  });
+  $("#cleanMetaChk").addEventListener("change", () => {
+    compressUpdateNote();
+    compressEstimateSchedule();
+  });
+  $("#neverBiggerChk").addEventListener("change", () => {
+    compressUpdateNote();
+    compressEstimateSchedule();
+  });
 
   /* slider DPI hanya relevan untuk mode raster */
   function compressSyncSliders() {
@@ -1675,6 +1688,223 @@
     const raster = st.mode === "raster";
     $("#dpiRange").disabled = !raster;
     $("#dpiRangeRow").classList.toggle("disabled", !raster);
+  }
+
+  /* ============================================================
+     Perkiraan ukuran hasil kompresi
+     ------------------------------------------------------------
+     Setiap tingkat kompresi dihitung dengan mesin kompresi yang
+     sama (sampel halaman), lalu dikalibrasi ke seluruh dokumen.
+     Angka dihitung di latar belakang — UI tetap responsif.
+     ============================================================ */
+  const EST_TARGETS = ["lossless", "optimal", "balanced", "strong", "custom"];
+
+  /* Preset yang sedang dipilih dihitung lebih dulu agar angkanya
+     langsung terlihat tanpa menunggu preset lain. */
+  function compressEstOrder() {
+    const sel = document.querySelector('input[name="clevel"]:checked')?.value;
+    if (!sel || !EST_TARGETS.includes(sel)) return EST_TARGETS;
+    return [sel, ...EST_TARGETS.filter((t) => t !== sel)];
+  }
+
+  const compressEst = {
+    cache: new Map(),   // kunci -> { size, ratio, exact, sampled, pages }
+    values: new Map(),  // target -> { state: "loading"|"ok"|"error", size, total, exact }
+    running: false,
+    token: 0,
+    timer: null,
+  };
+
+  /* Opsi kompresi untuk sebuah target preset. */
+  function compressEstOptions(target) {
+    const gray = $("#grayChk").checked;
+    const cleanMeta = $("#cleanMetaChk").checked;
+    const neverBigger = $("#neverBiggerChk").checked;
+    if (target === "custom") {
+      const strategy = $("#cStrategy").value;
+      const dpi = Math.max(72, Math.min(400, parseInt($("#dpiRange").value, 10) || 150));
+      const quality = Math.max(30, Math.min(95, parseInt($("#qRange").value, 10) || 80)) / 100;
+      const mode = strategy === "raster" ? "raster" : strategy;
+      return { mode, dpi, quality, gray, cleanMeta, neverBigger };
+    }
+    const p = PRESETS[target] || PRESETS.optimal;
+    return { mode: p.mode, dpi: p.dpi || 200, quality: p.quality || 0.82, gray, cleanMeta, neverBigger };
+  }
+
+  function compressEstKey(uid, o) {
+    return [
+      uid,
+      o.mode,
+      o.dpi,
+      o.quality,
+      o.gray ? 1 : 0,
+      o.cleanMeta ? 1 : 0,
+      o.neverBigger ? 1 : 0,
+    ].join("|");
+  }
+
+  function compressEstTotal() {
+    return compress.files.reduce((s, f) => s + f.size, 0);
+  }
+
+  /* Jadwalkan penghitungan ulang (debounce agar tidak terlalu sering). */
+  function compressEstimateSchedule(delay = 350) {
+    clearTimeout(compressEst.timer);
+    compressEst.timer = setTimeout(() => {
+      compressEst.timer = null;
+      compressEstimateRun();
+    }, delay);
+  }
+
+  /* Buang cache untuk file yang sudah dihapus. */
+  function compressEstPrune() {
+    const alive = new Set(compress.files.map((f) => f.uid));
+    for (const k of [...compressEst.cache.keys()]) {
+      if (!alive.has(k.split("|")[0])) compressEst.cache.delete(k);
+    }
+  }
+
+  async function compressEstimateRun() {
+    const engine = window.PDFCompressor;
+    if (!engine || typeof engine.estimate !== "function") return;
+
+    if (!compress.files.length) {
+      compressEst.token++;
+      compressEst.cache.clear();
+      compressEst.values.clear();
+      compressEstRender();
+      return;
+    }
+
+    // jangan jalan bersamaan dengan kompresi manual
+    if (compress.busy) return;
+
+    // tunggu bila ada estimasi sebelumnya yang masih berjalan
+    while (compressEst.running) {
+      await new Promise((r) => setTimeout(r, 60));
+      if (compress.busy) return;
+    }
+
+    const token = ++compressEst.token;
+    compressEst.running = true;
+    compressEstPrune();
+
+    try {
+      for (const target of compressEstOrder()) {
+        if (token !== compressEst.token) return;
+        if (compress.busy) return;
+
+        const opts = compressEstOptions(target);
+        compressEst.values.set(target, { state: "loading" });
+        compressEstRender();
+
+        let sum = 0;
+        let ok = true;
+        let exact = true;
+        let sampled = 0;
+        let pages = 0;
+
+        for (const f of compress.files) {
+          if (token !== compressEst.token) return;
+          if (compress.busy) return;
+
+          const key = compressEstKey(f.uid, opts);
+          let r = compressEst.cache.get(key);
+          if (!r) {
+            try {
+              // neverBigger diterapkan pada hasil akhir, bukan per sampel,
+              // agar rasio tidak bias oleh fallback berkas asli.
+              r = await engine.estimate(f.bytes, Object.assign({}, opts, { neverBigger: false }));
+            } catch (_) {
+              r = null;
+            }
+            if (r) compressEst.cache.set(key, r);
+          }
+          if (!r) { ok = false; break; }
+          sum += r.size;
+          exact = exact && r.exact;
+          sampled = Math.max(sampled, r.sampled || 0);
+          pages = Math.max(pages, r.pages || 0);
+          await tick();
+        }
+
+        if (token !== compressEst.token) return;
+        if (!ok) {
+          compressEst.values.set(target, { state: "error" });
+          compressEstRender();
+          continue;
+        }
+
+        const total = compressEstTotal();
+        let size = sum;
+        if (opts.neverBigger) size = Math.min(size, total);
+        compressEst.values.set(target, { state: "ok", size, total, exact, sampled, pages });
+        compressEstRender();
+        await tick();
+      }
+    } finally {
+      compressEst.running = false;
+    }
+  }
+
+  /* Tampilkan hasil perkiraan ke setiap kartu preset. */
+  function compressEstRender() {
+    const has = compress.files.length > 0;
+    const total = compressEstTotal();
+
+    document.querySelectorAll(".preset-est").forEach((el) => {
+      const key = el.dataset.est;
+      const v = compressEst.values.get(key);
+      el.className = "preset-est";
+      if (!has) { el.textContent = ""; el.classList.remove("show"); return; }
+      el.classList.add("show");
+
+      if (!v || v.state === "loading") {
+        el.innerHTML = '<span class="est-spin" aria-hidden="true"></span><span>Menghitung perkiraan…</span>';
+        return;
+      }
+      if (v.state === "error") {
+        el.innerHTML = "<span>Perkiraan tidak tersedia untuk berkas ini</span>";
+        return;
+      }
+
+      const pct = v.total ? Math.round((1 - v.size / v.total) * 100) : 0;
+      const cls = pct > 0 ? "down" : pct < 0 ? "up" : "same";
+      const sign = pct > 0 ? "−" : pct < 0 ? "+" : "";
+      const tag = v.exact
+        ? '<span class="est-tag">pasti</span>'
+        : `<span class="est-tag approx">≈ dari ${nf(v.sampled || 0)} halaman</span>`;
+
+      el.innerHTML =
+        `<span class="est-size">${fmtSize(v.size)}</span>` +
+        `<span class="est-delta ${cls}">${sign}${Math.abs(pct)}%</span>` +
+        `<span class="est-note">dari ${fmtSize(v.total)}</span>` +
+        tag;
+    });
+
+    /* Ringkasan: preset mana yang paling hemat. */
+    const summary = $("#compressEstSummary");
+    if (!summary) return;
+    const done = EST_TARGETS.filter((t) => {
+      const v = compressEst.values.get(t);
+      return v && v.state === "ok";
+    });
+    if (!done.length) {
+      summary.hidden = true;
+      summary.textContent = "";
+      return;
+    }
+    let best = null;
+    for (const t of done) {
+      const v = compressEst.values.get(t);
+      if (!best || v.size < best.size) best = { ...v, target: t };
+    }
+    const labels = { lossless: "Ringan", optimal: "Optimal", balanced: "Seimbang", strong: "Kuat", custom: "Kustom" };
+    const pct = best.total ? Math.round((1 - best.size / best.total) * 100) : 0;
+    summary.hidden = false;
+    summary.innerHTML =
+      `<span class="est-best">Paling hemat · ${labels[best.target] || best.target}</span>` +
+      `<span>≈ <b>${fmtSize(best.size)}</b> (${pct > 0 ? "−" : pct < 0 ? "+" : ""}${Math.abs(pct)}% dari ${fmtSize(best.total)})</span>`;
   }
 
   function compressUpdateNote() {
@@ -1715,6 +1945,7 @@
     $("#compressRunBtn").disabled = !has || compress.busy;
     $("#compressInfo").classList.toggle("active", has);
     compressUpdateNote();
+    compressEstRender();
     compressShowResults();
   }
 
@@ -1754,6 +1985,7 @@
         dropThumbDoc(f.uid);
         compressShowResults();
         compressRender();
+        compressEstimateSchedule(120);
       } else {
         const idx = compress.files.findIndex((x) => x.uid === f.uid);
         const to = idx + (act === "up" ? -1 : 1);
@@ -1813,7 +2045,11 @@
       await tick();
     }
     hideOverlay();
-    if (added) { compressRender(); toast(`${added} file siap dikompres.`, "ok"); }
+    if (added) {
+      compressRender();
+      compressEstimateSchedule(120);
+      toast(`${added} file siap dikompres.`, "ok");
+    }
   }
 
   $("#compressBrowseBtn").addEventListener("click", () => $("#compressInput").click());
@@ -1834,6 +2070,9 @@
     revokeResults(compress.results);
     compress.files = [];
     compress.results = [];
+    compressEst.token++;
+    compressEst.cache.clear();
+    compressEst.values.clear();
     compressShowResults();
     compressRender();
     toast("Daftar dikosongkan.");
@@ -1952,6 +2191,8 @@
       compress.busy = false;
       hideOverlay();
       compressRender();
+      // perkiraan disegarkan lagi setelah kompresi selesai
+      compressEstimateSchedule(200);
     }
   }
 
