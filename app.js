@@ -750,6 +750,13 @@
       label = "Ekstrak jadi 1 PDF";
       enabled = enabled && nSel > 0;
       hint = nSel ? `${nf(nSel)} halaman akan digabung.` : "Pilih minimal 1 halaman.";
+    } else if (mode === "remove") {
+      label = "Hapus halaman terpilih";
+      const left = total - nSel;
+      enabled = enabled && nSel > 0 && left > 0;
+      if (!nSel) hint = "Pilih minimal 1 halaman untuk dibuang.";
+      else if (left <= 0) hint = "Semua halaman terpilih — tidak ada yang tersisa.";
+      else hint = `${nf(nSel)} halaman dibuang, ${nf(left)} halaman tersisa.`;
     } else if (mode === "each") {
       const useSel = $("#eachUseSel").checked;
       const eff = useSel ? nSel : total;
@@ -867,6 +874,18 @@
         const blob = await buildPdf(sel);
         setProgress(90);
         const name = resultNameForExtract(sel);
+        made.push({ name, blob, url: URL.createObjectURL(blob), size: blob.size });
+      } else if (mode === "remove") {
+        const sel = selectedPages();
+        const drop = new Set(sel.map((it) => key(it.file.id, it.page)));
+        const keep = allPages().filter((it) => !drop.has(key(it.file.id, it.page)));
+        if (!keep.length) throw new Error("Semua halaman dibuang — tidak ada yang tersisa.");
+        overlayText.textContent = `Membuang ${sel.length} halaman…`;
+        setProgress(25);
+        const blob = await buildPdf(keep);
+        setProgress(90);
+        const first = state.files[0];
+        const name = `${safe(baseName(first ? first.name : "dokumen"))}-hapus-halaman.pdf`;
         made.push({ name, blob, url: URL.createObjectURL(blob), size: blob.size });
       } else if (mode === "each") {
         const list = $("#eachUseSel").checked ? selectedPages() : allPages();
@@ -1222,9 +1241,13 @@
     const isSplit = tab === "split";
     const isMerge = tab === "merge";
     const isCompress = tab === "compress";
+    const isTools = tab === "tools";
 
     $("#mergeView").hidden = !isMerge;
     $("#compressView").hidden = !isCompress;
+    $("#toolsView").hidden = !isTools;
+    $("#toolView").hidden = true;
+    if (isTools && window.PDFToolsUI) window.PDFToolsUI.renderLauncher();
     workspace.hidden = !isSplit || !state.files.length;
     dropzone.style.display = isSplit && !state.files.length ? "" : "none";
 
@@ -2631,4 +2654,40 @@
     );
   }
   updateRunState();
+
+  /* ============================================================
+     Alat (toolkit)
+     ============================================================
+     Fitur yang sudah punya tab sendiri (Pemisah / Gabung /
+     Kompres) tidak diulang sebagai alat baru — di menu "Semua
+     alat" semuanya ditautkan ke tab yang sudah ada. */
+  window.PDFShared = {
+    toast, showOverlay, setProgress, hideOverlay, downloadBlob,
+    fmtSize, baseName, safe, tick, PRODUCER,
+    get overlayText() { return overlayText; },
+  };
+  /* Pilih mode kerja pada tab Halaman PDF (dipakai tautan launcher). */
+  function setMode(mode) {
+    const radio = document.querySelector(`input[name="mode"][value="${mode}"]`);
+    if (!radio) return false;
+    radio.checked = true;
+    radio.dispatchEvent(new Event("change", { bubbles: true }));
+    updateRunState();
+    return true;
+  }
+
+  window.PDFApp = { setTab, setMode, activeTab: () => activeTab };
+
+  if (window.PDFToolsUI) {
+    /* Tautan ke alur yang SUDAH ada di aplikasi (bukan menu baru):
+       supaya tidak ada fitur yang terduplikasi. `mode` memilih alur
+       yang tepat di dalam tab Halaman PDF. */
+    window.PDFToolsUI.init([
+      { id: "merge", cat: "organize", name: "Gabung PDF", desc: "Satukan beberapa PDF jadi satu berkas.", icon: "merge", link: "merge" },
+      { id: "split", cat: "organize", name: "Pisah PDF", desc: "Pecah PDF per halaman, rentang, atau penanda buku.", icon: "split", link: "split", mode: "each" },
+      { id: "remove-pages", cat: "organize", name: "Hapus halaman", desc: "Buang halaman tertentu; sisanya jadi satu PDF baru.", icon: "organize", link: "split", mode: "remove" },
+      { id: "extract-pages", cat: "organize", name: "Ekstrak halaman", desc: "Simpan hanya halaman yang dipilih jadi PDF baru.", icon: "organize", link: "split", mode: "extract" },
+      { id: "compress-link", cat: "optimize", name: "Kompres PDF", desc: "Perkecil ukuran file, teks tetap tajam.", icon: "compress", link: "compress" },
+    ]);
+  }
 })();

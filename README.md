@@ -1,6 +1,8 @@
 # Pemisah PDF
 
-Aplikasi web untuk **memecah, mengekstrak, menggabungkan, dan mengompres** PDF. **Semua proses berjalan di browser** — file tidak pernah diunggah ke server mana pun.
+Aplikasi web untuk **memecah, mengekstrak, menggabungkan, mengompres, mengedit, mengonversi, dan melindungi** PDF. **Semua proses berjalan di browser** — file tidak pernah diunggah ke server mana pun.
+
+Seluruh proses tetap **offline**: hanya pustaka lokal di `vendor/` (pdf-lib, pdf.js, JSZip) yang dipakai.
 
 > **Dibuat oleh Putra.** Kreditnya tercantum di antarmuka web — di header, di footer, dan di `<title>` halaman. File PDF yang dihasilkan **tidak** memuat kredit/stempel apa pun di dalamnya; metadata Producer/Creator hanya berisi nama aplikasi (`Pemisah PDF`).
 
@@ -31,7 +33,7 @@ Aplikasi web untuk **memecah, mengekstrak, menggabungkan, dan mengompres** PDF. 
 ## Cara pakai
 
 1. Buka `index.html` di browser (Chrome, Edge, Firefox, Safari modern).
-2. Pilih tab: **Pemisah halaman**, **Gabung PDF**, atau **Kompres PDF**.
+2. Pilih tab: **Pemisah halaman**, **Gabung PDF**, **Kompres PDF**, atau **Semua alat**.
 3. Tarik file PDF ke area unggah, atau klik tombol pilih file. Di tab pemisah ada tombol **Coba contoh PDF**.
 4. Proses, lalu file hasil otomatis terunduh dan tetap tersedia di kartu **Hasil** untuk diunduh ulang.
 
@@ -42,6 +44,7 @@ Aplikasi web untuk **memecah, mengekstrak, menggabungkan, dan mengompres** PDF. 
 | Mode | Keluaran |
 |---|---|
 | Ekstrak halaman terpilih | 1 PDF baru berisi halaman terpilih (bisa gabungan beberapa file) |
+| Hapus halaman terpilih | 1 PDF baru berisi **semua halaman kecuali** yang dipilih |
 | Pisah tiap halaman | ZIP, 1 PDF per halaman (pilihan: hanya halaman terpilih) |
 | Pisah tiap N halaman | ZIP, tiap file berisi N halaman (pilihan: hanya halaman terpilih) |
 | Pisah per rentang kustom | ZIP, mis. `1-3, 4-8, 9-12` |
@@ -115,6 +118,38 @@ Saat slider dinonaktifkan, muncul keterangan singkat di bawahnya yang menjelaska
 5. **Perkiraan ukuran** — untuk dokumen ≤ 30 halaman, mesin kompresi dijalankan utuh pada dokumen terpisah untuk memperoleh angka pasti. Untuk dokumen lebih besar, halaman sampel diproses (halaman paling berat + halaman tersebar), lalu rasio gambar dan non-gambar dihitung terpisah sehingga estimasi tetap akurat walau halaman foto berada di luar sampel. Untuk bagian non-gambar dipakai **model dua titik** (`biaya = A + B × jumlah halaman`) dari dua sampel berbeda, sehingga biaya tetap (font, sumber daya bersama) tidak ikut dikali dua kali — tanpa ini, dokumen tanpa gambar bisa meleset puluhan persen.
 6. **Perkiraan ukuran gabungan** — file gabungan benar-benar dibangun di latar belakang (proses `copyPages` + `save` yang sama dengan tombol gabung) lalu ukurannya diukur, sehingga angkanya bukan tebakan.
 
+## Tab 4 — Semua alat
+
+Launcher dengan **7 kategori** dan **33 alat**. Alur yang sudah punya
+tab sendiri (Gabung, Pisah, Hapus/Ekstrak halaman, Kompres) **tidak
+diduplikasi** — semuanya memakai tautan ke alur yang sudah ada:
+
+| Kategori | Alat |
+|---|---|
+| **Susun PDF** | Merge PDF · Split PDF · Remove pages · Extract pages · Organize PDF · Scan to PDF |
+| **Optimalkan PDF** | Compress PDF · Repair PDF · OCR PDF |
+| **Konversi ke PDF** | JPG to PDF · WORD to PDF · POWERPOINT to PDF · EXCEL to PDF · HTML to PDF |
+| **Konversi dari PDF** | PDF to JPG · PDF to WORD · PDF to POWERPOINT · PDF to EXCEL · PDF to PDF/A |
+| **Edit PDF** | Rotate PDF · Add page numbers · Add watermark · Crop PDF · Edit PDF · PDF Forms |
+| **Keamanan PDF** | Unlock PDF · Protect PDF · Sign PDF · Redact PDF · Compare PDF |
+| **Kecerdasan PDF** | AI Summarizer · Translate PDF · PDF to Markdown |
+
+Catatan:
+
+- **Protect PDF** memakai Standard Security Handler (V=4 / R=4, AES-128),
+  termasuk nilai `/O` dan `/U` sesuai ISO 32000-1 §7.6.3, plus bit izin
+  (cetak / ubah / salin / anotasi). Hasilnya **dapat dibuka reader lain**
+  (diverifikasi dengan pypdf) dan **ditolak** bila password salah.
+- **Unlock PDF** membuka PDF terenkripsi lalu menyimpan salinan tanpa
+  enkripsi; teks & vektor tetap utuh.
+- **Redact PDF** merender ulang halaman sehingga teks yang disensor benar-benar
+  hilang dari isi PDF, bukan sekadar ditutup.
+- **OCR** dan **Terjemah** memakai mesin bawaan browser (`TextDetector`,
+  `Translator`). Bila peramban tidak memilikinya, aplikasi menampilkan
+  penjelasan jelas — tidak ada unduhan model dari internet.
+- **HTML to PDF** memakai dialog cetak browser, jadi hasilnya perlu disimpan
+  manual dari dialog tersebut.
+
 ## Struktur
 
 ```
@@ -123,6 +158,14 @@ pemisah-pdf/
 ├── style.css
 ├── app.js            (antarmuka, tab, pemisahan, penggabungan)
 ├── compressor.js     (mesin kompresi: struktur, analisis DPI, gambar)
+├── tool-core.js      (registry alat + helper bersama)
+├── tool-pdf.js       (alat PDF native: putar, nomor, watermark, potong, edit,
+│                      formulir, rapikan, PDF/A, susun)
+├── tool-convert.js   (konversi gambar/Office/HTML/PDF)
+├── tool-crypto.js    (MD5, RC4, AES-128-CBC + Standard Security Handler)
+├── tool-smart.js     (kunci, lindungi, tanda tangan, redaksi, banding,
+│                      Markdown, ringkas, terjemah, OCR)
+├── tool-ui.js        (launcher 7 kategori + workspace alat generik)
 └── vendor/
     ├── pdf-lib.min.js       (menulis, memecah, menggabung, menyimpan ulang PDF)
     ├── pdf.min.js           (pdf.js — pratinjau, rasterisasi, dekripsi)
