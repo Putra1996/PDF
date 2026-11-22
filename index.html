@@ -289,12 +289,14 @@
 
     <div class="card" id="compressOpts" hidden>
       <h3 class="card-title">Tingkat kompresi</h3>
+      <p class="muted tiny" id="compressEstIntro">Perkiraan ukuran hasil dihitung otomatis dari file yang dimuat — pilih tingkat yang paling hemat.</p>
       <div class="presets">
         <label class="preset">
           <input type="radio" name="clevel" value="lossless" />
           <span class="preset-body">
             <span class="preset-name">Ringan <span class="tag-soft">tanpa raster</span></span>
             <span class="preset-desc">Optimalkan struktur file &amp; buang data tak terpakai. Teks, font, dan gambar 100% utuh.</span>
+            <span class="preset-est" data-est="lossless"></span>
           </span>
         </label>
         <label class="preset">
@@ -302,6 +304,7 @@
           <span class="preset-body">
             <span class="preset-name">Optimal <span class="tag-soft">disarankan</span></span>
             <span class="preset-desc">Teks &amp; font tetap vektor (tetap tajam &amp; bisa dicari). Hanya gambar raster yang melebihi 200 DPI diperkecil.</span>
+            <span class="preset-est" data-est="optimal"></span>
           </span>
         </label>
         <label class="preset">
@@ -309,6 +312,7 @@
           <span class="preset-body">
             <span class="preset-name">Seimbang</span>
             <span class="preset-desc">Raster 150 DPI kualitas tinggi. Teks jadi gambar; halaman pindai tidak pernah di-upsample.</span>
+            <span class="preset-est" data-est="balanced"></span>
           </span>
         </label>
         <label class="preset">
@@ -316,6 +320,7 @@
           <span class="preset-body">
             <span class="preset-name">Kuat</span>
             <span class="preset-desc">Raster 110 DPI — ukuran paling kecil, detail menurun.</span>
+            <span class="preset-est" data-est="strong"></span>
           </span>
         </label>
         <label class="preset">
@@ -323,9 +328,11 @@
           <span class="preset-body">
             <span class="preset-name">Kustom</span>
             <span class="preset-desc">Atur sendiri strategi, resolusi, dan kualitas gambar.</span>
+            <span class="preset-est" data-est="custom"></span>
           </span>
         </label>
       </div>
+      <div class="est-summary" id="compressEstSummary" hidden></div>
 
       <div class="sliders" id="customOpts" hidden>
         <label class="slider-row" for="cStrategy">

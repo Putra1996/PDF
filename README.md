@@ -25,6 +25,7 @@ Aplikasi web untuk **memecah, mengekstrak, menggabungkan, dan mengompres** PDF. 
 | **Bersihkan metadata** | Judul, penulis, kata kunci, dan XMP dibuang (opsional). Bila dimatikan, metadata asli dokumen dipertahankan. |
 | **Aksesibilitas** | Navigasi tab dengan tombol panah, `role="tabpanel"`, label ARIA, dan fokus yang jelas. |
 | **Pesan error ramah** | PDF terenkripsi, rusak, terpotong, atau bukan PDF ditolak dengan pesan Bahasa Indonesia yang jelas — bukan error internal pustaka. |
+| **Perkiraan ukuran hasil** | Tiap tingkat kompresi menampilkan perkiraan ukuran file setelah dikompresi (+ % penghematan) sebelum dijalankan, supaya mudah memilih yang paling hemat. |
 
 ## Cara pakai
 
@@ -68,12 +69,29 @@ Hasil gabungan mempertahankan ukuran & rotasi tiap halaman aslinya (tidak dirast
 Pilihan tambahan: **grayscale**, **bersihkan metadata**, dan **jangan pernah memperbesar file**.
 Setelah selesai muncul ringkasan *% lebih kecil* (mis. `64% lebih kecil — 393 KB → 143 KB`), detail per file, dan tombol unduh (ZIP bila lebih dari satu file).
 
+### Perkiraan ukuran hasil (sebelum compressing)
+
+Begitu file PDF dimuat, tiap tingkat kompresi menampilkan **perkiraan ukuran file setelah dikompresi** plus persentase penghematan, sehingga Anda bisa memilih tingkat mana yang paling hemat sebelum menjalankan kompresi:
+
+```
+Optimal  (disarankan)
+Teks & font tetap vektor (tetap tajam & bisa dicari)…
+131 KB  −64%  dari 363 KB  [pasti]
+```
+
+- Angka dihitung dengan **mesin kompresi yang sama**, bukan tebakan. Untuk dokumen sampai 30 halaman, dokumennya dikompres utuh sehingga angkanya **persis** sama dengan hasil kompresi sebenarnya (ditandai `pasti`).
+- Untuk dokumen lebih besar, hanya sebagian halaman yang diproses (ditandai `≈ dari N halaman`), lalu hasilnya diekstrapolasi terpisah untuk bagian gambar dan non-gambar supaya tetap akurat.
+- Perkiraan dihitung di latar belakang — antrean satu per satu, jadi antarmuka tetap responsif. Angka untuk preset yang sedang dipilih dihitung lebih dulu.
+- Angka otomatis diperbarui saat file ditambah/diubah/dihapus atau saat opsi (grayscale, metadata, jangan-perbesar, DPI, kualitas) berubah.
+- Baris ringkasan di bawah daftar menandai tingkat yang **paling hemat**.
+
 ### Cara kerja kompresi (detail teknis)
 
 1. **Struktur** — objek PDF yang tidak lagi dirujuk (orphan) dibuang; metadata XMP/title/author dibersihkan bila diminta; objek ditulis ulang memakai object stream.
 2. **Analisis DPI** — content stream tiap halaman diparse (tokenizer sendiri, termasuk Form XObject) untuk mengetahui **ukuran penempatan** tiap gambar dalam poin. Dari situ dihitung DPI efektifnya. Gambar yang dipakai di beberapa halaman memakai penempatan **terbesar** di seluruh dokumen, jadi tidak diperkecil berulang.
 3. **Perkecil gambar** — gambar yang DPI efektifnya di atas target diperkecil **bertahap** (setengah demi setengah, `imageSmoothingQuality: high`) lalu dikodekan ulang sebagai JPEG. Format sumber yang didukung: JPEG (DCTDecode) dan data mentah (Flate/ASCII) dengan ruang warna **DeviceRGB, DeviceGray, DeviceCMYK, Indexed**, serta 1/2/4/8 bit per komponen. Gambar dengan alpha (`SMask`), stencil mask (`ImageMask`), atau JPEG yang lebih kecil dari aslinya **tidak disentuh**.
 4. **Anti-membengkak** — hasil hanya dipakai bila benar-benar lebih kecil; jika tidak, gambar asli dipertahankan. Bila seluruh berkas masih lebih besar dari aslinya, berkas asli dikembalikan. Mode raster juga mencoba ulang dengan kualitas/DPI lebih rendah sebelum menyerah.
+5. **Perkiraan ukuran** — untuk dokumen ≤ 30 halaman, mesin kompresi dijalankan utuh pada dokumen terpisah untuk memperoleh angka pasti. Untuk dokumen lebih besar, halaman sampel diproses (halaman paling berat + halaman tersebar), lalu rasio gambar dan non-gambar dihitung terpisah sehingga estimasi tetap akurat walau halaman foto berada di luar sampel.
 
 ## Struktur
 

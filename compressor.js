@@ -1176,8 +1176,200 @@
     };
   }
 
+  /* ============================================================
+     Perkiraan ukuran hasil kompresi
+     ------------------------------------------------------------
+     • Dokumen kecil-menengah: dokumen dikompres utuh, jadi
+       angkanya PERSIS sama dengan hasil kompresi sebenarnya.
+     • Dokumen besar: hanya sebagian halaman yang diproses, lalu
+       hasilnya diekstrapolasi secara terpisah untuk gambar dan
+       non-gambar (stratified estimator) supaya tidak meleset jauh
+       ketika halaman foto berada di luar sampel.
+     ============================================================ */
+  const EST_EXACT_MAX_PAGES = 30;
+  const EST_SAMPLE_PAGES = 4;
+
+  /* Halaman sampel: tersebar merata di seluruh dokumen. */
+  function sampleIndices(n, take) {
+    const count = Math.max(1, Math.min(take, n));
+    if (count === 1) return [0];
+    const out = [];
+    for (let i = 0; i < count; i++) {
+      out.push(Math.round((i * (n - 1)) / (count - 1)));
+    }
+    return [...new Set(out)].sort((a, b) => a - b);
+  }
+
+  /* Jumlah byte gambar yang dipakai tiap halaman. */
+  async function pageImageWeights(doc, pages) {
+    const ctx = doc.context;
+    const out = [];
+    for (const page of pages) {
+      let bytes = 0;
+      try {
+        const placements = await collectPlacements(doc, page);
+        for (const [, place] of placements) {
+          const s = ctx.lookup(place.ref);
+          if (s instanceof PDFRawStream) bytes += s.getContentsSize();
+        }
+      } catch (_) {
+        /* abaikan */
+      }
+      out.push(bytes);
+    }
+    return out;
+  }
+
+  /* Total byte objek gambar UNIK yang dipakai sekumpulan halaman.
+     Gambar yang dipakai bersama beberapa halaman hanya dihitung
+     satu kali — kalau tidak, ukuran dokumen akan terlewat. */
+  async function uniqueImageBytes(doc, pages) {
+    const ctx = doc.context;
+    const seen = new Set();
+    let bytes = 0;
+    for (const page of pages) {
+      try {
+        const placements = await collectPlacements(doc, page);
+        for (const [key, place] of placements) {
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const s = ctx.lookup(place.ref);
+          if (s instanceof PDFRawStream) bytes += s.getContentsSize();
+        }
+      } catch (_) {
+        /* abaikan */
+      }
+    }
+    return bytes;
+  }
+
+  /* Pilih halaman sampel yang mewakili dokumen: halaman paling
+     berat (biasanya berisi foto) selalu ikut, sisanya tersebar. */
+  function chooseSamplePages(weights, take) {
+    const n = weights.length;
+    const totalW = weights.reduce((a, b) => a + b, 0);
+    const chosen = new Set();
+
+    if (totalW > 0) {
+      const heavy = weights
+        .map((w, i) => ({ w, i }))
+        .filter((x) => x.w > 0)
+        .sort((a, b) => b.w - a.w);
+      let acc = 0;
+      const half = Math.max(1, Math.ceil(take / 2));
+      for (const { w, i } of heavy) {
+        if (chosen.size >= half) break;
+        chosen.add(i);
+        acc += w;
+        if (acc >= totalW * 0.5) break;
+      }
+    }
+
+    // lengkapi dengan halaman yang tersebar merata
+    for (const i of sampleIndices(n, take)) chosen.add(i);
+
+    return [...chosen].sort((a, b) => a - b);
+  }
+
+  async function estimate(inputBytes, opts = {}) {
+    const settings = {
+      mode: opts.mode || "optimal",
+      dpi: Math.max(72, Math.min(400, Math.round(opts.dpi || 200))),
+      quality: Math.max(0.3, Math.min(0.98, opts.quality ?? 0.82)),
+      gray: !!opts.gray,
+      cleanMeta: opts.cleanMeta !== false,
+      neverBigger: opts.neverBigger !== false,
+    };
+
+    const totalIn = inputBytes.length;
+    if (!totalIn) return null;
+
+    let doc;
+    try {
+      doc = await PDFDocument.load(inputBytes, { updateMetadata: false, throwOnInvalidObject: false });
+    } catch (_) {
+      return null;
+    }
+    const pageCount = doc.getPageCount();
+    if (!pageCount) return null;
+
+    const inner = Object.assign({}, settings, { neverBigger: false });
+
+    /* --- 1. Dokumen kecil: kompres utuh, angka persis --- */
+    if (pageCount <= EST_EXACT_MAX_PAGES) {
+      try {
+        const res = await compress(inputBytes, inner);
+        if (!res || !res.bytes || !res.bytes.length) return null;
+        let size = res.bytes.length;
+        if (settings.neverBigger) size = Math.min(size, totalIn);
+        return { size, exact: true, sampled: pageCount, pages: pageCount, originalSize: totalIn };
+      } catch (_) {
+        return null;
+      }
+    }
+
+    /* --- 2. Dokumen besar: sampel + estimasi terstratifikasi --- */
+    const pages = doc.getPages();
+    const weights = await pageImageWeights(doc, pages);
+    const picked = chooseSamplePages(weights, EST_SAMPLE_PAGES);
+    if (!picked.length) return null;
+
+    /*_byte gambar unik_ (gambar bersama dihitung sekali) */
+    const totalImg = await uniqueImageBytes(doc, pages);
+    const samplePages = picked.map((i) => pages[i]);
+    const sampleImg = await uniqueImageBytes(doc, samplePages);
+
+    let baseBytes;
+    try {
+      const sdoc = await PDFDocument.create();
+      const copied = await sdoc.copyPages(doc, picked);
+      copied.forEach((p) => sdoc.addPage(p));
+      baseBytes = await sdoc.save({ useObjectStreams: true, addDefaultPage: false });
+    } catch (_) {
+      return null;
+    }
+    if (!baseBytes || !baseBytes.length) return null;
+
+    let res;
+    try {
+      res = await compress(baseBytes, inner);
+    } catch (_) {
+      return null;
+    }
+    if (!res || !res.bytes || !res.bytes.length) return null;
+
+    const outBytes = res.bytes.length;
+
+    /* Pisahkan kontribusi gambar dan non-gambar pada sampel. */
+    let outImg = 0;
+    try {
+      const outDoc = await PDFDocument.load(res.bytes, { updateMetadata: false, throwOnInvalidObject: false });
+      outImg = await uniqueImageBytes(outDoc, outDoc.getPages());
+    } catch (_) {
+      outImg = 0;
+    }
+
+    const sampleNon = Math.max(0, baseBytes.length - sampleImg);
+    const outNon = Math.max(0, outBytes - outImg);
+
+    const totalNon = Math.max(0, totalIn - totalImg);
+    const rImg = sampleImg > 0 ? outImg / sampleImg : 1;
+    const rNon = sampleNon > 0 ? outNon / sampleNon : 1;
+
+    let size = Math.round(rImg * totalImg + rNon * totalNon);
+    if (settings.neverBigger) size = Math.min(size, totalIn);
+    return {
+      size,
+      exact: false,
+      sampled: picked.length,
+      pages: pageCount,
+      originalSize: totalIn,
+    };
+  }
+
   global.PDFCompressor = {
     compress,
+    estimate,
     PRODUCER,
     // dipakai untuk pengujian internal
     _internals: {
@@ -1188,6 +1380,10 @@
       parseColorSpace,
       decodeImageToSource,
       rawToImageData,
+      sampleIndices,
+      pageImageWeights,
+      uniqueImageBytes,
+      chooseSamplePages,
     },
   };
 })(typeof window !== "undefined" ? window : globalThis);
