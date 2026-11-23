@@ -28,6 +28,9 @@
     pendingImage: null,    // dataURL gambar yang siap disisipkan
     opSeq: 0,
     busy: false,
+    wrap: null,            // elemen panel (untuk pintasan keyboard)
+    redraw: null,          // fungsi render terakhir
+    hist: { past: [], future: [], last: 0 },
   };
 
   /* ---------- util kecil ---------- */
@@ -63,6 +66,68 @@
     return (st.files && st.files[0]) || null;
   }
 
+  /* ============================================================
+     Riwayat perubahan (undo / redo)
+     ============================================================ */
+  function snapshot() {
+    try {
+      return JSON.parse(JSON.stringify(edits()));
+    } catch (_) {
+      return {};
+    }
+  }
+  function applySnapshot(snap) {
+    const e = edits();
+    for (const k of Object.keys(e)) delete e[k];
+    if (snap) Object.assign(e, snap);
+  }
+  /* Simpan state SEBELUM perubahan. Perubahan yang beruntun
+     (mis. mengetik) digabung jadi satu langkah riwayat. */
+  function pushHistory(force) {
+    const now = Date.now();
+    if (!force && now - S.hist.last < 700) {
+      S.hist.last = now;
+      return;
+    }
+    S.hist.past.push(snapshot());
+    if (S.hist.past.length > 80) S.hist.past.shift();
+    S.hist.future.length = 0;
+    S.hist.last = now;
+  }
+  function clearHistory() {
+    S.hist.past.length = 0;
+    S.hist.future.length = 0;
+    S.hist.last = 0;
+  }
+  function undo() {
+    if (!S.hist.past.length) return false;
+    S.hist.future.push(snapshot());
+    applySnapshot(S.hist.past.pop());
+    S.hist.last = 0;
+    afterHistory("Perubahan dibatalkan.");
+    return true;
+  }
+  function redo() {
+    if (!S.hist.future.length) return false;
+    S.hist.past.push(snapshot());
+    applySnapshot(S.hist.future.pop());
+    S.hist.last = 0;
+    afterHistory("Perubahan diulang.");
+    return true;
+  }
+  function afterHistory(msg) {
+    S.sel = null;
+    if (S.redraw) S.redraw();
+    toast(msg);
+  }
+  function updateHistoryButtons() {
+    if (!S.wrap) return;
+    const u = S.wrap.querySelector("[data-ed=undo]");
+    const r = S.wrap.querySelector("[data-ed=redo]");
+    if (u) u.disabled = !S.hist.past.length;
+    if (r) r.disabled = !S.hist.future.length;
+  }
+
   /* Konversi koordinat kanvas <-> user space PDF. */
   function canvasToPdf(viewport, cx, cy) {
     const t = viewport.transform;
@@ -94,7 +159,11 @@
         <button type="button" class="btn btn-ghost btn-sm" data-ed="pick">Sisipkan gambar…</button>
         <input type="file" accept="image/png,image/jpeg" hidden data-ed="file" />
         <span class="ed-sep"></span>
+        <button type="button" class="btn btn-ghost btn-sm" data-ed="undo" title="Urungkan perubahan (Ctrl+Z)" aria-label="Urungkan perubahan" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
+        <button type="button" class="btn btn-ghost btn-sm" data-ed="redo" title="Ulangi perubahan (Ctrl+Y)" aria-label="Ulangi perubahan" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg></button>
+        <span class="ed-sep"></span>
         <button type="button" class="btn btn-ghost btn-sm" data-ed="reset">Batalkan semua perubahan</button>
+        <button type="button" class="btn btn-primary btn-sm" data-ed="docx" title="Unduh isi dokumen sebagai berkas .docx">Ekspor ke Word</button>
       </div>
       <div class="ed-main">
         <div class="ed-stage"><div class="ed-stack">
@@ -104,6 +173,7 @@
         <aside class="ed-side"></aside>
       </div>`;
     host.appendChild(wrap);
+    S.wrap = wrap;
 
     const canvas = wrap.querySelector(".ed-canvas");
     const layer = wrap.querySelector(".ed-layer");
@@ -125,12 +195,31 @@
       else if (act === "zoomout") setZoom(S.zoom - 0.25);
       else if (act === "pick") wrap.querySelector("[data-ed=file]").click();
       else if (act === "reset") {
+        pushHistory(true);
         edits()[String(S.pageNo)] = [];
         S.sel = null;
         redraw();
         toast("Perubahan pada halaman ini dibatalkan.");
       }
+      else if (act === "undo") { undo(); }
+      else if (act === "redo") { redo(); }
+      else if (act === "docx") { exportDocx(); }
     });
+
+    /* Pintasan undo/redo (Ctrl+Z / Ctrl+Y) selama panel editor aktif. */
+    const keyHandler = (e) => {
+      if (!S.doc || !S.wrap || !document.body.contains(S.wrap)) return;
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const k = String(e.key || "").toLowerCase();
+      if (k === "z" && !e.shiftKey) {
+        if (!undo()) return;
+        e.preventDefault();
+      } else if (k === "y" || (k === "z" && e.shiftKey)) {
+        if (!redo()) return;
+        e.preventDefault();
+      }
+    };
+    document.addEventListener("keydown", keyHandler);
 
     wrap.querySelector("[data-ed=file]").addEventListener("change", (e) => {
       const f = e.target.files && e.target.files[0];
@@ -162,6 +251,7 @@
     let redrawQueued = false;
 
     async function redraw() {
+      S.redraw = redraw;
       if (!S.doc) return;
       /* jangan render dua kali concurrently: antrikan satu render lagi. */
       if (redrawing) { redrawQueued = true; return; }
@@ -186,9 +276,12 @@
       }
     }
 
+    S.redraw = redraw;
+
     async function redrawInner() {
       const { canvas: cv, ctx, viewport } = await C.renderPage(S.doc, S.pageNo, S.zoom);
       lastViewport = viewport;
+      S.viewport = viewport;
       canvas.width = cv.width;
       canvas.height = cv.height;
       canvas.style.width = cv.width + "px";
@@ -204,6 +297,7 @@
       for (const b of bar.querySelectorAll(".ed-mode")) {
         b.classList.toggle("on", b.dataset.mode === S.mode);
       }
+      updateHistoryButtons();
       drawLayer(viewport);
       renderSide();
     }
@@ -347,6 +441,7 @@
       if (!op) return;
       e.preventDefault();
       e.stopPropagation();
+      pushHistory(true);
       const r = box.getBoundingClientRect();
       const resize = !!e.target.closest(".ed-handle");
       drag = {
@@ -412,6 +507,7 @@
           id: t.id, srcId: t.id, k: "text", box: { x: t.x, y: t.y, w: t.w, h: t.h },
           by: t.by, text: t.str, size: t.size, font: "helvetica", color: "#111111",
           bold: false, italic: false, align: "left",
+          underline: false, strike: false, lineHeight: 1.2, letterSpacing: 0,
         }, false, t);
       } else {
         const im = S.images[sel.idx];
@@ -429,11 +525,45 @@
       const wrap = el("div", "ed-insp");
       wrap.appendChild(el("h4", "ed-insp-title", isNew ? "Teks baru" : "Teks di PDF"));
 
+      /* Preset gaya ala Word: satu klik mengatur semua properti. */
+      const styleSel = document.createElement("select");
+      const optAuto = document.createElement("option");
+      optAuto.value = "";
+      optAuto.textContent = "— gaya cepat —";
+      styleSel.appendChild(optAuto);
+      for (const st of C.TEXT_STYLES) {
+        const o = document.createElement("option");
+        o.value = st.id;
+        o.textContent = st.label;
+        styleSel.appendChild(o);
+      }
+      /* tandai preset yang sedang dipakai */
+      const cocok = C.TEXT_STYLES.find((st) =>
+        st.font === (base.font || "helvetica") &&
+        st.size === (base.size || 12) &&
+        !!st.bold === !!base.bold &&
+        !!st.italic === !!base.italic &&
+        st.align === (base.align || "left") &&
+        st.color.toLowerCase() === String(base.color || "#111111").toLowerCase());
+      if (cocok) styleSel.value = cocok.id;
+      styleSel.addEventListener("change", () => {
+        const st = C.textStyle(styleSel.value);
+        if (!st) return;
+        Object.assign(base, {
+          font: st.font, size: st.size, bold: st.bold, italic: st.italic,
+          color: st.color, align: st.align, underline: st.underline,
+          strike: st.strike, lineHeight: st.lineHeight, letterSpacing: st.letterSpacing,
+        });
+        commit(base, isNew);
+        renderSide();
+      });
+      wrap.appendChild(labeled("Gaya teks", styleSel, "style"));
+
       const ta = document.createElement("textarea");
       ta.rows = 3;
       ta.value = base.text || "";
       ta.addEventListener("input", () => { base.text = ta.value; commit(base, isNew); });
-      wrap.appendChild(labeled("Isi teks", ta));
+      wrap.appendChild(labeled("Isi teks", ta, "text"));
 
       const selFont = document.createElement("select");
       for (const f of C.FONT_LIST) {
@@ -444,7 +574,7 @@
       }
       selFont.value = base.font || "helvetica";
       selFont.addEventListener("change", () => { base.font = selFont.value; commit(base, isNew); });
-      wrap.appendChild(labeled("Font", selFont));
+      wrap.appendChild(labeled("Font", selFont, "font"));
 
       const row = el("div", "ed-row");
       const size = document.createElement("input");
@@ -453,13 +583,13 @@
       size.max = "200";
       size.value = base.size || 12;
       size.addEventListener("input", () => { base.size = Number(size.value) || 12; commit(base, isNew); });
-      row.appendChild(labeled("Ukuran (pt)", size));
+      row.appendChild(labeled("Ukuran (pt)", size, "size"));
 
       const color = document.createElement("input");
       color.type = "color";
       color.value = /^#[0-9a-f]{6}$/i.test(base.color || "") ? base.color : "#111111";
       color.addEventListener("input", () => { base.color = color.value; commit(base, isNew); });
-      row.appendChild(labeled("Warna", color));
+      row.appendChild(labeled("Warna", color, "color"));
       wrap.appendChild(row);
 
       const row2 = el("div", "ed-row");
@@ -467,12 +597,22 @@
       bold.type = "checkbox";
       bold.checked = !!base.bold;
       bold.addEventListener("change", () => { base.bold = bold.checked; commit(base, isNew); });
-      row2.appendChild(labeled("Tebal", bold));
+      row2.appendChild(labeled("Tebal", bold, "bold"));
       const italic = document.createElement("input");
       italic.type = "checkbox";
       italic.checked = !!base.italic;
       italic.addEventListener("change", () => { base.italic = italic.checked; commit(base, isNew); });
-      row2.appendChild(labeled("Miring", italic));
+      row2.appendChild(labeled("Miring", italic, "italic"));
+      const underline = document.createElement("input");
+      underline.type = "checkbox";
+      underline.checked = !!base.underline;
+      underline.addEventListener("change", () => { base.underline = underline.checked; commit(base, isNew); });
+      row2.appendChild(labeled("Garis bawah", underline, "underline"));
+      const strike = document.createElement("input");
+      strike.type = "checkbox";
+      strike.checked = !!base.strike;
+      strike.addEventListener("change", () => { base.strike = strike.checked; commit(base, isNew); });
+      row2.appendChild(labeled("Coret", strike, "strike"));
       const align = document.createElement("select");
       for (const [v, l] of [["left", "Kiri"], ["center", "Tengah"], ["right", "Kanan"]]) {
         const o = document.createElement("option");
@@ -481,8 +621,33 @@
       }
       align.value = base.align || "left";
       align.addEventListener("change", () => { base.align = align.value; commit(base, isNew); });
-      row2.appendChild(labeled("Rata", align));
+      row2.appendChild(labeled("Rata", align, "align"));
       wrap.appendChild(row2);
+
+      const row3 = el("div", "ed-row");
+      const lh = document.createElement("input");
+      lh.type = "number";
+      lh.min = "0.8";
+      lh.max = "3";
+      lh.step = "0.05";
+      lh.value = base.lineHeight || 1.2;
+      lh.addEventListener("input", () => {
+        base.lineHeight = Math.min(3, Math.max(0.8, Number(lh.value) || 1.2));
+        commit(base, isNew);
+      });
+      row3.appendChild(labeled("Spasi baris", lh, "lineHeight"));
+      const ls = document.createElement("input");
+      ls.type = "number";
+      ls.min = "-2";
+      ls.max = "8";
+      ls.step = "0.1";
+      ls.value = base.letterSpacing || 0;
+      ls.addEventListener("input", () => {
+        base.letterSpacing = Math.min(8, Math.max(-2, Number(ls.value) || 0));
+        commit(base, isNew);
+      });
+      row3.appendChild(labeled("Spasi huruf (pt)", ls, "letterSpacing"));
+      wrap.appendChild(row3);
 
       const acts = el("div", "ed-actions");
       if (!isNew) {
@@ -525,7 +690,7 @@
         base.box.w = Math.max(8, Number(wIn.value) || base.box.w);
         commitImage(base, isNew, orig);
       });
-      row.appendChild(labeled("Lebar (pt)", wIn));
+      row.appendChild(labeled("Lebar (pt)", wIn, "width"));
       const hIn = document.createElement("input");
       hIn.type = "number";
       hIn.min = "8";
@@ -534,7 +699,7 @@
         base.box.h = Math.max(8, Number(hIn.value) || base.box.h);
         commitImage(base, isNew, orig);
       });
-      row.appendChild(labeled("Tinggi (pt)", hIn));
+      row.appendChild(labeled("Tinggi (pt)", hIn, "height"));
       wrap.appendChild(row);
 
       const acts = el("div", "ed-actions");
@@ -589,15 +754,18 @@
     }
 
 
-    function labeled(text, input) {
+    function labeled(text, input, key) {
       const w = el("label", "ed-field");
       w.appendChild(el("span", "ed-label", text));
       w.appendChild(input);
+      /* kunci stabil untuk pengujian otomatis */
+      if (key) w.dataset.field = key;
       return w;
     }
 
     /* ---------- simpan perubahan ---------- */
     function upsert(op) {
+      pushHistory();
       const ops = pageOps();
       const i = ops.findIndex((o) => o.id === op.id);
       if (i >= 0) ops[i] = op;
@@ -605,12 +773,14 @@
       edits()[String(S.pageNo)] = ops;
     }
     function removeOp(id) {
+      pushHistory();
       const ops = pageOps().filter((o) => o.id !== id);
       edits()[String(S.pageNo)] = ops;
     }
     /* Hapus semua operasi yang berasal dari objek yang sama
        (mis. op teks lalu op hapus untuk blok teks itu). */
     function removeBySrc(srcId) {
+      pushHistory();
       const ops = pageOps().filter((o) => o.srcId !== srcId);
       edits()[String(S.pageNo)] = ops;
     }
@@ -676,6 +846,7 @@
         id: "n" + (++S.opSeq), k: "text", newItem: true,
         box, by: uy, text: "Teks baru", size, font: "helvetica",
         color: "#111111", bold: false, italic: false, align: "left",
+        underline: false, strike: false, lineHeight: 1.2, letterSpacing: 0,
       };
       upsert(op);
       S.sel = { kind: "text", idx: -1, opId: op.id, newItem: true };
@@ -723,6 +894,7 @@
         S.pageNo = 1;
         S.sel = null;
         edits()[String(1)] = [];
+        clearHistory();
         await loadPageBoxes();
         stageMessage("");
         await redraw();
@@ -744,9 +916,137 @@
     ui().custom.opts.edits = edits();
     ui().custom.refreshEditor = refresh;
     ui().custom.disposeEditor = () => {
+      document.removeEventListener("keydown", keyHandler);
       if (S.doc) { try { S.doc.destroy(); } catch (_) {} S.doc = null; }
+      S.wrap = null;
+      S.redraw = null;
+      clearHistory();
     };
     refresh();
+  }
+
+  /* ============================================================
+     Ekspor langsung ke Word (.docx)
+     ------------------------------------------------------------
+     Isi dokumen dibangun dari state editor: teks yang sudah ada
+     (dengan hasil edit), teks baru, dan gambar (dipotong dari
+     render halaman atau diambil dari berkas yang disisipkan).
+     ============================================================ */
+  async function buildDocxFromState(f) {
+    const doc = await C.openPdfjs(f.bytes);
+    const pages = [];
+    try {
+      for (let p = 1; p <= doc.numPages; p++) {
+        const texts = await C.pageTextBoxes(doc, p);
+        const images = await C.pageImageBoxes(doc, p);
+        texts.forEach((t, i) => { t.id = "t" + i; });
+        images.forEach((im, i) => { im.id = "i" + i; });
+        const ops = (edits()[String(p)] || []).slice();
+        const opBySrc = new Map();
+        for (const o of ops) if (o.srcId) opBySrc.set(o.srcId, o);
+        const items = [];
+
+        /* teks yang sudah ada di PDF */
+        for (const t of texts) {
+          const op = opBySrc.get(t.id);
+          if (op && op.k === "erase") continue;
+          if (op && op.k === "text") {
+            items.push({
+              type: "text", text: op.text != null ? op.text : t.str,
+              bold: op.bold, italic: op.italic, underline: op.underline, strike: op.strike,
+              size: op.size || t.size, color: op.color, align: op.align,
+              y: t.y, x: t.x,
+            });
+          } else {
+            items.push({ type: "text", text: t.str, size: t.size, y: t.y, x: t.x });
+          }
+        }
+        /* teks yang disisipkan user */
+        for (const o of ops) {
+          if (o.k !== "text" || !o.newItem) continue;
+          items.push({
+            type: "text", text: o.text, bold: o.bold, italic: o.italic,
+            underline: o.underline, strike: o.strike, size: o.size, color: o.color,
+            align: o.align, y: o.box.y, x: o.box.x,
+          });
+        }
+
+        /* gambar: sisipkan berkas user atau potong dari render halaman */
+        const imgItems = [];
+        for (const im of images) {
+          const op = opBySrc.get(im.id);
+          if (op && op.k === "erase") continue;
+          if (op && op.src) {
+            imgItems.push({ type: "image", dataUrl: op.src, w: op.box.w, h: op.box.h, y: op.box.y, x: op.box.x });
+          } else {
+            imgItems.push({ type: "image", dataUrl: null, src: op ? op.copyFrom : im, box: op ? op.box : im, y: (op ? op.box : im).y, x: (op ? op.box : im).x });
+          }
+        }
+        for (const o of ops) {
+          if (o.k !== "image" || !o.newItem || !o.src) continue;
+          imgItems.push({ type: "image", dataUrl: o.src, w: o.box.w, h: o.box.h, y: o.box.y, x: o.box.x });
+        }
+        if (imgItems.some((it) => !it.dataUrl)) {
+          const scale = 2;
+          const { canvas, viewport } = await C.renderPage(doc, p, scale);
+          for (const it of imgItems) {
+            if (it.dataUrl || !it.src) continue;
+            const r = C.pdfRectToCanvas(viewport, it.src);
+            const w = Math.max(1, Math.round(r.w));
+            const h = Math.max(1, Math.round(r.h));
+            try {
+              const off = document.createElement("canvas");
+              off.width = w;
+              off.height = h;
+              off.getContext("2d").drawImage(canvas, r.x, r.y, w, h, 0, 0, w, h);
+              it.dataUrl = off.toDataURL("image/png");
+            } catch (_) {
+              it.dataUrl = null;
+            }
+          }
+          canvas.width = canvas.height = 0;
+        }
+        for (const it of imgItems) {
+          if (!it.dataUrl) continue;
+          items.push({ type: "image", dataUrl: it.dataUrl, w: it.w || it.box.w, h: it.h || it.box.h, y: it.y, x: it.x });
+        }
+
+        /* urutan baca: dari atas ke bawah, lalu kiri ke kanan */
+        items.sort((a, b) => (b.y - a.y) || (a.x - b.x));
+        pages.push({ items, breakBefore: p > 1 });
+      }
+    } finally {
+      try { await doc.destroy(); } catch (_) { /* abaikan */ }
+    }
+    return C.buildDocx(C.baseName(f.name), pages);
+  }
+
+  async function exportDocx() {
+    const f = file();
+    if (!f) {
+      toast("Pilih satu PDF dulu.", "err");
+      return;
+    }
+    const btn = S.wrap && S.wrap.querySelector("[data-ed=docx]");
+    if (btn) btn.disabled = true;
+    toast("Menyiapkan berkas Word…");
+    try {
+      const blob = await buildDocxFromState(f);
+      const name = C.safeName(C.baseName(f.name)) + "-edit.docx";
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      toast("Berkas Word dibuat: " + name);
+    } catch (err) {
+      toast("Ekspor Word gagal: " + ((err && err.message) || err), "err");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   }
 
   /* Keadaan internal (dipakai harness audit dan debug). */
@@ -759,9 +1059,17 @@
       texts: S.texts.length,
       images: S.images.length,
       pendingImage: !!S.pendingImage,
+      viewport: S.viewport ? {
+        scale: S.viewport.scale,
+        width: S.viewport.width,
+        height: S.viewport.height,
+        transform: S.viewport.transform,
+      } : null,
+      undoDepth: S.hist.past.length,
+      redoDepth: S.hist.future.length,
       ops: pageOps(),
     };
   }
 
-  window.PDFToolsEditor = { render, debug };
+  window.PDFToolsEditor = { render, debug, undo, redo, exportDocx };
 })();

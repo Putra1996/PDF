@@ -229,6 +229,23 @@
     { id: "comic", label: "Comic Sans MS", css: '"Comic Sans MS", "Comic Neue", "Chalkboard SE", cursive' },
   ];
 
+  /* Preset gaya teks ala Word: satu klik mengatur font, ukuran,
+     tebal/miring, warna, dan perataan sekaligus. */
+  const TEXT_STYLES = [
+    { id: "normal", label: "Normal", font: "helvetica", size: 12, bold: false, italic: false, color: "#111111", align: "left", underline: false, strike: false, lineHeight: 1.2, letterSpacing: 0 },
+    { id: "title", label: "Judul Besar", font: "helvetica", size: 30, bold: true, italic: false, color: "#0f172a", align: "left", underline: false, strike: false, lineHeight: 1.15, letterSpacing: 0 },
+    { id: "h1", label: "Judul 1", font: "helvetica", size: 22, bold: true, italic: false, color: "#0f172a", align: "left", underline: false, strike: false, lineHeight: 1.2, letterSpacing: 0 },
+    { id: "h2", label: "Judul 2", font: "helvetica", size: 17, bold: true, italic: false, color: "#1f2937", align: "left", underline: false, strike: false, lineHeight: 1.25, letterSpacing: 0 },
+    { id: "subtitle", label: "Subjudul", font: "helvetica", size: 14, bold: false, italic: false, color: "#475569", align: "left", underline: false, strike: false, lineHeight: 1.3, letterSpacing: 0.3 },
+    { id: "quote", label: "Kutipan", font: "georgia", size: 13, bold: false, italic: true, color: "#4b5563", align: "left", underline: false, strike: false, lineHeight: 1.35, letterSpacing: 0 },
+    { id: "caption", label: "Keterangan", font: "helvetica", size: 9, bold: false, italic: true, color: "#6b7280", align: "left", underline: false, strike: false, lineHeight: 1.25, letterSpacing: 0.2 },
+    { id: "code", label: "Kode", font: "courier", size: 11, bold: false, italic: false, color: "#111827", align: "left", underline: false, strike: false, lineHeight: 1.25, letterSpacing: 0 },
+  ];
+
+  function textStyle(id) {
+    return TEXT_STYLES.find((x) => x.id === id) || null;
+  }
+
   function fontCss(id) {
     const f = FONT_LIST.find((x) => x.id === id);
     return f ? f.css : FONT_LIST[0].css;
@@ -374,6 +391,27 @@
     }
   }
 
+  /* Bungkus teks ke beberapa baris sesuai lebar kotak (ala Word). */
+  function wrapText(ctx2d, text, maxW) {
+    const out = [];
+    for (const para of String(text == null ? "" : text).split(/\r?\n/)) {
+      const words = para.split(/\s+/).filter(Boolean);
+      if (!words.length) { out.push(""); continue; }
+      let cur = "";
+      for (const w of words) {
+        const t = cur ? cur + " " + w : w;
+        if (maxW > 0 && cur && ctx2d.measureText(t).width > maxW) {
+          out.push(cur);
+          cur = w;
+        } else {
+          cur = t;
+        }
+      }
+      if (cur) out.push(cur);
+    }
+    return out.length ? out : [""];
+  }
+
   function loadImageEl(src) {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -429,13 +467,47 @@
         ctx2d.textBaseline = "alphabetic";
         const align = op.align || "left";
         ctx2d.textAlign = align === "center" ? "center" : align === "right" ? "right" : "left";
-        const sizePx = (op.size || 12) * scale;
+        const size = op.size || 12;
+        const sizePx = size * scale;
         ctx2d.font = `${op.bold ? "bold " : ""}${op.italic ? "italic " : ""}${sizePx}px ${fontCss(op.font)}`;
+        if (op.letterSpacing) {
+          try { ctx2d.letterSpacing = (op.letterSpacing * scale) + "px"; } catch (_) { /* diabaikan */ }
+        }
         const anchorX = align === "center" ? op.box.x + op.box.w / 2
           : align === "right" ? op.box.x + op.box.w : op.box.x;
         const baseY = op.by != null ? op.by : op.box.y + op.box.h * TEXT_ASCENT;
-        const p = pdfPointToCanvas(viewport, anchorX, baseY);
-        ctx2d.fillText(op.text || "", p[0], p[1]);
+        /* tinggi baris dalam satuan PDF (titik) */
+        const stepPt = size * (op.lineHeight || 1.2);
+        const maxW = Math.max(0, (op.box.w || 0) * scale);
+        const lines = wrapText(ctx2d, op.text || "", maxW);
+        const thin = Math.max(1, sizePx * 0.055);
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (!line) continue;
+          const p = pdfPointToCanvas(viewport, anchorX, baseY - i * stepPt);
+          ctx2d.fillText(line, p[0], p[1]);
+          /* garis bawah & coret digambar manual supaya konsisten
+             di semua peramban (textDecoration tidak selalu ada). */
+          if (!op.underline && !op.strike) continue;
+          const wLine = ctx2d.measureText(line).width;
+          let x0 = p[0];
+          if (align === "center") x0 = p[0] - wLine / 2;
+          else if (align === "right") x0 = p[0] - wLine;
+          ctx2d.strokeStyle = op.color || "#111111";
+          ctx2d.lineWidth = thin;
+          ctx2d.beginPath();
+          if (op.underline) {
+            const y = p[1] + sizePx * 0.13;
+            ctx2d.moveTo(x0, y);
+            ctx2d.lineTo(x0 + wLine, y);
+          }
+          if (op.strike) {
+            const y = p[1] - sizePx * 0.28;
+            ctx2d.moveTo(x0, y);
+            ctx2d.lineTo(x0 + wLine, y);
+          }
+          ctx2d.stroke();
+        }
         ctx2d.restore();
       }
       if (op.k === "image") {
@@ -453,6 +525,116 @@
     }
   }
 
+
+  /* ============================================================
+     Pembuat DOCX (Word) — dipakai ekspor langsung dari editor.
+     Isi:
+       - paragraf teks dengan gaya (tebal, miring, garis bawah,
+         coret, ukuran, warna, perataan)
+       - gambar sebaris (PNG/JPEG) yang disisipkan ke dalam dokumen
+     Struktur items per halaman:
+       { type:"text",  text, bold, italic, underline, strike, size, color, align }
+       { type:"image", dataUrl, w, h }        (w/h dalam pt)
+     ============================================================ */
+  const XML_HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
+
+  function xmlEsc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+  }
+
+  function dataUrlToBytes(dataUrl) {
+    const m = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(String(dataUrl || ""));
+    if (!m) return null;
+    const mime = m[1] || "image/png";
+    const isB64 = !!m[2];
+    const payload = m[3] || "";
+    if (!isB64) return null;
+    const bin = atob(payload);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return { bytes: out, ext: /jpe?g/.test(mime) ? "jpeg" : "png", mime };
+  }
+
+  function hexColor(c, fallback) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(String(c || ""));
+    return m ? m[1].toUpperCase() : fallback;
+  }
+
+  async function buildDocx(title, pages) {
+    const zip = new JSZip();
+    const media = [];
+    let relId = 10;
+    const rels = [];
+    const body = [];
+
+    const pageXml = [];
+    for (const pg of pages || []) {
+      const one = [];
+      for (const it of (pg && pg.items) || []) {
+        if (!it) continue;
+        if (it.type === "image") {
+          const img = dataUrlToBytes(it.dataUrl);
+          if (!img) continue;
+          const name = `image${media.length + 1}.${img.ext}`;
+          zip.file("word/media/" + name, img.bytes);
+          media.push(name);
+          const rid = "rId" + (relId++);
+          rels.push(`<Relationship Id="${rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${name}"/>`);
+          const cx = Math.round(Math.max(1, it.w || 100) * 12700);
+          const cy = Math.round(Math.max(1, it.h || 100) * 12700);
+          one.push(`<w:p><w:pPr><w:jc w:val="${it.align === "center" ? "center" : it.align === "right" ? "right" : "left"}"/></w:pPr><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${media.length}" name="Gambar ${media.length}"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="${media.length}" name="Gambar ${media.length}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${rid}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`);
+          continue;
+        }
+        const txt = String(it.text == null ? "" : it.text);
+        if (!txt.trim()) continue;
+        const halfPt = Math.max(2, Math.round((it.size || 12) * 2));
+        const rpr = `<w:rPr>${it.bold ? "<w:b/>" : ""}${it.italic ? "<w:i/>" : ""}${it.underline ? '<w:u w:val="single"/>' : ""}${it.strike ? "<w:strike/>" : ""}<w:color w:val="${hexColor(it.color, "111111")}"/><w:sz w:val="${halfPt}"/><w:szCs w:val="${halfPt}"/></w:rPr>`;
+        const jc = it.align === "center" ? "center" : it.align === "right" ? "right" : "left";
+        one.push(`<w:p><w:pPr><w:jc w:val="${jc}"/></w:pPr><w:r>${rpr}<w:t xml:space="preserve">${xmlEsc(txt)}</w:t></w:r></w:p>`);
+      }
+      pageXml.push({ xml: one, breakBefore: !!(pg && pg.breakBefore) });
+    }
+    for (let i = 0; i < pageXml.length; i++) {
+      if (i > 0 || pageXml[i].breakBefore) {
+        body.push(`<w:p><w:r><w:br w:type="page"/></w:r></w:p>`);
+      }
+      body.push.apply(body, pageXml[i].xml);
+    }
+
+    zip.file("[Content_Types].xml", XML_HEAD + `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Default Extension="png" ContentType="image/png"/>
+<Default Extension="jpeg" ContentType="image/jpeg"/>
+<Default Extension="jpg" ContentType="image/jpeg"/>
+<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
+<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
+</Types>`);
+    zip.file("_rels/.rels", XML_HEAD + `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
+</Relationships>`);
+    zip.file("word/_rels/document.xml.rels", XML_HEAD + `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+${rels.join("\n")}
+</Relationships>`);
+    zip.file("word/document.xml", XML_HEAD + `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>${body.join("")}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134"/></w:sectPr></w:body></w:document>`);
+    zip.file("word/styles.xml", XML_HEAD + `<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:rPr><w:sz w:val="22"/></w:rPr></w:style>
+<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:rPr><w:b/><w:sz w:val="36"/></w:rPr></w:style>
+<w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:rPr><w:b/><w:sz w:val="28"/></w:rPr></w:style>
+</w:styles>`);
+    const now = new Date().toISOString().replace(/\.\d+Z$/, "Z");
+    zip.file("docProps/core.xml", XML_HEAD + `<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${xmlEsc(title)}</dc:title><dc:creator>Pemisah PDF</dc:creator><cp:lastModifiedBy>Pemisah PDF</cp:lastModifiedBy><dcterms:created xsi:type="dcterms:W3CDTF">${now}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">${now}</dcterms:modified></cp:coreProperties>`);
+    zip.file("docProps/app.xml", XML_HEAD + `<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>Pemisah PDF</Application></Properties>`);
+    return zip.generateAsync({ type: "blob", compression: "DEFLATE" });
+  }
+
   window.PDFToolsCore = {
     L, PDFDocument, PDFName, PDFNumber, PDFArray, PDFString, PDFHexString, PDFRef,
     PDFRawStream, PDFBool, PDFDict, PDFInvalidObject,
@@ -461,7 +643,8 @@
     fmtSize, baseName, safeName, looksLikePdf,
     loadDoc, saveDoc, pdfjsTask, openPdfjs, renderPage, canvasToBytes,
     extractText, pageText, decodeImage, makeZip,
-    FONT_LIST, fontCss, mulMat, applyMat,
+    FONT_LIST, fontCss, mulMat, applyMat, wrapText,
+    TEXT_STYLES, textStyle, buildDocx,
     pageTextBoxes, pageImageBoxes, pdfPointToCanvas, pdfRectToCanvas,
     sampleBackground, loadImageEl, applyEdits,
     fontFor, drawTextSafe, getFont,
