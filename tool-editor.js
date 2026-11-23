@@ -145,50 +145,120 @@
     const wrap = el("div", "ed-wrap");
     wrap.innerHTML = `
       <div class="ed-bar">
-        <button type="button" class="btn btn-ghost btn-sm" data-ed="prev" title="Halaman sebelumnya" aria-label="Halaman sebelumnya"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m14.5 6-6 6 6 6"/></svg></button>
-        <span class="ed-page">Halaman 1 / 1</span>
-        <button type="button" class="btn btn-ghost btn-sm" data-ed="next" title="Halaman berikutnya" aria-label="Halaman berikutnya"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9.5 6 6 6-6 6"/></svg></button>
-        <span class="ed-sep"></span>
-        <button type="button" class="btn btn-ghost btn-sm" data-ed="zoomout" title="Perkecil">−</button>
-        <span class="ed-zoom">125%</span>
-        <button type="button" class="btn btn-ghost btn-sm" data-ed="zoomin" title="Perbesar">+</button>
-        <span class="ed-sep"></span>
-        <button type="button" class="ed-mode" data-mode="select">Pilih</button>
-        <button type="button" class="ed-mode" data-mode="text">+ Teks</button>
-        <button type="button" class="ed-mode" data-mode="image">+ Gambar</button>
-        <button type="button" class="btn btn-ghost btn-sm" data-ed="pick">Sisipkan gambar…</button>
-        <input type="file" accept="image/png,image/jpeg" hidden data-ed="file" />
-        <span class="ed-sep"></span>
-        <button type="button" class="btn btn-ghost btn-sm" data-ed="undo" title="Urungkan perubahan (Ctrl+Z)" aria-label="Urungkan perubahan" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
-        <button type="button" class="btn btn-ghost btn-sm" data-ed="redo" title="Ulangi perubahan (Ctrl+Y)" aria-label="Ulangi perubahan" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg></button>
-        <span class="ed-sep"></span>
-        <button type="button" class="btn btn-ghost btn-sm" data-ed="reset">Batalkan semua perubahan</button>
-        <span class="ed-sep"></span>
-        <button type="button" class="btn btn-ghost btn-sm" data-ed="docx" title="Unduh isi dokumen sebagai berkas .docx">Ekspor ke Word</button>
-        <button type="button" class="btn btn-ghost btn-sm" data-ed="xlsx" title="Unduh isi dokumen sebagai lembar kerja .xlsx">Ekspor ke Excel</button>
-        <button type="button" class="btn btn-ghost btn-sm" data-ed="pptx" title="Unduh isi dokumen sebagai presentasi .pptx">Ekspor ke PowerPoint</button>
-        <button type="button" class="btn btn-ghost btn-sm" data-ed="xps" title="Unduh halaman sebagai berkas XPS (teks vektor)">Ekspor ke XPS</button>
-        <span class="ed-sep"></span>
-        <button type="button" class="btn btn-ghost btn-sm" data-ed="saveProject" title="Simpan semua perubahan sebagai berkas proyek .edit.json">Simpan proyek</button>
-        <button type="button" class="btn btn-ghost btn-sm" data-ed="openProject" title="Buka berkas proyek .edit.json">Buka proyek</button>
-        <input type="file" accept="application/json,.json" hidden data-ed="projectFile" />
+        <span class="ed-group">
+          <button type="button" class="btn btn-ghost btn-sm" data-ed="prev" title="Halaman sebelumnya" aria-label="Halaman sebelumnya"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m14.5 6-6 6 6 6"/></svg></button>
+          <span class="ed-page"><span class="ed-page-full">Halaman 1 / 1</span><span class="ed-page-mini">1/1</span></span>
+          <button type="button" class="btn btn-ghost btn-sm" data-ed="next" title="Halaman berikutnya" aria-label="Halaman berikutnya"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9.5 6 6 6-6 6"/></svg></button>
+        </span>
+        <span class="ed-group">
+          <button type="button" class="btn btn-ghost btn-sm" data-ed="zoomout" title="Perkecil" aria-label="Perkecil">−</button>
+          <span class="ed-zoom">125%</span>
+          <button type="button" class="btn btn-ghost btn-sm" data-ed="zoomin" title="Perbesar" aria-label="Perbesar">+</button>
+        </span>
+        <span class="ed-group">
+          <button type="button" class="ed-mode" data-mode="select">Pilih</button>
+          <button type="button" class="ed-mode" data-mode="text">+ Teks</button>
+          <button type="button" class="ed-mode" data-mode="image">+ Gambar</button>
+        </span>
+        <span class="ed-group">
+          <button type="button" class="btn btn-ghost btn-sm ed-long" data-ed="pick" title="Sisipkan gambar" aria-label="Sisipkan gambar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m4.5 17 4.6-4.2 3.2 2.8 2.6-2.2 4.6 4"/></svg>
+            <span class="ed-txt">Sisipkan gambar…</span>
+          </button>
+        </span>
+        <input type="file" accept="image/png,image/jpeg" hidden data-ed="file" aria-label="Pilih gambar untuk disisipkan" />
+        <span class="ed-group">
+          <button type="button" class="btn btn-ghost btn-sm" data-ed="undo" title="Urungkan perubahan (Ctrl+Z)" aria-label="Urungkan perubahan" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
+          <button type="button" class="btn btn-ghost btn-sm" data-ed="redo" title="Ulangi perubahan (Ctrl+Y)" aria-label="Ulangi perubahan" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg></button>
+        </span>
+        <span class="ed-group">
+          <button type="button" class="btn btn-ghost btn-sm ed-long" data-ed="reset" title="Batalkan semua perubahan" aria-label="Batalkan semua perubahan">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M9.5 7V5.2A1.2 1.2 0 0 1 10.7 4h2.6a1.2 1.2 0 0 1 1.2 1.2V7"/><path d="M6.5 7l.9 12a1.6 1.6 0 0 0 1.6 1.5h6a1.6 1.6 0 0 0 1.6-1.5l.9-12"/></svg>
+            <span class="ed-txt">Batalkan semua perubahan</span>
+          </button>
+        </span>
+        <span class="ed-menu-wrap">
+          <button type="button" class="btn btn-ghost btn-sm" data-ed="menu" data-menu="export" aria-haspopup="menu" aria-expanded="false">Ekspor
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <div class="ed-menu" data-menu-panel="export" role="menu" hidden>
+            <button type="button" data-ed="docx" role="menuitem" title="Unduh isi dokumen sebagai berkas .docx">Word (.docx)</button>
+            <button type="button" data-ed="xlsx" role="menuitem" title="Unduh isi dokumen sebagai lembar kerja .xlsx">Excel (.xlsx)</button>
+            <button type="button" data-ed="pptx" role="menuitem" title="Unduh isi dokumen sebagai presentasi .pptx">PowerPoint (.pptx)</button>
+            <button type="button" data-ed="xps" role="menuitem" title="Unduh halaman sebagai berkas XPS (teks vektor)">XPS</button>
+          </div>
+        </span>
+        <span class="ed-menu-wrap">
+          <button type="button" class="btn btn-ghost btn-sm" data-ed="menu" data-menu="project" aria-haspopup="menu" aria-expanded="false">Proyek
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <div class="ed-menu" data-menu-panel="project" role="menu" hidden>
+            <button type="button" data-ed="saveProject" role="menuitem" title="Simpan semua perubahan sebagai berkas proyek .edit.json">Simpan proyek</button>
+            <button type="button" data-ed="openProject" role="menuitem" title="Buka berkas proyek .edit.json">Buka proyek</button>
+          </div>
+        </span>
+        <input type="file" accept="application/json,.json" hidden data-ed="projectFile" aria-label="Pilih berkas proyek" />
       </div>
       <div class="ed-main">
         <div class="ed-stage"><div class="ed-stack">
           <canvas class="ed-canvas"></canvas>
           <div class="ed-layer"></div>
         </div></div>
-        <aside class="ed-side"></aside>
       </div>`;
     host.appendChild(wrap);
     S.wrap = wrap;
 
     const canvas = wrap.querySelector(".ed-canvas");
     const layer = wrap.querySelector(".ed-layer");
-    const side = wrap.querySelector(".ed-side");
     const bar = wrap.querySelector(".ed-bar");
 
+    /* Panel inspektor editor dipindah ke rail kanan supaya panggung
+       tetap lebar (hanya 2 kolom: panggung + panel). */
+    const side = el("aside", "ed-side");
+    const rail = document.querySelector("#toolSideExtra");
+    if (rail) {
+      rail.innerHTML = "";
+      rail.appendChild(side);
+    } else {
+      wrap.querySelector(".ed-main").appendChild(side);
+    }
+
+    /* klik di luar menu -> tutup; Escape -> tutup dan kembali ke tombolnya */
+    document.addEventListener("click", (e) => {
+      if (!bar.contains(e.target)) closeMenus();
+    });
+    bar.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      const buka = bar.querySelector('.ed-menu:not([hidden])');
+      if (!buka) return;
+      const wrapEl = buka.closest(".ed-menu-wrap");
+      const tombol = wrapEl && wrapEl.querySelector('[data-ed="menu"]');
+      closeMenus();
+      if (tombol) tombol.focus();
+    });
+
     /* ---------- toolbar ---------- */
+    /* --- menu dropdown (Ekspor / Proyek) --- */
+    function closeMenus(kecualikan) {
+      bar.querySelectorAll(".ed-menu").forEach((m) => {
+        if (m !== kecualikan) m.hidden = true;
+      });
+      bar.querySelectorAll('[data-ed="menu"]').forEach((b) => b.setAttribute("aria-expanded", "false"));
+    }
+    function toggleMenu(btn) {
+      const name = btn.dataset.menu;
+      const panel = bar.querySelector(`[data-menu-panel="${name}"]`);
+      if (!panel) return;
+      const terbuka = !panel.hidden;
+      closeMenus();
+      if (!terbuka) {
+        panel.hidden = false;
+        btn.setAttribute("aria-expanded", "true");
+        const first = panel.querySelector("button");
+        if (first) first.focus();
+      }
+    }
+
     bar.addEventListener("click", (e) => {
       const b = e.target.closest("[data-ed],[data-mode]");
       if (!b) return;
@@ -197,11 +267,12 @@
         return;
       }
       const act = b.dataset.ed;
+      if (act === "menu") { toggleMenu(b); return; }
       if (act === "prev") gotoPage(S.pageNo - 1);
       else if (act === "next") gotoPage(S.pageNo + 1);
       else if (act === "zoomin") setZoom(S.zoom + 0.25);
       else if (act === "zoomout") setZoom(S.zoom - 0.25);
-      else if (act === "pick") wrap.querySelector("[data-ed=file]").click();
+      else if (act === "pick") { closeMenus(); wrap.querySelector("[data-ed=file]").click(); }
       else if (act === "reset") {
         pushHistory(true);
         edits()[String(S.pageNo)] = [];
@@ -305,7 +376,7 @@
       } catch (err) {
         /* jangan biarkan satu kesalahan mematikan panel */
         const msg = err && err.message ? err.message : String(err);
-        const sideEl = wrap.querySelector(".ed-side");
+        const sideEl = side;
         if (sideEl) {
           sideEl.innerHTML = "";
           sideEl.appendChild(el("p", "tool-warn", "Gagal memuat tampilan: " + msg));
@@ -344,7 +415,13 @@
       c2.drawImage(cv, 0, 0, cv.width, cv.height, 0, 0, canvas.width, canvas.height);
       cv.width = cv.height = 0;
 
-      wrap.querySelector(".ed-page").textContent = `Halaman ${S.pageNo} / ${S.pages}`;
+      const pg = wrap.querySelector(".ed-page");
+      if (pg) {
+        const full = pg.querySelector(".ed-page-full");
+        const mini = pg.querySelector(".ed-page-mini");
+        if (full) full.textContent = `Halaman ${S.pageNo} / ${S.pages}`;
+        if (mini) mini.textContent = `${S.pageNo}/${S.pages}`;
+      }
       wrap.querySelector(".ed-zoom").textContent = Math.round(S.zoom * 100) + "%";
       for (const b of bar.querySelectorAll(".ed-mode")) {
         b.classList.toggle("on", b.dataset.mode === S.mode);

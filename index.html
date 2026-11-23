@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#ffffff" />
 <meta name="author" content="Putra" />
 <title>Pemisah PDF — pecah, gabung &amp; kompres PDF, 100% di browser — by Putra</title>
-<link rel="stylesheet" href="style.css?v=20261123d" />
+<link rel="stylesheet" href="style.css?v=20261123f" />
 <script>
   /* terapkan tema lebih awal supaya tidak ada kedipan saat halaman dimuat */
   (function () {
@@ -34,7 +34,7 @@
 
      Cara ini membuat halaman pulih sendiri tanpa perlu hard refresh.
      ============================================================ */
-  window.PDF_BUILD = "20261123d";
+  window.PDF_BUILD = "20261123f";
   (function () {
     var percobaan = 0;
     function periksaStylesheet() {
@@ -98,19 +98,19 @@
   <nav class="tabs" role="tablist" aria-label="Mode aplikasi">
     <button class="tab active" role="tab" id="tab-split" aria-selected="true" aria-controls="splitView" data-tab="split" type="button">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.6v9.2"/><path d="m8.2 9 3.8 3.8L15.8 9"/><path d="M4 16.4v2.2A1.9 1.9 0 0 0 5.9 20.5h3.2"/><path d="M20 16.4v2.2a1.9 1.9 0 0 1-1.9 1.9h-3.2"/></svg>
-      Pemisah halaman
+      <span class="tab-txt">Pemisah halaman</span><span class="tab-txt-short">Pisah</span>
     </button>
     <button class="tab" role="tab" id="tab-merge" aria-selected="false" aria-controls="mergeView" data-tab="merge" type="button">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5v5.2c0 1.6 1.3 2.9 2.9 2.9h6.2c1.6 0 2.9 1.3 2.9 2.9v6"/><path d="m14.8 17.3 3.2 3.2 3.2-3.2"/><path d="M18 11.5V6.7"/></svg>
-      Gabung PDF
+      <span class="tab-txt">Gabung PDF</span><span class="tab-txt-short">Gabung</span>
     </button>
     <button class="tab" role="tab" id="tab-compress" aria-selected="false" aria-controls="compressView" data-tab="compress" type="button">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 4.5H5.8A1.3 1.3 0 0 0 4.5 5.8v3.7"/><path d="m4.9 4.9 4.4 4.4"/><path d="M14.5 19.5h3.7a1.3 1.3 0 0 0 1.3-1.3v-3.7"/><path d="m19.1 19.1-4.4-4.4"/><path d="M4.5 14.5v3.7a1.3 1.3 0 0 0 1.3 1.3h3.7"/><path d="m4.9 19.1 4.4-4.4"/><path d="M19.5 9.5V5.8a1.3 1.3 0 0 0-1.3-1.3h-3.7"/><path d="m19.1 4.9-4.4 4.4"/></svg>
-      Kompres PDF
+      <span class="tab-txt">Kompres PDF</span><span class="tab-txt-short">Kompres</span>
     </button>
     <button class="tab" role="tab" id="tab-tools" aria-selected="false" aria-controls="toolsView" data-tab="tools" type="button">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="1.4"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.4"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.4"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.4"/></svg>
-      Semua alat
+      <span class="tab-txt">Semua alat</span><span class="tab-txt-short">Alat</span>
     </button>
   </nav>
 
@@ -121,7 +121,7 @@
 
   <!-- ============ DROPZONE ============ -->
   <section id="dropzone" class="dropzone" tabindex="0" aria-label="Tarik file PDF ke sini">
-    <input id="fileInput" type="file" accept="application/pdf,.pdf" multiple hidden />
+    <input id="fileInput" type="file" accept="application/pdf,.pdf" multiple hidden aria-label="Pilih file PDF" />
     <div class="dz-inner">
       <div class="dz-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
@@ -137,6 +137,12 @@
         <button class="btn btn-ghost" id="demoBtn" type="button">Coba contoh PDF</button>
       </div>
     </div>
+  </section>
+
+  <!-- ============ PINTASAN ALAT POPULER ============ -->
+  <section id="quickTools" class="quick-tools" hidden aria-label="Pintasan alat">
+    <h2 class="quick-title">Paling sering dipakai</h2>
+    <div class="quick-grid" id="quickGrid"></div>
   </section>
 
   <!-- ============ WORKSPACE ============ -->
@@ -224,7 +230,7 @@
             </span>
           </label>
           <div class="opt-row" id="rangeOpt" hidden>
-            <input id="rangeInput" type="text" placeholder="1-3, 4-8, 9-12" />
+            <input id="rangeInput" type="text" placeholder="1-3, 4-8, 9-12" aria-label="Rentang halaman, misal 1-3, 4-8" />
           </div>
 
           <label class="mode">
@@ -344,7 +350,7 @@
           <input type="radio" name="clevel" value="lossless" />
           <span class="preset-body">
             <span class="preset-name">Ringan <span class="tag-soft">tanpa raster</span></span>
-            <span class="preset-desc">Optimalkan struktur file &amp; buang data tak terpakai. Teks, font, dan gambar 100% utuh.</span>
+            <span class="preset-desc" title="Optimalkan struktur file dan buang data tak terpakai. Teks, font, dan gambar 100% utuh.">Optimalkan struktur file. Teks, font, dan gambar utuh.</span>
             <span class="preset-est" data-est="lossless"></span>
           </span>
         </label>
@@ -352,7 +358,7 @@
           <input type="radio" name="clevel" value="optimal" checked />
           <span class="preset-body">
             <span class="preset-name">Optimal <span class="tag-soft">disarankan</span></span>
-            <span class="preset-desc">Teks &amp; font tetap vektor (tetap tajam &amp; bisa dicari). Hanya gambar raster yang melebihi 200 DPI diperkecil.</span>
+            <span class="preset-desc" title="Teks dan font tetap vektor (tetap tajam dan bisa dicari). Hanya gambar raster yang melebihi 200 DPI diperkecil.">Teks &amp; font tetap vektor. Gambar &gt;200 DPI diperkecil.</span>
             <span class="preset-est" data-est="optimal"></span>
           </span>
         </label>
@@ -360,7 +366,7 @@
           <input type="radio" name="clevel" value="balanced" />
           <span class="preset-body">
             <span class="preset-name">Seimbang</span>
-            <span class="preset-desc">Raster 150 DPI kualitas tinggi. Teks jadi gambar; halaman pindai tidak pernah di-upsample.</span>
+            <span class="preset-desc" title="Raster 150 DPI kualitas tinggi. Teks jadi gambar; halaman pindai tidak pernah di-upsample.">Raster 150 DPI. Teks jadi gambar.</span>
             <span class="preset-est" data-est="balanced"></span>
           </span>
         </label>
@@ -368,7 +374,7 @@
           <input type="radio" name="clevel" value="strong" />
           <span class="preset-body">
             <span class="preset-name">Kuat</span>
-            <span class="preset-desc">Raster 110 DPI — ukuran paling kecil, detail menurun.</span>
+            <span class="preset-desc" title="Raster 110 DPI — ukuran paling kecil, detail menurun.">Raster 110 DPI. Ukuran paling kecil.</span>
             <span class="preset-est" data-est="strong"></span>
           </span>
         </label>
@@ -376,7 +382,7 @@
           <input type="radio" name="clevel" value="custom" />
           <span class="preset-body">
             <span class="preset-name">Kustom</span>
-            <span class="preset-desc">Atur sendiri strategi, resolusi, dan kualitas gambar.</span>
+            <span class="preset-desc" title="Atur sendiri strategi, resolusi, dan kualitas gambar.">Atur strategi, resolusi, dan kualitas sendiri.</span>
             <span class="preset-est" data-est="custom"></span>
           </span>
         </label>
@@ -443,7 +449,14 @@
         <p class="muted small">Kumpulan alat PDF — semuanya berjalan di browser Anda, file tidak pernah diunggah.</p>
       </div>
     </div>
+    <div class="tools-search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+      <input id="toolSearch" type="search" placeholder="Cari alat — mis. watermark, OCR, gabung" autocomplete="off" aria-label="Cari alat PDF" />
+      <button class="tools-search-clear" id="toolSearchClear" type="button" aria-label="Bersihkan pencarian" hidden>&times;</button>
+    </div>
+    <div id="toolQuick" class="tool-quick" hidden></div>
     <div id="toolCategories"></div>
+    <p id="toolEmpty" class="tool-empty" hidden>Tidak ada alat yang cocok. <button class="linkbtn" id="toolSearchReset" type="button">Bersihkan pencarian</button></p>
   </section>
 
   <!-- ============ RUANG KERJA ALAT ============ -->
@@ -473,9 +486,13 @@
             <p class="muted tiny">Bisa beberapa file sekaligus · diproses di browser</p>
           </div>
         </div>
-        <input id="toolInput" type="file" hidden />
+        <input id="toolInput" type="file" hidden aria-label="Pilih file untuk alat ini" />
         <div id="toolFileList" class="tool-file-list"></div>
         <div id="toolExtra"></div>
+        <figure id="toolPreview" class="tool-preview" hidden>
+          <div class="tool-preview-frame"></div>
+          <figcaption class="muted tiny"></figcaption>
+        </figure>
       </div>
 
       <aside class="tool-side">
@@ -488,10 +505,15 @@
           </button>
         </div>
 
+        <!-- Panel khusus alat (mis. inspektor editor) tampil di rail
+             kanan supaya panggung kerja tetap lebar. -->
+        <div id="toolSideExtra" class="tool-side-extra"></div>
+
         <div class="card" id="toolResultCard" hidden>
           <h3 class="card-title">Hasil</h3>
           <div id="toolResults" class="results"></div>
         </div>
+
       </aside>
     </div>
   </section>
@@ -506,8 +528,8 @@
   </footer>
 </main>
 
-<input id="mergeInput" type="file" accept="application/pdf,.pdf" multiple hidden />
-<input id="compressInput" type="file" accept="application/pdf,.pdf" multiple hidden />
+<input id="mergeInput" type="file" accept="application/pdf,.pdf" multiple hidden aria-label="Pilih beberapa file PDF untuk digabung" />
+<input id="compressInput" type="file" accept="application/pdf,.pdf" multiple hidden aria-label="Pilih file PDF untuk dikompres" />
 <div id="toasts" class="toasts" aria-live="polite"></div>
 
 <div id="overlay" class="overlay" hidden>
@@ -522,16 +544,16 @@
 <script src="vendor/jszip.min.js"></script>
 <script src="vendor/pdf.min.js"></script>
 <script src="vendor/fonts/fonts.js"></script>
-<script src="compressor.js?v=20261123d"></script>
-<script src="tool-core.js?v=20261123d"></script>
-<script src="tool-xps.js?v=20261123d"></script>
-<script src="tool-crypto.js?v=20261123d"></script>
-<script src="tool-decrypt.js?v=20261123d"></script>
-<script src="tool-pdf.js?v=20261123d"></script>
-<script src="tool-convert.js?v=20261123d"></script>
-<script src="tool-smart.js?v=20261123d"></script>
-<script src="tool-editor.js?v=20261123d"></script>
-<script src="tool-ui.js?v=20261123d"></script>
-<script src="app.js?v=20261123d"></script>
+<script src="compressor.js?v=20261123f"></script>
+<script src="tool-core.js?v=20261123f"></script>
+<script src="tool-xps.js?v=20261123f"></script>
+<script src="tool-crypto.js?v=20261123f"></script>
+<script src="tool-decrypt.js?v=20261123f"></script>
+<script src="tool-pdf.js?v=20261123f"></script>
+<script src="tool-convert.js?v=20261123f"></script>
+<script src="tool-smart.js?v=20261123f"></script>
+<script src="tool-editor.js?v=20261123f"></script>
+<script src="tool-ui.js?v=20261123f"></script>
+<script src="app.js?v=20261123f"></script>
 </body>
 </html>

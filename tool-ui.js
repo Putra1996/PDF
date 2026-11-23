@@ -25,6 +25,12 @@
     split: '<path d="M12 3.6v9.2"/><path d="m8.2 9 3.8 3.8L15.8 9"/><path d="M4 16.4v2.2A1.9 1.9 0 0 0 5.9 20.5h3.2"/><path d="M20 16.4v2.2a1.9 1.9 0 0 1-1.9 1.9h-3.2"/>',
     compress: '<path d="M9.5 4.5H5.8A1.3 1.3 0 0 0 4.5 5.8v3.7"/><path d="m4.9 4.9 4.4 4.4"/><path d="M14.5 19.5h3.7a1.3 1.3 0 0 0 1.3-1.3v-3.7"/><path d="m19.1 19.1-4.4-4.4"/><path d="M4.5 14.5v3.7a1.3 1.3 0 0 0 1.3 1.3h3.7"/><path d="m4.9 19.1 4.4-4.4"/><path d="M19.5 9.5V5.8a1.3 1.3 0 0 0-1.3-1.3h-3.7"/><path d="m19.1 4.9-4.4 4.4"/>',
     organize: '<rect x="3.5" y="4.5" width="7" height="7" rx="1.2"/><rect x="13.5" y="4.5" width="7" height="7" rx="1.2"/><rect x="3.5" y="14.5" width="7" height="5" rx="1.2"/><rect x="13.5" y="14.5" width="7" height="5" rx="1.2"/>',
+    removePage: '<path d="M14 4.5H7.2A1.7 1.7 0 0 0 5.5 6.2v12.6a1.7 1.7 0 0 0 1.7 1.7h9.6a1.7 1.7 0 0 0 1.7-1.7V9.5z"/><path d="M14 4.5v5h5"/><path d="M9.5 14.5h5"/>',
+    extractPage: '<path d="M13.5 4.5H7.2A1.7 1.7 0 0 0 5.5 6.2v12.6a1.7 1.7 0 0 0 1.7 1.7h5.3"/><path d="M13.5 4.5v5h5"/><path d="m15 14.5 5.5 5.5M20.5 14.5 15 20"/>',
+    pdfToImage: '<path d="M3 5h5l2.5 2.5V19H3z"/><path d="M8 5v2.5h2.5"/><path d="M11.8 12h3.2"/><path d="m13.6 10.4 1.9 1.6-1.9 1.6"/><rect x="16.4" y="8.4" width="5.2" height="7.2" rx="1"/><circle cx="18" cy="10.7" r=".7"/><path d="m16.4 14.5 1.7-1.6 1.4 1.2 1.1-1 1 1"/>',
+    pdfToWord: '<path d="M3 5h5l2.5 2.5V19H3z"/><path d="M8 5v2.5h2.5"/><path d="M11.8 12h3.2"/><path d="m13.6 10.4 1.9 1.6-1.9 1.6"/><rect x="16.2" y="8" width="5.6" height="8" rx="1"/><path d="m17.3 10 1 4 1.1-2.4 1.1 2.4 1-4"/>',
+    pdfToXls: '<path d="M3 5h5l2.5 2.5V19H3z"/><path d="M8 5v2.5h2.5"/><path d="M11.8 12h3.2"/><path d="m13.6 10.4 1.9 1.6-1.9 1.6"/><rect x="16.2" y="8" width="5.6" height="8" rx="1"/><path d="M16.2 11h5.6M16.2 13.4h5.6M18 8v8M20 8v8"/>',
+    pdfToPpt: '<path d="M3 5h5l2.5 2.5V19H3z"/><path d="M8 5v2.5h2.5"/><path d="M11.8 12h3.2"/><path d="m13.6 10.4 1.9 1.6-1.9 1.6"/><rect x="16.2" y="8" width="5.6" height="8" rx="1"/><path d="M17.9 14.4V9.8h1.5a1.3 1.3 0 0 1 0 2.6h-1.5"/>',
     scan: '<path d="M4 8V5.6A1.6 1.6 0 0 1 5.6 4H8"/><path d="M16 4h2.4A1.6 1.6 0 0 1 20 5.6V8"/><path d="M20 16v2.4a1.6 1.6 0 0 1-1.6 1.6H16"/><path d="M8 20H5.6A1.6 1.6 0 0 1 4 18.4V16"/><path d="M4 12h16"/>',
     repair: '<path d="M14.5 3.5 20.5 9.5"/><path d="M12.5 5.5 5.5 12.5a2 2 0 0 0 0 2.8l3.2 3.2a2 2 0 0 0 2.8 0l7-7"/><path d="m9 11 4 4"/>',
     ocr: '<path d="M4 8V5.6A1.6 1.6 0 0 1 5.6 4H8"/><path d="M16 4h2.4A1.6 1.6 0 0 1 20 5.6V8"/><path d="M20 16v2.4a1.6 1.6 0 0 1-1.6 1.6H16"/><path d="M8 20H5.6A1.6 1.6 0 0 1 4 18.4V16"/><path d="M7.5 9.5h9M7.5 13h6"/>',
@@ -64,6 +70,20 @@
     busy: false,
     custom: {},
     links: [],
+    query: "",
+  };
+
+  /* Alat yang paling sering dibuka — ditampilkan di beranda dan
+     di atas daftar alat agar cepat dijangkau. */
+  const POPULER = ["split", "merge", "compress", "edit", "watermark", "numbers"];
+
+  /* Kartu launcher yang membuka tab utama diberi penanda supaya
+     hierarki navigasi jelas dan alurnya tidak terasa dobel.
+     Kunci = id entri launcher. */
+  const TAB_BADGES = {
+    merge: "Tab Gabung",
+    split: "Tab Pemisah",
+    "compress-link": "Tab Kompres",
   };
 
   const $ = (s, r = document) => r.querySelector(s);
@@ -83,6 +103,7 @@
     const host = $("#toolCategories");
     if (!host) return;
     host.innerHTML = "";
+    renderQuick();
     for (const cat of CATS) {
       const items = state.links.filter((l) => l.cat === cat.id);
       const tools = (C.registry || []).filter((t) => t.cat === cat.id);
@@ -95,7 +116,14 @@
         b.type = "button";
         b.dataset.toolLink = l.link;
         if (l.mode) b.dataset.toolMode = l.mode;
-        b.innerHTML = `<span class="tool-ic">${iconSvg(l.icon)}</span><span class="tool-name">${l.name}</span><span class="tool-desc">${l.desc}</span>`;
+        /* Alur yang juga tersedia sebagai tab utama diberi penanda
+           supaya hierarki navigasi jelas dan tidak terasa dobel. */
+        const badge = TAB_BADGES[l.id]
+          ? `<span class="tool-badge">${TAB_BADGES[l.id]}</span>` : "";
+        b.innerHTML =
+          `<span class="tool-ic">${iconSvg(l.icon)}</span>` +
+          `<span class="tool-name">${l.name}${badge}</span>` +
+          `<span class="tool-desc">${l.desc}</span>`;
         grid.appendChild(b);
       }
       for (const t of tools) {
@@ -107,6 +135,150 @@
       }
       sec.appendChild(grid);
       host.appendChild(sec);
+    }
+  }
+
+  /* ============================================================
+     Pencarian alat & pintasan
+     ============================================================ */
+
+  function popularEntries() {
+    const out = [];
+    for (const id of POPULER) {
+      const l = state.links.find((x) => x.id === id);
+      if (l) { out.push({ kind: "link", item: l }); continue; }
+      const t = (C.registry || []).find((x) => x.id === id);
+      if (t) out.push({ kind: "tool", item: t });
+    }
+    return out;
+  }
+
+  function quickButton(entry) {
+    const b = el("button", "quick-btn");
+    b.type = "button";
+    const it = entry.item;
+    if (entry.kind === "link") {
+      b.dataset.toolLink = it.link;
+      if (it.mode) b.dataset.toolMode = it.mode;
+    } else {
+      b.dataset.tool = it.id;
+    }
+    b.innerHTML =
+      `<span class="quick-ic">${iconSvg(it.icon)}</span>` +
+      `<span class="quick-txt"><span class="quick-name">${escapeHtml(it.name)}</span>` +
+      `<span class="quick-desc">${escapeHtml(it.desc)}</span></span>`;
+    return b;
+  }
+
+  /* Baris pintasan: di beranda (saat belum ada file) dan di atas
+     daftar alat. */
+  function renderQuick() {
+    const entries = popularEntries();
+    for (const [sel, hostSel] of [["#toolQuick", "#toolQuick"], ["#quickGrid", "#quickGrid"]]) {
+      const host = $(hostSel);
+      if (!host) continue;
+      host.innerHTML = "";
+      for (const e of entries) host.appendChild(quickButton(e));
+    }
+  }
+
+  /* Filter daftar alat berdasarkan ketikan pengguna. */
+  function applyFilter() {
+    const host = $("#toolCategories");
+    if (!host) return;
+    const q = (state.query || "").trim().toLowerCase();
+    let total = 0;
+    for (const sec of host.querySelectorAll(".tool-cat")) {
+      let tampil = 0;
+      for (const card of sec.querySelectorAll(".tool-card")) {
+        const nama = (card.querySelector(".tool-name")?.textContent || "").toLowerCase();
+        const desc = (card.querySelector(".tool-desc")?.textContent || "").toLowerCase();
+        const kunci = (card.dataset.tool || card.dataset.toolLink || "").toLowerCase();
+        const cocok = !q || nama.includes(q) || desc.includes(q) || kunci.includes(q);
+        card.hidden = !cocok;
+        if (cocok) tampil++;
+      }
+      sec.hidden = tampil === 0;
+      total += tampil;
+    }
+    const kosong = $("#toolEmpty");
+    if (kosong) kosong.hidden = !(q && total === 0);
+    const clear = $("#toolSearchClear");
+    if (clear) clear.hidden = !q;
+  }
+
+  function wireSearch() {
+    const input = $("#toolSearch");
+    if (!input) return;
+    input.addEventListener("input", () => {
+      state.query = input.value;
+      applyFilter();
+    });
+    const clear = $("#toolSearchClear");
+    if (clear) {
+      clear.addEventListener("click", () => {
+        input.value = "";
+        state.query = "";
+        applyFilter();
+        input.focus();
+      });
+    }
+    const reset = $("#toolSearchReset");
+    if (reset) {
+      reset.addEventListener("click", () => {
+        input.value = "";
+        state.query = "";
+        applyFilter();
+        input.focus();
+      });
+    }
+  }
+
+  /* ============================================================
+     Pratinjau dokumen di kolom utama
+     ============================================================ */
+  let previewDoc = null;
+
+  async function renderPreview() {
+    const box = $("#toolPreview");
+    if (!box) return;
+    const tool = state.tool;
+    const f = state.files[0];
+    /* alat dengan panel khusus (editor, susun, tanda tangan, ...)
+       sudah punya pratinjau sendiri */
+    const bisa = tool && !tool.custom && f && window.pdfjsLib &&
+      /pdf/i.test(tool.accept || "application/pdf");
+    if (!bisa) {
+      box.hidden = true;
+      if (previewDoc) { try { previewDoc.destroy(); } catch (_) { } previewDoc = null; }
+      return;
+    }
+    const frame = box.querySelector(".tool-preview-frame");
+    const cap = box.querySelector("figcaption");
+    frame.innerHTML = "";
+    cap.textContent = "Membuat pratinjau…";
+    box.hidden = false;
+    try {
+      if (previewDoc) { try { previewDoc.destroy(); } catch (_) { } previewDoc = null; }
+      const data = f.bytes.slice();
+      previewDoc = await window.pdfjsLib.getDocument({ data }).promise;
+      const page = await previewDoc.getPage(1);
+      const base = page.getViewport({ scale: 1 });
+      const skala = Math.min(1.4, 520 / base.width);
+      const vp = page.getViewport({ scale: skala });
+      const cv = document.createElement("canvas");
+      cv.width = Math.round(vp.width);
+      cv.height = Math.round(vp.height);
+      const ctx = cv.getContext("2d");
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, cv.width, cv.height);
+      await page.render({ canvasContext: ctx, viewport: vp }).promise;
+      frame.appendChild(cv);
+      cap.textContent = `Pratinjau halaman 1 — ${f.name}` +
+        (previewDoc.numPages > 1 ? ` (dari ${previewDoc.numPages} halaman)` : "");
+    } catch (e) {
+      box.hidden = true;
+      frame.innerHTML = "";
     }
   }
 
@@ -140,6 +312,8 @@
     input.accept = tool.accept || "";
     input.multiple = tool.multiple !== false;
     $("#toolOptions").innerHTML = "";
+    const rail = $("#toolSideExtra");
+    if (rail) rail.innerHTML = "";
     renderFields(tool.fields || []);
     renderCustom(tool);
     renderFiles();
@@ -152,9 +326,14 @@
   }
 
   function backToMenu() {
+    const rail = $("#toolSideExtra");
+    if (rail) rail.innerHTML = "";
     state.tool = null;
     state.files = [];
     state.results = [];
+    const pv = $("#toolPreview");
+    if (pv) { pv.hidden = true; pv.querySelector(".tool-preview-frame").innerHTML = ""; }
+    if (previewDoc) { try { previewDoc.destroy(); } catch (_) { } previewDoc = null; }
     $("#toolView").hidden = true;
     $("#toolsView").hidden = false;
     renderLauncher();
@@ -287,6 +466,7 @@
     if (state.custom && typeof state.custom.onOptsChange === "function") {
       try { state.custom.onOptsChange("files"); } catch (_) { /* abaikan */ }
     }
+    renderPreview();
   }
 
   function escapeHtml(s) {
@@ -1092,6 +1272,26 @@
     const catHost = $("#toolCategories");
     if (catHost) {
       catHost.addEventListener("click", (e) => {
+        const link = e.target.closest("[data-tool-link]");
+        if (link) {
+          const target = link.dataset.toolLink;
+          const mode = link.dataset.toolMode;
+          if (mode && window.PDFApp && window.PDFApp.setMode) window.PDFApp.setMode(mode);
+          if (window.PDFApp && window.PDFApp.setTab) window.PDFApp.setTab(target);
+          return;
+        }
+        const card = e.target.closest("[data-tool]");
+        if (card) openTool(card.dataset.tool);
+      });
+    }
+
+    wireSearch();
+
+    /* handler klik untuk baris pintasan (beranda & daftar alat) */
+    for (const sel of ["#toolQuick", "#quickGrid"]) {
+      const host = $(sel);
+      if (!host) continue;
+      host.addEventListener("click", (e) => {
         const link = e.target.closest("[data-tool-link]");
         if (link) {
           const target = link.dataset.toolLink;

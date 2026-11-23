@@ -381,6 +381,18 @@
     return out;
   }
 
+  /* Strip tab bisa tergulir di layar sempit. Tab aktif harus
+     selalu terlihat — offsetLeft diukur relatif terhadap
+     offsetParent, jadi harus dikurangi posisi strip-nya. */
+  function syncTabStrip() {
+    const bar = document.querySelector(".tabs");
+    const active = bar && bar.querySelector(".tab.active");
+    if (!bar || !active) return;
+    if (bar.scrollWidth <= bar.clientWidth + 1) { bar.scrollLeft = 0; return; }
+    const rel = active.offsetLeft - bar.offsetLeft;
+    bar.scrollLeft = Math.max(0, Math.min(rel - 8, bar.scrollWidth - bar.clientWidth));
+  }
+
   /* ============================================================
      Render UI
      ============================================================ */
@@ -388,6 +400,8 @@
     const has = state.files.length > 0;
     workspace.hidden = !has || activeTab !== "split";
     dropzone.style.display = has || activeTab !== "split" ? "none" : "";
+    const quick = $("#quickTools");
+    if (quick) quick.hidden = has || activeTab !== "split";
     releaseThumbs(filesEl);
     filesEl.innerHTML = "";
     state.files.forEach((f) => filesEl.appendChild(fileBlock(f)));
@@ -531,6 +545,8 @@
     filesEl.innerHTML = "";
     workspace.hidden = true;
     dropzone.style.display = activeTab === "split" ? "" : "none";
+    const quick = $("#quickTools");
+    if (quick) quick.hidden = activeTab !== "split";
     resultCard.hidden = true;
     resultsEl.innerHTML = "";
   }
@@ -1338,11 +1354,7 @@
       t.classList.toggle("active", on);
       t.setAttribute("aria-selected", on ? "true" : "false");
     });
-    const activeEl = document.querySelector(".tab.active");
-    const bar = document.querySelector(".tabs");
-    if (activeEl && bar && bar.scrollWidth > bar.clientWidth) {
-      bar.scrollLeft = Math.max(0, activeEl.offsetLeft - 6);
-    }
+    syncTabStrip();
     const isSplit = tab === "split";
     const isMerge = tab === "merge";
     const isCompress = tab === "compress";
@@ -1355,6 +1367,9 @@
     if (isTools && window.PDFToolsUI) window.PDFToolsUI.renderLauncher();
     workspace.hidden = !isSplit || !state.files.length;
     dropzone.style.display = isSplit && !state.files.length ? "" : "none";
+    const quick = $("#quickTools");
+    if (quick) quick.hidden = !isSplit || !!state.files.length;
+    syncTabStrip();
 
     if (isMerge) {
       $("#mergeDrop").hidden = merge.files.length > 0;
@@ -2068,6 +2083,7 @@
   const compressEst = {
     cache: new Map(),   // kunci -> { size, ratio, exact, sampled, pages }
     values: new Map(),  // target -> { state: "loading"|"ok"|"error", size, total, exact }
+    startedAt: 0,      // waktu mulai hitung terakhir (untuk penjaga macet)
     failed: new Set(),  // target yang perkiraannya gagal
     running: false,
     token: 0,
@@ -2112,6 +2128,7 @@
   function compressEstimateSchedule(delay = 350) {
     clearTimeout(compressEst.timer);
     if (compress.files.length) {
+      compressEst.startedAt = Date.now();
       for (const target of EST_TARGETS) {
         const v = compressEst.values.get(target);
         if (v && v.state === "ok") compressEst.values.set(target, { state: "loading" });
@@ -2166,9 +2183,25 @@
     }
   }
 
+  /* Kembalikan target yang masih "loading" menjadi "error" supaya
+     spinner tidak berputar tanpa akhir. */
+  function compressEstAbortLoading() {
+    for (const target of EST_TARGETS) {
+      const v = compressEst.values.get(target);
+      if (v && v.state === "loading") {
+        compressEst.failed.add(target);
+        compressEst.values.set(target, { state: "error" });
+      }
+    }
+    compressEstRender();
+  }
+
   async function compressEstimateRun() {
     const engine = window.PDFCompressor;
-    if (!engine || typeof engine.estimate !== "function") return;
+    if (!engine || typeof engine.estimate !== "function") {
+      compressEstAbortLoading();
+      return;
+    }
 
     if (!compress.files.length) {
       compressEst.token++;
@@ -2180,12 +2213,18 @@
     }
 
     // jangan jalan bersamaan dengan kompresi manual
-    if (compress.busy) return;
+    if (compress.busy) {
+      compressEstAbortLoading();
+      return;
+    }
 
     // tunggu bila ada estimasi sebelumnya yang masih berjalan
     while (compressEst.running) {
       await new Promise((r) => setTimeout(r, 60));
-      if (compress.busy) return;
+      if (compress.busy) {
+        compressEstAbortLoading();
+        return;
+      }
     }
 
     const token = ++compressEst.token;
@@ -2204,7 +2243,7 @@
       for (const group of rounds) {
         for (const f of compress.files) {
           if (token !== compressEst.token) return;
-          if (compress.busy) return;
+          if (compress.busy) { compressEstAbortLoading(); return; }
 
           const pending = [];
           for (const target of group) {
@@ -2274,7 +2313,14 @@
       el.classList.add("show");
 
       if (!v || v.state === "loading") {
-        el.innerHTML = '<span class="est-spin" aria-hidden="true"></span><span>Menghitung perkiraan…</span>';
+        const lama = Date.now() - (compressEst.startedAt || 0);
+        if (!v || lama < 20000) {
+          el.innerHTML = '<span class="est-spin" aria-hidden="true"></span><span>Menghitung perkiraan…</span>';
+          el.title = "";
+          return;
+        }
+        // terlalu lama -> berhenti berputar dan beri tahu pengguna
+        el.innerHTML = "<span>Perkiraan belum selesai — tekan Kompres untuk melihat hasil</span>";
         el.title = "";
         return;
       }
@@ -2812,8 +2858,8 @@
     window.PDFToolsUI.init([
       { id: "merge", cat: "organize", name: "Gabung PDF", desc: "Satukan beberapa PDF jadi satu berkas.", icon: "merge", link: "merge" },
       { id: "split", cat: "organize", name: "Pisah PDF", desc: "Pecah PDF per halaman, rentang, atau penanda buku.", icon: "split", link: "split", mode: "each" },
-      { id: "remove-pages", cat: "organize", name: "Hapus halaman", desc: "Buang halaman tertentu; sisanya jadi satu PDF baru.", icon: "organize", link: "split", mode: "remove" },
-      { id: "extract-pages", cat: "organize", name: "Ekstrak halaman", desc: "Simpan hanya halaman yang dipilih jadi PDF baru.", icon: "organize", link: "split", mode: "extract" },
+      { id: "remove-pages", cat: "organize", name: "Hapus halaman", desc: "Buang halaman tertentu; sisanya jadi satu PDF baru.", icon: "removePage", link: "split", mode: "remove" },
+      { id: "extract-pages", cat: "organize", name: "Ekstrak halaman", desc: "Simpan hanya halaman yang dipilih jadi PDF baru.", icon: "extractPage", link: "split", mode: "extract" },
       { id: "compress-link", cat: "optimize", name: "Kompres PDF", desc: "Perkecil ukuran file, teks tetap tajam.", icon: "compress", link: "compress" },
     ]);
   }
