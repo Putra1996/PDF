@@ -124,6 +124,10 @@
     if (state.custom && typeof state.custom.disposeEditor === "function") {
       try { state.custom.disposeEditor(); } catch (_) { /* abaikan */ }
     }
+    /* lepaskan sumber daya umum panel khusus (mis. pratinjau pdf.js) */
+    if (state.custom && typeof state.custom.dispose === "function") {
+      try { state.custom.dispose(); } catch (_) { /* abaikan */ }
+    }
     state.custom = {};
     /* nilai bawaan opsi */
     for (const f of tool.fields || []) {
@@ -168,7 +172,13 @@
         i.type = "checkbox";
         i.id = "f_" + f.id;
         i.checked = !!f.value;
-        i.addEventListener("change", () => { state.opts[f.id] = i.checked; applyVisibility(); });
+        i.addEventListener("change", () => {
+          state.opts[f.id] = i.checked;
+          applyVisibility();
+          if (state.custom && typeof state.custom.onOptsChange === "function") {
+            try { state.custom.onOptsChange(f.id); } catch (_) { /* abaikan */ }
+          }
+        });
         l.appendChild(i);
         l.appendChild(el("span", "", f.label));
         host.appendChild(l);
@@ -223,6 +233,10 @@
       const commit = () => {
         state.opts[f.id] = f.type === "number" ? (input.value === "" ? "" : Number(input.value)) : input.value;
         applyVisibility();
+        /* panel khusus boleh react ke perubahan opsi (mis. pratinjau) */
+        if (state.custom && typeof state.custom.onOptsChange === "function") {
+          try { state.custom.onOptsChange(f.id); } catch (_) { /* abaikan */ }
+        }
       };
       input.addEventListener("input", commit);
       input.addEventListener("change", commit);
@@ -269,6 +283,10 @@
     const drop = $("#toolDrop");
     if (drop) drop.hidden = state.files.length > 0;
     updateRunState();
+    /* berkas masuk/keluar -> pratinjau (kalau ada) harus disegarkan */
+    if (state.custom && typeof state.custom.onOptsChange === "function") {
+      try { state.custom.onOptsChange("files"); } catch (_) { /* abaikan */ }
+    }
   }
 
   function escapeHtml(s) {
@@ -528,15 +546,41 @@
     };
   }
 
-  /* --- Tanda tangan --- */
+  /* --- Tanda tangan ---
+     Panel ini offering tiga hal:
+       1. menulis tanda tangan langsung di kanvas,
+       2. mengimpor tanda tangan dari foto atau QR code,
+       3. pratinjau posisi tanda tangan di halaman PDF tujuan.
+  */
   function renderSign(host) {
     const wrap = el("div", "sign-wrap");
     wrap.innerHTML = `
-      <p class="muted small">Tulis tanda tangan di kotak bawah, lalu klik "Simpan tanda tangan".</p>
+      <p class="muted small">Tulis tanda tangan di kotak bawah, atau impor dari foto / QR code. Pratinjau di bawah menunjukkan letaknya di halaman tujuan.</p>
       <canvas id="signPad" width="640" height="220" class="sign-pad"></canvas>
       <div class="sign-actions">
         <button type="button" class="btn btn-ghost btn-sm" id="signClear">Bersihkan</button>
         <button type="button" class="btn btn-primary btn-sm" id="signSave">Simpan tanda tangan</button>
+      </div>
+      <div class="sign-import">
+        <div class="sign-actions">
+          <button type="button" class="btn btn-ghost btn-sm" id="signImportPhoto">Impor foto tanda tangan</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="signImportQr">Impor QR code</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="signRemove" hidden>Hapus gambar</button>
+        </div>
+        <input id="signFile" type="file" accept="image/png,image/jpeg,image/webp,image/*" hidden />
+        <p class="muted tiny" id="signImportNote">Foto tanda tangan: latar putih dipangkas otomatis. QR code: gambar dipakai apa adanya supaya tetap bisa dipindai.</p>
+      </div>
+      <div class="sign-preview" id="signPreviewBox">
+        <div class="sign-preview-head">
+          <span class="muted small" id="signPreviewTitle">Pratinjau</span>
+          <span class="sign-preview-nav">
+            <button type="button" class="btn btn-ghost btn-sm" id="signPrev" title="Halaman sebelumnya" aria-label="Halaman sebelumnya">‹</button>
+            <span class="muted tiny" id="signPreviewPage">—</span>
+            <button type="button" class="btn btn-ghost btn-sm" id="signNext" title="Halaman berikutnya" aria-label="Halaman berikutnya">›</button>
+          </span>
+        </div>
+        <canvas id="signPreview" class="sign-preview-canvas" width="320" height="452"></canvas>
+        <p class="muted tiny" id="signPreviewHint">Pilih satu PDF untuk melihat pratinjau.</p>
       </div>`;
     host.appendChild(wrap);
     const pad = $("#signPad", wrap);
@@ -548,12 +592,13 @@
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     let drawing = false;
+    let hasInk = false;
     const pos = (e) => {
       const r = pad.getBoundingClientRect();
       const t = e.touches ? e.touches[0] : e;
       return { x: ((t.clientX - r.left) / r.width) * pad.width, y: ((t.clientY - r.top) / r.height) * pad.height };
     };
-    const start = (e) => { e.preventDefault(); drawing = true; const p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); };
+    const start = (e) => { e.preventDefault(); drawing = true; hasInk = true; const p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); };
     const move = (e) => { if (!drawing) return; e.preventDefault(); const p = pos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); };
     const end = () => { drawing = false; };
     pad.addEventListener("mousedown", start);
@@ -566,8 +611,310 @@
       ctx.fillStyle = "#fff";
       ctx.fillRect(0, 0, pad.width, pad.height);
       ctx.strokeStyle = "#0f172a";
+      hasInk = false;
     });
+
+    /* ---------- pratinjau ---------- */
+    const preview = $("#signPreview", wrap);
+    const pctx = preview.getContext("2d");
+    const hint = $("#signPreviewHint", wrap);
+    const pageLbl = $("#signPreviewPage", wrap);
+    const prevBtn = $("#signPrev", wrap);
+    const nextBtn = $("#signNext", wrap);
+    /* gambar tanda tangan yang aktif (dataURL) + lebar/tinggi piksel */
+    let img = null;
+    let imgW = 0, imgH = 0;
+    /* dokumen pratinjau (pdf.js) */
+    let pdfDoc = null;
+    let pdfBytesKey = "";
+    /* halaman-halaman tujuan + indeks pratinjau */
+    let targets = [];
+    let targetIdx = 0;
+    let renderToken = 0;
+
+    const setHint = (t) => { hint.textContent = t || ""; };
+
+    /* Pratinjau digambar ulang saat opsi berubah — diberi jeda supaya
+       mengetik angka tidak memicu render berkali-kali. */
+    let refreshTimer = 0;
+    const schedulePreview = () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => { refreshTimer = 0; refreshPreview(); }, 160);
+    };
+
+    /* Daftarkan gambar aktif (dataURL) supaya bisa dipakai pratinjau. */
+    const setImage = (dataUrl, w, h) => {
+      img = dataUrl || null;
+      imgW = w || 0;
+      imgH = h || 0;
+      const rm = $("#signRemove", wrap);
+      if (rm) rm.hidden = !img;
+      refreshPreview();
+    };
+
+    /* Konversi berkas gambar (foto / QR) menjadi PNG. Untuk foto tanda
+       tangan, latar putih dipangkas supaya garis tanda tangan tidak
+       dikotongi kotak putih. QR code dibiarkan utuh (margin tenangnya
+       tetap ada agar kode masih bisa dipindai). */
+    async function imporGambar(file, pangkas) {
+      if (!file) return;
+      if (!/^image\//.test(file.type || "")) {
+        if (sh().toast) sh().toast("Berkas harus berupa gambar (PNG/JPG/WebP).", "err");
+        return;
+      }
+      /* batas ukuran berkas: gambar besar bisa membuat peramban berat */
+      const MAX_BYTES = 15 * 1024 * 1024;
+      if (file.size > MAX_BYTES) {
+        if (sh().toast) sh().toast("Berkas gambar terlalu besar (maksimum 15 MB).", "err");
+        return;
+      }
+      try {
+        const b64 = await new Promise((res, rej) => {
+          const fr = new FileReader();
+          fr.onload = () => res(String(fr.result));
+          fr.onerror = () => rej(new Error("Berkas gambar tidak bisa dibaca."));
+          fr.readAsDataURL(file);
+        });
+        const elImg = await new Promise((res, rej) => {
+          const im = new Image();
+          im.onload = () => res(im);
+          im.onerror = () => rej(new Error("Gambar tidak bisa dibuka (format tidak didukung?)."));
+          im.src = b64;
+        });
+        let w0 = Math.max(1, elImg.naturalWidth || elImg.width);
+        let h0 = Math.max(1, elImg.naturalHeight || elImg.height);
+        /* batas dimensi: rasterisasi sementara dikecilkan bila terlalu besar */
+        const MAX_DIM = 4000;
+        if (w0 > MAX_DIM || h0 > MAX_DIM) {
+          const k = Math.min(MAX_DIM / w0, MAX_DIM / h0);
+          w0 = Math.max(1, Math.round(w0 * k));
+          h0 = Math.max(1, Math.round(h0 * k));
+        }
+        const src = document.createElement("canvas");
+        src.width = w0; src.height = h0;
+        const sctx = src.getContext("2d");
+        sctx.drawImage(elImg, 0, 0, w0, h0);
+
+        let cx = 0, cy = 0, cw = w0, ch = h0;
+        if (pangkas) {
+          /* cari kotak berisi piksel yang "berisi" (bukan putih) */
+          const d = sctx.getImageData(0, 0, w0, h0).data;
+          let minX = w0, minY = h0, maxX = -1, maxY = -1;
+          for (let y = 0; y < h0; y++) {
+            for (let x = 0; x < w0; x++) {
+              const i = (y * w0 + x) * 4;
+              const a = d[i + 3];
+              /* piksel dianggap kosong kalau putih (atau hampir putih) */
+              if (a < 24) continue;
+              if (d[i] > 244 && d[i + 1] > 244 && d[i + 2] > 244) continue;
+              if (x < minX) minX = x;
+              if (y < minY) minY = y;
+              if (x > maxX) maxX = x;
+              if (y > maxY) maxY = y;
+            }
+          }
+          if (maxX >= 0 && maxY >= 0) {
+            const padPx = 2;
+            minX = Math.max(0, minX - padPx); minY = Math.max(0, minY - padPx);
+            maxX = Math.min(w0 - 1, maxX + padPx); maxY = Math.min(h0 - 1, maxY + padPx);
+            cx = minX; cy = minY; cw = maxX - minX + 1; ch = maxY - minY + 1;
+          }
+        }
+        const out = document.createElement("canvas");
+        out.width = cw; out.height = ch;
+        const octx = out.getContext("2d");
+        /* salin potongan terpilih lebih dulu */
+        octx.drawImage(src, cx, cy, cw, ch, 0, 0, cw, ch);
+        if (pangkas) {
+          /* jadikan putih transparan supaya menyatu dengan kertas */
+          const d = octx.getImageData(0, 0, cw, ch);
+          const px = d.data;
+          for (let i = 0; i < px.length; i += 4) {
+            const lum = (px[i] * 299 + px[i + 1] * 587 + px[i + 2] * 114) / 1000;
+            if (lum > 232) { px[i + 3] = 0; }
+            else if (lum > 190) { px[i + 3] = Math.round(px[i + 3] * (1 - (lum - 190) / 42)); }
+          }
+          octx.putImageData(d, 0, 0);
+        }
+        const data = out.toDataURL("image/png");
+        const bytes = Uint8Array.from(atob(data.split(",")[1]), (c) => c.charCodeAt(0));
+        let hex = "";
+        for (const b of bytes) hex += b.toString(16).padStart(2, "0");
+        state.custom.opts.signature = hex;
+        setImage(data, cw, ch);
+        if (sh().toast) {
+          sh().toast(pangkas
+            ? "Tanda tangan dari foto diimpor (" + cw + "×" + ch + " px)."
+            : "QR code diimpor (" + cw + "×" + ch + " px).", "ok");
+        }
+      } catch (err) {
+        if (sh().toast) sh().toast("Impor gagal: " + ((err && err.message) || err), "err");
+      }
+    }
+
+    /* ---------- pratinjau posisi tanda tangan ---------- */
+    function kumpulkanTarget() {
+      const f = state.files[0];
+      if (!f) return [];
+      const spec = String((state.opts && state.opts.page) || "1").trim();
+      const total = state.custom.totalPages || 0;
+      const out = [];
+      if (spec === "semua" || spec === "all") {
+        for (let i = 1; i <= total; i++) out.push(i);
+      } else {
+        for (const part of spec.split(",")) {
+          const t = part.trim();
+          if (!t) continue;
+          if (t.includes("-")) {
+            const seg = t.split("-").map((x) => Number(x.trim()));
+            const a = seg[0], b = seg[1];
+            if (!isFinite(a) || !isFinite(b)) continue;
+            for (let n = Math.min(a, b); n <= Math.max(a, b); n++) {
+              if (n >= 1 && (!total || n <= total)) out.push(n);
+            }
+          } else {
+            const n = Number(t);
+            if (n >= 1 && (!total || n <= total)) out.push(n);
+          }
+        }
+      }
+      return out;
+    }
+
+    async function refreshPreview() {
+      const token = ++renderToken;
+      const f = state.files[0];
+      if (!f) {
+        targets = []; targetIdx = 0;
+        pctx.fillStyle = "#f1f5f9";
+        pctx.fillRect(0, 0, preview.width, preview.height);
+        pageLbl.textContent = "—";
+        setHint("Pilih satu PDF untuk melihat pratinjau.");
+        prevBtn.disabled = nextBtn.disabled = true;
+        return;
+      }
+      /* pratinjau hanya menampilkan berkas pertama */
+      const banyak = state.files.length > 1
+        ? " Pratinjau menampilkan PDF pertama (" + state.files.length + " berkas dipilih)."
+        : "";
+      /* buka dokumen (sekali per berkas) */
+      const key = f.name + ":" + f.bytes.length;
+      if (!pdfDoc || pdfBytesKey !== key) {
+        try {
+          if (pdfDoc) { try { await pdfDoc.destroy(); } catch (_) { /* abaikan */ } }
+          pdfDoc = await C.openPdfjs(f.bytes);
+          pdfBytesKey = key;
+        } catch (err) {
+          setHint("PDF tidak bisa dibuka untuk pratinjau: " + ((err && err.message) || err));
+          return;
+        }
+      }
+      if (token !== renderToken) return;
+      state.custom.totalPages = pdfDoc.numPages;
+      targets = kumpulkanTarget();
+      if (!targets.length) {
+        pctx.fillStyle = "#f1f5f9";
+        pctx.fillRect(0, 0, preview.width, preview.height);
+        pageLbl.textContent = "—";
+        setHint("Halaman \"" + (state.opts.page || "1") + "\" tidak ada di PDF ini.");
+        prevBtn.disabled = nextBtn.disabled = true;
+        return;
+      }
+      if (targetIdx >= targets.length) targetIdx = 0;
+      const no = targets[targetIdx];
+      pageLbl.textContent = no + " / " + targets.length;
+      prevBtn.disabled = targetIdx <= 0;
+      nextBtn.disabled = targetIdx >= targets.length - 1;
+
+      /* render halaman lalu gambar tanda tangan di posisi yang diminta */
+      const maxW = 320;
+      let vp = null;
+      try {
+        const pg = await pdfDoc.getPage(no);
+        const base = pg.getViewport({ scale: 1 });
+        const scale = maxW / (base.width || 1);
+        vp = pg.getViewport({ scale });
+        if (token !== renderToken) return;
+        preview.width = Math.max(1, Math.round(vp.width));
+        preview.height = Math.max(1, Math.round(vp.height));
+        pctx.fillStyle = "#ffffff";
+        pctx.fillRect(0, 0, preview.width, preview.height);
+        await pg.render({ canvasContext: pctx, viewport: vp }).promise;
+        if (token !== renderToken) return;
+      } catch (err) {
+        setHint("Halaman tidak bisa dirender: " + ((err && err.message) || err));
+        return;
+      }
+      /* overlay tanda tangan */
+      const xMm = Number(state.opts.x) || 0;
+      const yMm = Number(state.opts.y) || 0;
+      const wMm = Number(state.opts.w) || 50;
+      /* ukuran halaman dalam mm (1 pt = 25.4/72 mm) */
+      const pageWmm = (vp.width / (vp.scale || 1)) * 25.4 / 72;
+      const pageHmm = (vp.height / (vp.scale || 1)) * 25.4 / 72;
+      const k = preview.width / pageWmm;
+      const wPx = wMm * k;
+      const hPx = imgW && imgH ? wPx * (imgH / imgW) : wPx;
+      const hMm = hPx / k;
+      const xPx = xMm * k;
+      const yPx = preview.height - (yMm + hMm) * k;
+      /* expose geometri pratinjau (dipakai audit & pengujian) */
+      state.custom.previewInfo = {
+        page: no,
+        jumlah: targets.length,
+        pageWmm: Math.round(pageWmm * 100) / 100,
+        pageHmm: Math.round(pageHmm * 100) / 100,
+        xMm: xMm, yMm: yMm, wMm: wMm, hMm: Math.round(hMm * 100) / 100,
+        xPx: Math.round(xPx * 100) / 100,
+        yPx: Math.round(yPx * 100) / 100,
+        wPx: Math.round(wPx * 100) / 100,
+        hPx: Math.round(hPx * 100) / 100,
+        adaGambar: !!img,
+        imgW: imgW, imgH: imgH,
+      };
+      if (img) {
+        try {
+          const im = await new Promise((res, rej) => {
+            const q = new Image();
+            q.onload = () => res(q);
+            q.onerror = () => rej(new Error("gambar gagal dimuat"));
+            q.src = img;
+          });
+          if (token !== renderToken) return;
+          pctx.save();
+          pctx.globalAlpha = 1;
+          pctx.drawImage(im, xPx, yPx, wPx, hPx);
+          pctx.restore();
+          /* garis bantu posisi (batas kotak tanda tangan) */
+          pctx.save();
+          pctx.strokeStyle = "rgba(37,99,235,.85)";
+          pctx.setLineDash([4, 3]);
+          pctx.lineWidth = 1;
+          pctx.strokeRect(xPx + 0.5, yPx + 0.5, wPx, hPx);
+          pctx.restore();
+          setHint("Lebar " + wMm + " mm · " + Math.round(wPx) + "×" + Math.round(hPx) + " px di layar." + banyak);
+        } catch (_) {
+          setHint("Gambar tanda tangan tidak bisa digambar.");
+        }
+      } else {
+        setHint("Tanda tangan belum ada — tulis di kanvas atau impor foto/QR code." + banyak);
+      }
+    }
+
+    prevBtn.addEventListener("click", () => {
+      if (targetIdx > 0) { targetIdx--; refreshPreview(); }
+    });
+    nextBtn.addEventListener("click", () => {
+      if (targetIdx < targets.length - 1) { targetIdx++; refreshPreview(); }
+    });
+
+    /* ---------- tombol ---------- */
     $("#signSave", wrap).addEventListener("click", () => {
+      /* kanvas kosong tidak boleh menimpa tanda tangan yang diimpor */
+      if (!hasInk && img) {
+        if (sh().toast) sh().toast("Kanvas kosong — tanda tangan yang diimpor tetap dipakai.", "err");
+        return;
+      }
       const out = document.createElement("canvas");
       out.width = pad.width; out.height = pad.height;
       const o = out.getContext("2d");
@@ -579,8 +926,43 @@
       let hex = "";
       for (const b of bytes) hex += b.toString(16).padStart(2, "0");
       state.custom.opts.signature = hex;
+      setImage(data, pad.width, pad.height);
       if (sh().toast) sh().toast("Tanda tangan disimpan.", "ok");
     });
+    const fileInput = $("#signFile", wrap);
+    $("#signImportPhoto", wrap).addEventListener("click", () => {
+      fileInput.dataset.mode = "photo";
+      fileInput.click();
+    });
+    $("#signImportQr", wrap).addEventListener("click", () => {
+      fileInput.dataset.mode = "qr";
+      fileInput.click();
+    });
+    fileInput.addEventListener("change", () => {
+      const f = fileInput.files && fileInput.files[0];
+      const mode = fileInput.dataset.mode || "photo";
+      fileInput.value = "";
+      imporGambar(f, mode !== "qr");
+    });
+    $("#signRemove", wrap).addEventListener("click", () => {
+      delete state.custom.opts.signature;
+      setImage(null, 0, 0);
+      if (sh().toast) sh().toast("Gambar tanda tangan dihapus.", "ok");
+    });
+
+    /* pratinjau diperbarui saat opsi posisi berubah atau berkas baru masuk */
+    state.custom.onOptsChange = () => { schedulePreview(); };
+    state.custom.refreshPreview = refreshPreview;
+    /* lepaskan dokumen pdf.js saat alat diganti */
+    state.custom.dispose = () => {
+      renderToken++;
+      if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = 0; }
+      if (pdfDoc) { try { pdfDoc.destroy(); } catch (_) { /* abaikan */ } pdfDoc = null; }
+      pdfBytesKey = "";
+    };
+    /* gambar dari kanvas ditulis tangan ikut dipakai pratinjau */
+    setHint("Pilih satu PDF untuk melihat pratinjau.");
+    refreshPreview();
   }
 
   /* --- Redaksi --- */
@@ -741,6 +1123,7 @@
         if (state.custom.refreshForms) state.custom.refreshForms();
         if (state.custom.refreshHtml) state.custom.refreshHtml();
         if (state.custom.refreshEditor) state.custom.refreshEditor();
+        if (state.custom.refreshPreview) state.custom.refreshPreview();
         void tool;
       });
     }
@@ -768,6 +1151,7 @@
         if (state.custom.refreshForms) state.custom.refreshForms();
         if (state.custom.refreshHtml) state.custom.refreshHtml();
         if (state.custom.refreshEditor) state.custom.refreshEditor();
+        if (state.custom.refreshPreview) state.custom.refreshPreview();
       });
     }
 

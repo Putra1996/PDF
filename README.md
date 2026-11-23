@@ -147,6 +147,14 @@ Catatan:
   password sowohl pengguna maupun pemilik diterima.
 - **Redact PDF** merender ulang halaman sehingga teks yang disensor benar-benar
   hilang dari isi PDF, bukan sekadar ditutup.
+- **Sign PDF** punya tiga sumber tanda tangan: menulis tangan di kanvas,
+  mengimpor **foto** tanda tangan (latar putih dipangkas otomatis), atau
+  mengimpor **QR code** (dipakai apa adanya supaya tetap bisa dipindai).
+  Panelnya menampilkan **pratinjau** halaman tujuan lengkap dengan kotak
+  posisi tanda tangan, dan pratinjau itu mengikuti perubahan posisi/ukuran
+  secara langsung. Format PNG, JPEG, dan WebP diterima; berkas korup
+  (CRC PNG tidak cocok, PNG terpotong, JPEG tanpa frame) ditolak dengan
+  pesan yang jelas, bukan membuat halaman beku.
 - **OCR** dan **Terjemah** memakai mesin bawaan browser (`TextDetector`,
   `Translator`). Bila peramban tidak memilikinya, aplikasi menampilkan
   penjelasan jelas — tidak ada unduhan model dari internet.

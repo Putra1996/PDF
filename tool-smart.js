@@ -146,7 +146,27 @@
   });
 
   /* Periksa struktur PNG sebelum memberikannya ke pdf-lib: PNG rusak bisa
-     membuat decoder pdf-lib berputar tanpa henti (halaman beku). */
+     membuat decoder pdf-lib berputar tanpa henti (halaman beku).
+     Selain struktur, CRC tiap chunk ikut diperiksa agar berkas yang
+     korup tapi strukturnya utuh tidak lolos. */
+  const CRC_TABLE = (() => {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+
+  function crc32(bytes, start, end) {
+    let c = 0xffffffff;
+    for (let i = start; i < end; i++) {
+      c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
+    }
+    return (c ^ 0xffffffff) >>> 0;
+  }
+
   function assertValidPng(bytes) {
     const b = bytes;
     const sig = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -161,12 +181,95 @@
       const len = dv.getUint32(off);
       const type = String.fromCharCode(b[off + 4], b[off + 5], b[off + 6], b[off + 7]);
       if (off + 12 + len > b.length) throw new Error("PNG rusak: chunk \"" + type + "\" tidak lengkap.");
+      /* CRC tiap chunk harus cocok */
+      const want = dv.getUint32(off + 8 + len);
+      const got = crc32(b, off + 4, off + 8 + len);
+      if (want !== got) throw new Error("PNG rusak: CRC chunk \"" + type + "\" tidak cocok.");
       if (type === "IHDR") sawIHDR = true;
       if (type === "IEND") { sawIEND = true; break; }
       off += 12 + len;
     }
     if (!sawIHDR) throw new Error("PNG rusak: blok IHDR tidak ada.");
     if (!sawIEND) throw new Error("PNG rusak: blok IEND tidak ada.");
+  }
+
+  /* Periksa struktur JPEG: harus punya penanda SOI/EOI dan satu frame SOF. */
+  function assertValidJpeg(bytes) {
+    const b = bytes;
+    if (!b || b.length < 4) throw new Error("Berkas tanda tangan bukan JPEG yang valid.");
+    if (b[0] !== 0xff || b[1] !== 0xd8) throw new Error("Berkas tanda tangan bukan JPEG yang valid.");
+    if (b[b.length - 2] !== 0xff || b[b.length - 1] !== 0xd9) throw new Error("JPEG rusak: penanda EOI tidak ada.");
+    let sawFrame = false;
+    for (let i = 2; i < b.length - 1; i++) {
+      if (b[i] !== 0xff) continue;
+      const marker = b[i + 1];
+      if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { i++; continue; }
+      if (marker === 0xd9 || marker === 0xda) break;
+      const len = (b[i + 2] << 8) | b[i + 3];
+      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+        sawFrame = true;
+        break;
+      }
+      i += 1 + len;
+    }
+    if (!sawFrame) throw new Error("JPEG rusak: blok frame (SOF) tidak ditemukan.");
+  }
+
+  /* Deteksi jenis gambar dari magic bytes. */
+  function sniffImage(bytes) {
+    const b = bytes || [];
+    if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return "png";
+    if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "jpeg";
+    if (b.length >= 12 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46
+      && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return "webp";
+    return "";
+  }
+
+  /* WebP belum didukung pdf-lib, jadi decode via browser lalu tulis ulang PNG.
+     Hasilnya selalu PNG valid sehingga aman untuk di-embed. */
+  async function webpToPng(bytes) {
+    if (typeof createImageBitmap !== "function" || typeof document === "undefined") {
+      throw new Error("Format WebP tidak didukung di lingkungan ini. Simpan gambar sebagai PNG atau JPEG.");
+    }
+    let bmp;
+    try {
+      const copy = new Uint8Array(bytes);
+      bmp = await createImageBitmap(new Blob([copy], { type: "image/webp" }));
+    } catch (_) {
+      throw new Error("Gambar WebP tidak bisa dibaca.");
+    }
+    const w = bmp.width || 0, h = bmp.height || 0;
+    if (!w || !h) throw new Error("Gambar WebP berukuran nol.");
+    const cv = document.createElement("canvas");
+    cv.width = w; cv.height = h;
+    const cx = cv.getContext("2d");
+    cx.drawImage(bmp, 0, 0);
+    if (bmp.close) bmp.close();
+    const dataUrl = cv.toDataURL("image/png");
+    const raw = atob(dataUrl.split(",")[1]);
+    const out = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+    return out;
+  }
+
+  /* Siapkan gambar tanda tangan untuk di-embed: validasi struktur lalu
+     kembalikan { bytes, embed } yang sesuai format. */
+  async function prepareSignature(sigBytes) {
+    const kind = sniffImage(sigBytes);
+    if (!kind) {
+      throw new Error("Format gambar tanda tangan tidak dikenali. Gunakan PNG, JPEG, atau WebP.");
+    }
+    if (kind === "png") {
+      assertValidPng(sigBytes);
+      return { bytes: sigBytes, embed: "png" };
+    }
+    if (kind === "jpeg") {
+      assertValidJpeg(sigBytes);
+      return { bytes: sigBytes, embed: "jpg" };
+    }
+    const png = await webpToPng(sigBytes);
+    assertValidPng(png);
+    return { bytes: png, embed: "png" };
   }
 
   /* ============================================================
@@ -401,7 +504,7 @@
     id: "sign",
     cat: "security",
     name: "Tanda tangani PDF",
-    desc: "Bubuhkan tanda tangan tulisan tangan ke halaman yang dipilih.",
+    desc: "Bubuhkan tanda tangan (tulis tangan, foto, atau QR code) ke halaman yang dipilih, lengkap dengan pratinjau posisi.",
     icon: "sign",
     accept: ".pdf,application/pdf",
     multiple: true,
@@ -416,7 +519,7 @@
       const { files, opts } = ctx;
       if (!opts.signature) throw new Error("Buat tanda tangan dulu.");
       const sigBytes = unhex(opts.signature);
-      assertValidPng(sigBytes);
+      const sig = await prepareSignature(sigBytes);
       const out = [];
       for (const f of files) {
         const doc = await loadDoc(f.bytes);
@@ -439,7 +542,7 @@
           }
         }
         if (!targets.length) throw new Error(`Halaman "${spec}" tidak ada.`);
-        const img = await doc.embedPng(sigBytes);
+        const img = sig.embed === "jpg" ? await doc.embedJpg(sig.bytes) : await doc.embedPng(sig.bytes);
         for (const n of targets) {
           const p = pages[n - 1];
           const w = (Number(opts.w) || 50) * MM;
