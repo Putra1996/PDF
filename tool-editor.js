@@ -28,6 +28,9 @@
     pendingImage: null,    // dataURL gambar yang siap disisipkan
     opSeq: 0,
     busy: false,
+    wrap: null,            // elemen panel (untuk pintasan keyboard)
+    redraw: null,          // fungsi render terakhir
+    hist: { past: [], future: [], last: 0 },
   };
 
   /* ---------- util kecil ---------- */
@@ -63,6 +66,68 @@
     return (st.files && st.files[0]) || null;
   }
 
+  /* ============================================================
+     Riwayat perubahan (undo / redo)
+     ============================================================ */
+  function snapshot() {
+    try {
+      return JSON.parse(JSON.stringify(edits()));
+    } catch (_) {
+      return {};
+    }
+  }
+  function applySnapshot(snap) {
+    const e = edits();
+    for (const k of Object.keys(e)) delete e[k];
+    if (snap) Object.assign(e, snap);
+  }
+  /* Simpan state SEBELUM perubahan. Perubahan yang beruntun
+     (mis. mengetik) digabung jadi satu langkah riwayat. */
+  function pushHistory(force) {
+    const now = Date.now();
+    if (!force && now - S.hist.last < 700) {
+      S.hist.last = now;
+      return;
+    }
+    S.hist.past.push(snapshot());
+    if (S.hist.past.length > 80) S.hist.past.shift();
+    S.hist.future.length = 0;
+    S.hist.last = now;
+  }
+  function clearHistory() {
+    S.hist.past.length = 0;
+    S.hist.future.length = 0;
+    S.hist.last = 0;
+  }
+  function undo() {
+    if (!S.hist.past.length) return false;
+    S.hist.future.push(snapshot());
+    applySnapshot(S.hist.past.pop());
+    S.hist.last = 0;
+    afterHistory("Perubahan dibatalkan.");
+    return true;
+  }
+  function redo() {
+    if (!S.hist.future.length) return false;
+    S.hist.past.push(snapshot());
+    applySnapshot(S.hist.future.pop());
+    S.hist.last = 0;
+    afterHistory("Perubahan diulang.");
+    return true;
+  }
+  function afterHistory(msg) {
+    S.sel = null;
+    if (S.redraw) S.redraw();
+    toast(msg);
+  }
+  function updateHistoryButtons() {
+    if (!S.wrap) return;
+    const u = S.wrap.querySelector("[data-ed=undo]");
+    const r = S.wrap.querySelector("[data-ed=redo]");
+    if (u) u.disabled = !S.hist.past.length;
+    if (r) r.disabled = !S.hist.future.length;
+  }
+
   /* Konversi koordinat kanvas <-> user space PDF. */
   function canvasToPdf(viewport, cx, cy) {
     const t = viewport.transform;
@@ -94,7 +159,19 @@
         <button type="button" class="btn btn-ghost btn-sm" data-ed="pick">Sisipkan gambar…</button>
         <input type="file" accept="image/png,image/jpeg" hidden data-ed="file" />
         <span class="ed-sep"></span>
+        <button type="button" class="btn btn-ghost btn-sm" data-ed="undo" title="Urungkan perubahan (Ctrl+Z)" aria-label="Urungkan perubahan" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
+        <button type="button" class="btn btn-ghost btn-sm" data-ed="redo" title="Ulangi perubahan (Ctrl+Y)" aria-label="Ulangi perubahan" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg></button>
+        <span class="ed-sep"></span>
         <button type="button" class="btn btn-ghost btn-sm" data-ed="reset">Batalkan semua perubahan</button>
+        <span class="ed-sep"></span>
+        <button type="button" class="btn btn-ghost btn-sm" data-ed="docx" title="Unduh isi dokumen sebagai berkas .docx">Ekspor ke Word</button>
+        <button type="button" class="btn btn-ghost btn-sm" data-ed="xlsx" title="Unduh isi dokumen sebagai lembar kerja .xlsx">Ekspor ke Excel</button>
+        <button type="button" class="btn btn-ghost btn-sm" data-ed="pptx" title="Unduh isi dokumen sebagai presentasi .pptx">Ekspor ke PowerPoint</button>
+        <button type="button" class="btn btn-ghost btn-sm" data-ed="xps" title="Unduh halaman sebagai berkas XPS (teks vektor)">Ekspor ke XPS</button>
+        <span class="ed-sep"></span>
+        <button type="button" class="btn btn-ghost btn-sm" data-ed="saveProject" title="Simpan semua perubahan sebagai berkas proyek .edit.json">Simpan proyek</button>
+        <button type="button" class="btn btn-ghost btn-sm" data-ed="openProject" title="Buka berkas proyek .edit.json">Buka proyek</button>
+        <input type="file" accept="application/json,.json" hidden data-ed="projectFile" />
       </div>
       <div class="ed-main">
         <div class="ed-stage"><div class="ed-stack">
@@ -104,6 +181,7 @@
         <aside class="ed-side"></aside>
       </div>`;
     host.appendChild(wrap);
+    S.wrap = wrap;
 
     const canvas = wrap.querySelector(".ed-canvas");
     const layer = wrap.querySelector(".ed-layer");
@@ -125,12 +203,65 @@
       else if (act === "zoomout") setZoom(S.zoom - 0.25);
       else if (act === "pick") wrap.querySelector("[data-ed=file]").click();
       else if (act === "reset") {
+        pushHistory(true);
         edits()[String(S.pageNo)] = [];
         S.sel = null;
         redraw();
         toast("Perubahan pada halaman ini dibatalkan.");
       }
+      else if (act === "undo") { undo(); }
+      else if (act === "redo") { redo(); }
+      else if (act === "docx") { exportDocx(); }
+      else if (act === "xlsx") { exportXlsx(); }
+      else if (act === "pptx") { exportPptx(); }
+      else if (act === "xps") { exportXps(); }
+      else if (act === "saveProject") { saveProject(); }
+      else if (act === "openProject") { wrap.querySelector("[data-ed=projectFile]").click(); }
     });
+
+    /* Buka berkas proyek (.edit.json) */
+    wrap.querySelector("[data-ed=projectFile]").addEventListener("change", async (e) => {
+      const f = e.target.files && e.target.files[0];
+      e.target.value = "";
+      if (!f) return;
+      try {
+        const text = await f.text();
+        const data = JSON.parse(text);
+        if (!data || data.app !== "pemisah-pdf" || !data.edits) {
+          throw new Error("Berkas ini bukan proyek editor Pemisah PDF.");
+        }
+        const now = file();
+        if (now && data.sumber && data.sumber.nama && data.sumber.nama !== now.name) {
+          toast(`Proyek dibuat dari "${data.sumber.nama}", sedangkan berkas aktif "${now.name}".`, "err");
+        }
+        const e2 = edits();
+        for (const k of Object.keys(e2)) delete e2[k];
+        Object.assign(e2, data.edits || {});
+        if (data.halaman) S.pageNo = Math.min(S.pages, Math.max(1, Number(data.halaman) || 1));
+        if (data.zoom) S.zoom = Number(data.zoom) || S.zoom;
+        clearHistory();
+        await loadPageBoxes();
+        await redraw();
+        toast("Proyek dimuat: " + Object.keys(e2).length + " halaman dengan perubahan.");
+      } catch (err) {
+        toast("Proyek gagal dibuka: " + ((err && err.message) || err), "err");
+      }
+    });
+
+    /* Pintasan undo/redo (Ctrl+Z / Ctrl+Y) selama panel editor aktif. */
+    const keyHandler = (e) => {
+      if (!S.doc || !S.wrap || !document.body.contains(S.wrap)) return;
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const k = String(e.key || "").toLowerCase();
+      if (k === "z" && !e.shiftKey) {
+        if (!undo()) return;
+        e.preventDefault();
+      } else if (k === "y" || (k === "z" && e.shiftKey)) {
+        if (!redo()) return;
+        e.preventDefault();
+      }
+    };
+    document.addEventListener("keydown", keyHandler);
 
     wrap.querySelector("[data-ed=file]").addEventListener("change", (e) => {
       const f = e.target.files && e.target.files[0];
@@ -160,8 +291,11 @@
     /* ---------- render ---------- */
     let redrawing = false;
     let redrawQueued = false;
+    /* Faktor supersampling untuk anti-alias teks & gambar. */
+    const AA = 2;
 
     async function redraw() {
+      S.redraw = redraw;
       if (!S.doc) return;
       /* jangan render dua kali concurrently: antrikan satu render lagi. */
       if (redrawing) { redrawQueued = true; return; }
@@ -186,17 +320,28 @@
       }
     }
 
+    S.redraw = redraw;
+
     async function redrawInner() {
-      const { canvas: cv, ctx, viewport } = await C.renderPage(S.doc, S.pageNo, S.zoom);
+      /* Anti-alias: halaman dirender pada resolusi AA kali lebih besar,
+         lalu diperkecil dengan filter halus (supersampling). Teks
+         hasil edit digambar pada kanvas resolusi tinggi itu juga,
+         jadi hurufnya ikut halus — bukan hanya isi halaman aslinya. */
+      const { canvas: cv, viewport: vpHi } = await C.renderPage(S.doc, S.pageNo, S.zoom * AA);
+      const viewport = C.scaledViewport(vpHi, AA);
       lastViewport = viewport;
-      canvas.width = cv.width;
-      canvas.height = cv.height;
-      canvas.style.width = cv.width + "px";
-      canvas.style.height = cv.height + "px";
+      S.viewport = viewport;
+      canvas.width = Math.max(1, Math.round(viewport.width));
+      canvas.height = Math.max(1, Math.round(viewport.height));
+      canvas.style.width = canvas.width + "px";
+      canvas.style.height = canvas.height + "px";
       const c2 = canvas.getContext("2d");
+      c2.imageSmoothingEnabled = true;
+      try { c2.imageSmoothingQuality = "high"; } catch (_) { /* diabaikan */ }
       c2.clearRect(0, 0, canvas.width, canvas.height);
-      c2.drawImage(cv, 0, 0);
-      await C.applyEdits(c2, viewport, pageOps());
+      const cHi = cv.getContext("2d");
+      await C.applyEdits(cHi, vpHi, pageOps());
+      c2.drawImage(cv, 0, 0, cv.width, cv.height, 0, 0, canvas.width, canvas.height);
       cv.width = cv.height = 0;
 
       wrap.querySelector(".ed-page").textContent = `Halaman ${S.pageNo} / ${S.pages}`;
@@ -204,6 +349,7 @@
       for (const b of bar.querySelectorAll(".ed-mode")) {
         b.classList.toggle("on", b.dataset.mode === S.mode);
       }
+      updateHistoryButtons();
       drawLayer(viewport);
       renderSide();
     }
@@ -341,12 +487,38 @@
         S.sel = { kind: "image", idx: Number(box.dataset.idx), opId: op.id };
         redraw();
       } else {
-        /* teks yang sudah ada tidak bisa digeser (font aslinya akan hilang) */
-        return;
+        /* Teks yang sudah ada bisa digeser: teks asli ditutup (erase)
+           lalu disalin sebagai objek teks baru dengan font terdekat,
+           persis seperti memindahkan lapisan di Word. */
+        const t = S.texts[Number(box.dataset.idx)];
+        if (!t) return;
+        const sudah = pageOps().find((o) => o.srcId === t.id && o.k === "text");
+        if (sudah) {
+          /* teks sudah punya salinan sendiri: cukup gerakkan salinan itu */
+          op = sudah;
+        } else {
+          pushHistory(true);
+          upsert({
+            id: "e" + (++S.opSeq), k: "erase", srcId: t.id,
+            box: { x: t.x, y: t.y, w: t.w, h: t.h },
+          });
+          op = {
+            id: "mt" + (++S.opSeq), k: "text", srcId: t.id, moved: true,
+            box: { x: t.x, y: t.y, w: t.w, h: t.h },
+            by: t.by, text: t.str, size: t.size,
+            font: C.approxFont(t.fontName),
+            color: "#111111", bold: false, italic: false, align: "left",
+            underline: false, strike: false, lineHeight: 1.2, letterSpacing: 0,
+          };
+          upsert(op);
+        }
+        S.sel = { kind: "text", idx: Number(box.dataset.idx), opId: op.id, newItem: true };
+        redraw();
       }
       if (!op) return;
       e.preventDefault();
       e.stopPropagation();
+      pushHistory(true);
       const r = box.getBoundingClientRect();
       const resize = !!e.target.closest(".ed-handle");
       drag = {
@@ -355,6 +527,9 @@
         startX: e.clientX,
         startY: e.clientY,
         box0: Object.assign({}, op.box),
+        /* garis dasar teks ikut bergerak agar huruf tetap di dalam
+           kotak yang digeser (kalau tidak, teksnya tertinggal). */
+        by0: op.by != null ? op.by : null,
         pxPerPt: (lastViewport ? lastViewport.scale : 1) * (box.offsetWidth ? r.width / op.box.w : 1) / (op.box.w || 1),
       };
       drag.pxPerPt = (lastViewport ? lastViewport.scale : 1);
@@ -371,6 +546,9 @@
       } else {
         drag.op.box.x = drag.box0.x + dx;
         drag.op.box.y = drag.box0.y - dy;
+        if (drag.op.k === "text" && drag.by0 != null) {
+          drag.op.by = drag.by0 - dy;
+        }
       }
       drawLayer(lastViewport);
     });
@@ -393,6 +571,8 @@
         const changes = Object.keys(edits()).filter((k) => edits()[k].length);
         side.appendChild(el("p", "muted small",
           changes.length ? `Perubahan pada ${changes.length} halaman.` : "Belum ada perubahan."));
+        layerPanel();
+        bulkPanel();
         return;
       }
 
@@ -412,6 +592,7 @@
           id: t.id, srcId: t.id, k: "text", box: { x: t.x, y: t.y, w: t.w, h: t.h },
           by: t.by, text: t.str, size: t.size, font: "helvetica", color: "#111111",
           bold: false, italic: false, align: "left",
+          underline: false, strike: false, lineHeight: 1.2, letterSpacing: 0,
         }, false, t);
       } else {
         const im = S.images[sel.idx];
@@ -425,15 +606,199 @@
       }
     }
 
+    /* Daftar lapisan objek yang disisipkan di halaman ini. */
+    function layerPanel() {
+      /* lapisan = objek yang dibuat pengguna: sisipan baru + teks
+         yang digeser (salinan lapisan) */
+      const layers = pageOps().filter((o) => o.newItem || o.moved);
+      const box = el("div", "ed-insp");
+      box.appendChild(el("h4", "ed-insp-title", "Lapisan halaman ini"));
+      if (!layers.length) {
+        box.appendChild(el("p", "muted small", "Belum ada objek yang disisipkan di halaman ini."));
+        side.appendChild(box);
+        return;
+      }
+      const list = el("div", "ed-layers");
+      layers.forEach((o) => {
+        const row = el("div", "ed-layer-row");
+        row.appendChild(el("span", "ed-layer-name",
+          (o.k === "text" ? "Teks: " : "Gambar") + String(o.text || "").slice(0, 18)));
+        const up = el("button", "btn btn-ghost btn-sm");
+        up.type = "button";
+        up.title = "Ke depan";
+        up.setAttribute("aria-label", "Naikkan lapisan");
+        up.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 6-6 6 6"/></svg>';
+        up.addEventListener("click", () => { moveLayer(o.id, 1); });
+        const down = el("button", "btn btn-ghost btn-sm");
+        down.type = "button";
+        down.title = "Ke belakang";
+        down.setAttribute("aria-label", "Turunkan lapisan");
+        down.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 10 6 6 6-6"/></svg>';
+        down.addEventListener("click", () => { moveLayer(o.id, -1); });
+        const del = el("button", "btn btn-ghost btn-sm");
+        del.type = "button";
+        del.title = "Hapus lapisan";
+        del.setAttribute("aria-label", "Hapus lapisan");
+        del.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>';
+        del.addEventListener("click", () => {
+          pushHistory();
+          removeOp(o.id);
+          redraw();
+        });
+        row.appendChild(up);
+        row.appendChild(down);
+        row.appendChild(del);
+        list.appendChild(row);
+      });
+      box.appendChild(list);
+      side.appendChild(box);
+    }
+
+    /* Ubah gaya semua blok teks sekaligus. */
+    function bulkPanel() {
+      const box = el("div", "ed-insp");
+      box.appendChild(el("h4", "ed-insp-title", "Ubah semua teks"));
+      const props = {};
+
+      const fontSel = document.createElement("select");
+      for (const f of C.FONT_LIST) {
+        const o = document.createElement("option");
+        o.value = f.id;
+        o.textContent = f.label;
+        fontSel.appendChild(o);
+      }
+      fontSel.value = "helvetica";
+      fontSel.addEventListener("change", () => { props.font = fontSel.value; });
+      box.appendChild(labeled("Font", fontSel, "bulkFont"));
+
+      const row = el("div", "ed-row");
+      const size = document.createElement("input");
+      size.type = "number";
+      size.min = "4";
+      size.max = "200";
+      size.value = 12;
+      size.addEventListener("input", () => { props.size = Number(size.value) || 12; });
+      row.appendChild(labeled("Ukuran (pt)", size, "bulkSize"));
+      const color = document.createElement("input");
+      color.type = "color";
+      color.value = "#111111";
+      color.addEventListener("input", () => { props.color = color.value; });
+      row.appendChild(labeled("Warna", color, "bulkColor"));
+      box.appendChild(row);
+
+      const row2 = el("div", "ed-row");
+      const bold = document.createElement("input");
+      bold.type = "checkbox";
+      bold.addEventListener("change", () => { props.bold = bold.checked; });
+      row2.appendChild(labeled("Tebal", bold, "bulkBold"));
+      const italic = document.createElement("input");
+      italic.type = "checkbox";
+      italic.addEventListener("change", () => { props.italic = italic.checked; });
+      row2.appendChild(labeled("Miring", italic, "bulkItalic"));
+      const align = document.createElement("select");
+      for (const [v, l] of [["left", "Kiri"], ["center", "Tengah"], ["right", "Kanan"]]) {
+        const o = document.createElement("option");
+        o.value = v; o.textContent = l;
+        align.appendChild(o);
+      }
+      align.addEventListener("change", () => { props.align = align.value; });
+      row2.appendChild(labeled("Rata", align, "bulkAlign"));
+      box.appendChild(row2);
+
+      const acts = el("div", "ed-actions");
+      const halamanIni = el("button", "btn btn-ghost btn-sm", "Terapkan ke halaman ini");
+      halamanIni.type = "button";
+      halamanIni.addEventListener("click", () => bulkApply([S.pageNo], props));
+      acts.appendChild(halamanIni);
+      const semua = el("button", "btn btn-primary btn-sm", "Terapkan ke semua halaman");
+      semua.type = "button";
+      semua.addEventListener("click", () => {
+        const list = [];
+        for (let p = 1; p <= S.pages; p++) list.push(p);
+        bulkApply(list, props);
+      });
+      acts.appendChild(semua);
+      box.appendChild(acts);
+      side.appendChild(box);
+    }
+
+    async function bulkApply(pageNos, props) {
+      if (!S.doc) return;
+      const keys = Object.keys(props);
+      if (!keys.length) {
+        toast("Atur dulu gaya yang mau diterapkan.");
+        return;
+      }
+      pushHistory(true);
+      let total = 0;
+      for (const p of pageNos) {
+        const texts = await C.pageTextBoxes(S.doc, p);
+        const ops = edits()[String(p)] || (edits()[String(p)] = []);
+        texts.forEach((t, i) => {
+          const id = "t" + i;
+          const idx = ops.findIndex((o) => o.srcId === id && o.k === "text");
+          const op = idx >= 0 ? Object.assign({}, ops[idx]) : {
+            id, srcId: id, k: "text",
+            box: { x: t.x, y: t.y, w: t.w, h: t.h },
+            by: t.by, text: t.str, size: t.size,
+            font: C.approxFont(t.fontName),
+            color: "#111111", bold: false, italic: false, align: "left",
+            underline: false, strike: false, lineHeight: 1.2, letterSpacing: 0,
+          };
+          Object.assign(op, props);
+          if (idx >= 0) ops[idx] = op;
+          else ops.push(op);
+          total++;
+        });
+      }
+      if (S.pageNo && pageNos.indexOf(S.pageNo) >= 0) await loadPageBoxes();
+      await redraw();
+      toast(`${total} blok teks diubah (${pageNos.length} halaman).`);
+    }
+
     function textForm(base, isNew, orig) {
       const wrap = el("div", "ed-insp");
       wrap.appendChild(el("h4", "ed-insp-title", isNew ? "Teks baru" : "Teks di PDF"));
+
+      /* Preset gaya ala Word: satu klik mengatur semua properti. */
+      const styleSel = document.createElement("select");
+      const optAuto = document.createElement("option");
+      optAuto.value = "";
+      optAuto.textContent = "— gaya cepat —";
+      styleSel.appendChild(optAuto);
+      for (const st of C.TEXT_STYLES) {
+        const o = document.createElement("option");
+        o.value = st.id;
+        o.textContent = st.label;
+        styleSel.appendChild(o);
+      }
+      /* tandai preset yang sedang dipakai */
+      const cocok = C.TEXT_STYLES.find((st) =>
+        st.font === (base.font || "helvetica") &&
+        st.size === (base.size || 12) &&
+        !!st.bold === !!base.bold &&
+        !!st.italic === !!base.italic &&
+        st.align === (base.align || "left") &&
+        st.color.toLowerCase() === String(base.color || "#111111").toLowerCase());
+      if (cocok) styleSel.value = cocok.id;
+      styleSel.addEventListener("change", () => {
+        const st = C.textStyle(styleSel.value);
+        if (!st) return;
+        Object.assign(base, {
+          font: st.font, size: st.size, bold: st.bold, italic: st.italic,
+          color: st.color, align: st.align, underline: st.underline,
+          strike: st.strike, lineHeight: st.lineHeight, letterSpacing: st.letterSpacing,
+        });
+        commit(base, isNew);
+        renderSide();
+      });
+      wrap.appendChild(labeled("Gaya teks", styleSel, "style"));
 
       const ta = document.createElement("textarea");
       ta.rows = 3;
       ta.value = base.text || "";
       ta.addEventListener("input", () => { base.text = ta.value; commit(base, isNew); });
-      wrap.appendChild(labeled("Isi teks", ta));
+      wrap.appendChild(labeled("Isi teks", ta, "text"));
 
       const selFont = document.createElement("select");
       for (const f of C.FONT_LIST) {
@@ -444,7 +809,7 @@
       }
       selFont.value = base.font || "helvetica";
       selFont.addEventListener("change", () => { base.font = selFont.value; commit(base, isNew); });
-      wrap.appendChild(labeled("Font", selFont));
+      wrap.appendChild(labeled("Font", selFont, "font"));
 
       const row = el("div", "ed-row");
       const size = document.createElement("input");
@@ -453,13 +818,13 @@
       size.max = "200";
       size.value = base.size || 12;
       size.addEventListener("input", () => { base.size = Number(size.value) || 12; commit(base, isNew); });
-      row.appendChild(labeled("Ukuran (pt)", size));
+      row.appendChild(labeled("Ukuran (pt)", size, "size"));
 
       const color = document.createElement("input");
       color.type = "color";
       color.value = /^#[0-9a-f]{6}$/i.test(base.color || "") ? base.color : "#111111";
       color.addEventListener("input", () => { base.color = color.value; commit(base, isNew); });
-      row.appendChild(labeled("Warna", color));
+      row.appendChild(labeled("Warna", color, "color"));
       wrap.appendChild(row);
 
       const row2 = el("div", "ed-row");
@@ -467,12 +832,22 @@
       bold.type = "checkbox";
       bold.checked = !!base.bold;
       bold.addEventListener("change", () => { base.bold = bold.checked; commit(base, isNew); });
-      row2.appendChild(labeled("Tebal", bold));
+      row2.appendChild(labeled("Tebal", bold, "bold"));
       const italic = document.createElement("input");
       italic.type = "checkbox";
       italic.checked = !!base.italic;
       italic.addEventListener("change", () => { base.italic = italic.checked; commit(base, isNew); });
-      row2.appendChild(labeled("Miring", italic));
+      row2.appendChild(labeled("Miring", italic, "italic"));
+      const underline = document.createElement("input");
+      underline.type = "checkbox";
+      underline.checked = !!base.underline;
+      underline.addEventListener("change", () => { base.underline = underline.checked; commit(base, isNew); });
+      row2.appendChild(labeled("Garis bawah", underline, "underline"));
+      const strike = document.createElement("input");
+      strike.type = "checkbox";
+      strike.checked = !!base.strike;
+      strike.addEventListener("change", () => { base.strike = strike.checked; commit(base, isNew); });
+      row2.appendChild(labeled("Coret", strike, "strike"));
       const align = document.createElement("select");
       for (const [v, l] of [["left", "Kiri"], ["center", "Tengah"], ["right", "Kanan"]]) {
         const o = document.createElement("option");
@@ -481,8 +856,33 @@
       }
       align.value = base.align || "left";
       align.addEventListener("change", () => { base.align = align.value; commit(base, isNew); });
-      row2.appendChild(labeled("Rata", align));
+      row2.appendChild(labeled("Rata", align, "align"));
       wrap.appendChild(row2);
+
+      const row3 = el("div", "ed-row");
+      const lh = document.createElement("input");
+      lh.type = "number";
+      lh.min = "0.8";
+      lh.max = "3";
+      lh.step = "0.05";
+      lh.value = base.lineHeight || 1.2;
+      lh.addEventListener("input", () => {
+        base.lineHeight = Math.min(3, Math.max(0.8, Number(lh.value) || 1.2));
+        commit(base, isNew);
+      });
+      row3.appendChild(labeled("Spasi baris", lh, "lineHeight"));
+      const ls = document.createElement("input");
+      ls.type = "number";
+      ls.min = "-2";
+      ls.max = "8";
+      ls.step = "0.1";
+      ls.value = base.letterSpacing || 0;
+      ls.addEventListener("input", () => {
+        base.letterSpacing = Math.min(8, Math.max(-2, Number(ls.value) || 0));
+        commit(base, isNew);
+      });
+      row3.appendChild(labeled("Spasi huruf (pt)", ls, "letterSpacing"));
+      wrap.appendChild(row3);
 
       const acts = el("div", "ed-actions");
       if (!isNew) {
@@ -508,8 +908,33 @@
         redraw();
       });
       acts.appendChild(rm);
+      if (isNew) {
+        const up = el("button", "btn btn-ghost btn-sm", "Ke depan");
+        up.type = "button";
+        up.addEventListener("click", () => { moveLayer(base.id, 1); });
+        acts.appendChild(up);
+        const down = el("button", "btn btn-ghost btn-sm", "Ke belakang");
+        down.type = "button";
+        down.addEventListener("click", () => { moveLayer(base.id, -1); });
+        acts.appendChild(down);
+      }
       wrap.appendChild(acts);
       side.appendChild(wrap);
+    }
+
+    /* Ubah urutan lapisan (urutan array = urutan gambar di atas kertas) */
+    function moveLayer(id, dir) {
+      const ops = pageOps().slice();
+      const i = ops.findIndex((o) => o.id === id);
+      if (i < 0) return;
+      const j = i + dir;
+      if (j < 0 || j >= ops.length) return;
+      pushHistory();
+      const t = ops[i];
+      ops[i] = ops[j];
+      ops[j] = t;
+      edits()[String(S.pageNo)] = ops;
+      redraw();
     }
 
     function imageForm(base, isNew, orig) {
@@ -525,7 +950,7 @@
         base.box.w = Math.max(8, Number(wIn.value) || base.box.w);
         commitImage(base, isNew, orig);
       });
-      row.appendChild(labeled("Lebar (pt)", wIn));
+      row.appendChild(labeled("Lebar (pt)", wIn, "width"));
       const hIn = document.createElement("input");
       hIn.type = "number";
       hIn.min = "8";
@@ -534,7 +959,7 @@
         base.box.h = Math.max(8, Number(hIn.value) || base.box.h);
         commitImage(base, isNew, orig);
       });
-      row.appendChild(labeled("Tinggi (pt)", hIn));
+      row.appendChild(labeled("Tinggi (pt)", hIn, "height"));
       wrap.appendChild(row);
 
       const acts = el("div", "ed-actions");
@@ -583,21 +1008,32 @@
           redraw();
         });
         acts.appendChild(rm);
+        const up = el("button", "btn btn-ghost btn-sm", "Ke depan");
+        up.type = "button";
+        up.addEventListener("click", () => { moveLayer(base.id, 1); });
+        acts.appendChild(up);
+        const down = el("button", "btn btn-ghost btn-sm", "Ke belakang");
+        down.type = "button";
+        down.addEventListener("click", () => { moveLayer(base.id, -1); });
+        acts.appendChild(down);
       }
       wrap.appendChild(acts);
       side.appendChild(wrap);
     }
 
 
-    function labeled(text, input) {
+    function labeled(text, input, key) {
       const w = el("label", "ed-field");
       w.appendChild(el("span", "ed-label", text));
       w.appendChild(input);
+      /* kunci stabil untuk pengujian otomatis */
+      if (key) w.dataset.field = key;
       return w;
     }
 
     /* ---------- simpan perubahan ---------- */
     function upsert(op) {
+      pushHistory();
       const ops = pageOps();
       const i = ops.findIndex((o) => o.id === op.id);
       if (i >= 0) ops[i] = op;
@@ -605,12 +1041,14 @@
       edits()[String(S.pageNo)] = ops;
     }
     function removeOp(id) {
+      pushHistory();
       const ops = pageOps().filter((o) => o.id !== id);
       edits()[String(S.pageNo)] = ops;
     }
     /* Hapus semua operasi yang berasal dari objek yang sama
        (mis. op teks lalu op hapus untuk blok teks itu). */
     function removeBySrc(srcId) {
+      pushHistory();
       const ops = pageOps().filter((o) => o.srcId !== srcId);
       edits()[String(S.pageNo)] = ops;
     }
@@ -676,6 +1114,7 @@
         id: "n" + (++S.opSeq), k: "text", newItem: true,
         box, by: uy, text: "Teks baru", size, font: "helvetica",
         color: "#111111", bold: false, italic: false, align: "left",
+        underline: false, strike: false, lineHeight: 1.2, letterSpacing: 0,
       };
       upsert(op);
       S.sel = { kind: "text", idx: -1, opId: op.id, newItem: true };
@@ -723,6 +1162,7 @@
         S.pageNo = 1;
         S.sel = null;
         edits()[String(1)] = [];
+        clearHistory();
         await loadPageBoxes();
         stageMessage("");
         await redraw();
@@ -744,9 +1184,370 @@
     ui().custom.opts.edits = edits();
     ui().custom.refreshEditor = refresh;
     ui().custom.disposeEditor = () => {
+      document.removeEventListener("keydown", keyHandler);
       if (S.doc) { try { S.doc.destroy(); } catch (_) {} S.doc = null; }
+      S.wrap = null;
+      S.redraw = null;
+      clearHistory();
     };
     refresh();
+  }
+
+  /* ============================================================
+     Ekspor ke Excel (.xlsx) dan PowerPoint (.pptx)
+     ------------------------------------------------------------
+     Isi diambil dari state editor, sama seperti ekspor Word:
+     teks yang sudah diedit, teks baru, dan gambar.
+     ============================================================ */
+  async function kumpulkanIsi(f) {
+    const doc = await C.openPdfjs(f.bytes);
+    const sheets = [];
+    const slides = [];
+    try {
+      for (let p = 1; p <= doc.numPages; p++) {
+        const isi = await kumpulkanHalaman(doc, p, edits()[String(p)] || []);
+        const page = await doc.getPage(p);
+        const vp = page.getViewport({ scale: 1 });
+        slides.push({ wPt: vp.width, hPt: vp.height, items: isi.items });
+        sheets.push({
+          name: "Halaman " + p,
+          rows: [["Teks", "Jenis", "Font", "Ukuran", "Tebal", "Miring", "Warna", "X (pt)", "Y (pt)", "Lebar", "Tinggi"]]
+            .concat(isi.rows),
+        });
+      }
+    } finally {
+      try { await doc.destroy(); } catch (_) { /* abaikan */ }
+    }
+    return { sheets, slides };
+  }
+
+  function unduhBlob(blob, nama) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = nama;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+
+  async function exportXlsx() {
+    const f = file();
+    if (!f) { toast("Pilih satu PDF dulu.", "err"); return; }
+    const btn = S.wrap && S.wrap.querySelector("[data-ed=xlsx]");
+    if (btn) btn.disabled = true;
+    toast("Menyiapkan lembar kerja Excel…");
+    try {
+      const { sheets } = await kumpulkanIsi(f);
+      const blob = await C.buildXlsx(C.baseName(f.name), sheets);
+      const nama = C.safeName(C.baseName(f.name)) + "-edit.xlsx";
+      unduhBlob(blob, nama);
+      toast("Berkas Excel dibuat: " + nama);
+    } catch (err) {
+      toast("Ekspor Excel gagal: " + ((err && err.message) || err), "err");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  async function exportPptx() {
+    const f = file();
+    if (!f) { toast("Pilih satu PDF dulu.", "err"); return; }
+    const btn = S.wrap && S.wrap.querySelector("[data-ed=pptx]");
+    if (btn) btn.disabled = true;
+    toast("Menyiapkan presentasi PowerPoint…");
+    try {
+      const { slides } = await kumpulkanIsi(f);
+      const blob = await C.buildPptx(C.baseName(f.name), slides);
+      const nama = C.safeName(C.baseName(f.name)) + "-edit.pptx";
+      unduhBlob(blob, nama);
+      toast("Berkas PowerPoint dibuat: " + nama);
+    } catch (err) {
+      toast("Ekspor PowerPoint gagal: " + ((err && err.message) || err), "err");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  /* Simpan semua perubahan sebagai berkas proyek (.edit.json). */
+  function saveProject() {
+    const f = file();
+    if (!f) { toast("Pilih satu PDF dulu.", "err"); return; }
+    const data = {
+      app: "pemisah-pdf",
+      versi: 1,
+      dibuat: new Date().toISOString(),
+      sumber: { nama: f.name, ukuran: f.bytes ? f.bytes.length : 0 },
+      halaman: S.pageNo,
+      zoom: S.zoom,
+      edits: edits(),
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const nama = C.safeName(C.baseName(f.name)) + ".edit.json";
+    unduhBlob(blob, nama);
+    toast("Proyek disimpan: " + nama);
+  }
+
+  /* ============================================================
+     Kumpulkan isi satu halaman sesuai state editor.
+     Dipakai bersama oleh ekspor Word, Excel, dan PowerPoint.
+     Catatan: op "hapus" tidak boleh menutupi op teks/gambar —
+     kalau teks digeser, salinannya tetap ikut diekspor.
+     ============================================================ */
+  async function kumpulkanHalaman(doc, p, ops) {
+    const texts = await C.pageTextBoxes(doc, p);
+    const images = await C.pageImageBoxes(doc, p);
+    texts.forEach((t, i) => { t.id = "t" + i; });
+    images.forEach((im, i) => { im.id = "i" + i; });
+    const opText = new Map();
+    const opImg = new Map();
+    const dihapus = new Set();
+    for (const o of ops || []) {
+      if (o.k === "erase") { dihapus.add(o.srcId); continue; }
+      if (o.k === "text" && o.srcId) opText.set(o.srcId, o);
+      else if (o.k === "image" && o.srcId) opImg.set(o.srcId, o);
+    }
+
+    const textItems = [];
+    const rows = [];
+    for (const t of texts) {
+      const op = opText.get(t.id);
+      if (!op && dihapus.has(t.id)) continue;
+      const src = op || null;
+      const text = src ? (src.text != null ? src.text : t.str) : t.str;
+      const size = src ? (src.size || t.size) : t.size;
+      const font = src ? (src.font || "helvetica") : C.approxFont(t.fontName);
+      const item = {
+        type: "text", text,
+        bold: src ? !!src.bold : false,
+        italic: src ? !!src.italic : false,
+        underline: src ? !!src.underline : false,
+        strike: src ? !!src.strike : false,
+        size, color: src ? src.color : "#111111",
+        align: src ? src.align : "left",
+        x: t.x, y: t.y, w: t.w, h: t.h,
+        /* dipakai ekspor XPS: teks yang benar-benar diedit */
+        edited: !!src,
+        font: src ? (src.font || "helvetica") : C.approxFont(t.fontName),
+        lineHeight: src ? (src.lineHeight || 1.2) : 1.2,
+        letterSpacing: src ? (src.letterSpacing || 0) : 0,
+        by: src ? (src.by != null ? src.by : t.by) : t.by,
+      };
+      textItems.push(item);
+      rows.push([text, "Teks", font, size,
+        item.bold ? "ya" : "tidak", item.italic ? "ya" : "tidak",
+        item.color || "", Math.round(t.x), Math.round(t.y),
+        Math.round(t.w), Math.round(t.h)]);
+    }
+    for (const o of ops || []) {
+      if (o.k !== "text" || !o.newItem) continue;
+      const item = {
+        type: "text", text: o.text, bold: !!o.bold, italic: !!o.italic,
+        underline: !!o.underline, strike: !!o.strike,
+        size: o.size || 12, color: o.color || "#111111", align: o.align || "left",
+        x: o.box.x, y: o.box.y, w: o.box.w, h: o.box.h,
+        edited: true,
+        font: o.font || "helvetica",
+        lineHeight: o.lineHeight || 1.2,
+        letterSpacing: o.letterSpacing || 0,
+        by: o.by != null ? o.by : o.box.y + o.box.h * 0.78,
+      };
+      textItems.push(item);
+      rows.push([o.text || "", "Teks baru", o.font || "helvetica", o.size || 12,
+        item.bold ? "ya" : "tidak", item.italic ? "ya" : "tidak", item.color || "",
+        Math.round(o.box.x), Math.round(o.box.y), Math.round(o.box.w), Math.round(o.box.h)]);
+    }
+
+    /* gambar */
+    const imgItems = [];
+    for (const im of images) {
+      const op = opImg.get(im.id);
+      if (!op && dihapus.has(im.id)) continue;
+      if (op && op.src) {
+        imgItems.push({ dataUrl: op.src, src: null, box: op.box, x: op.box.x, y: op.box.y, w: op.box.w, h: op.box.h, edited: true });
+      } else {
+        const box = op ? op.box : im;
+        imgItems.push({ dataUrl: null, src: op ? op.copyFrom : im, box, x: box.x, y: box.y, w: box.w, h: box.h, edited: !!op });
+      }
+    }
+    for (const o of ops || []) {
+      if (o.k !== "image" || !o.newItem || !o.src) continue;
+      imgItems.push({ dataUrl: o.src, src: null, box: o.box, x: o.box.x, y: o.box.y, w: o.box.w, h: o.box.h, edited: true });
+    }
+    if (imgItems.some((it) => !it.dataUrl)) {
+      const scale = 2;
+      const { canvas, viewport } = await C.renderPage(doc, p, scale);
+      for (const it of imgItems) {
+        if (it.dataUrl || !it.src) continue;
+        const r = C.pdfRectToCanvas(viewport, it.src);
+        const w = Math.max(1, Math.round(r.w));
+        const h = Math.max(1, Math.round(r.h));
+        try {
+          const off = document.createElement("canvas");
+          off.width = w;
+          off.height = h;
+          off.getContext("2d").drawImage(canvas, r.x, r.y, w, h, 0, 0, w, h);
+          it.dataUrl = off.toDataURL("image/png");
+        } catch (_) {
+          it.dataUrl = null;
+        }
+      }
+      canvas.width = canvas.height = 0;
+    }
+    const imageItems = [];
+    for (const it of imgItems) {
+      if (!it.dataUrl) continue;
+      imageItems.push({ type: "image", dataUrl: it.dataUrl, x: it.x, y: it.y, w: it.w, h: it.h, edited: !!it.edited });
+      rows.push(["", "Gambar", "", "", "", "", "", Math.round(it.x), Math.round(it.y), Math.round(it.w), Math.round(it.h)]);
+    }
+
+    /* urutan baca: atas ke bawah, lalu kiri ke kanan */
+    const items = textItems.concat(imageItems);
+    items.sort((a, b) => (b.y - a.y) || (a.x - b.x));
+    return { items, rows };
+  }
+
+  /* ============================================================
+     Ekspor langsung ke Word (.docx)
+     ------------------------------------------------------------
+     Isi dokumen dibangun dari state editor: teks yang sudah ada
+     (dengan hasil edit), teks baru, dan gambar (dipotong dari
+     render halaman atau diambil dari berkas yang disisipkan).
+     ============================================================ */
+  async function buildDocxFromState(f) {
+    const doc = await C.openPdfjs(f.bytes);
+    const pages = [];
+    try {
+      for (let p = 1; p <= doc.numPages; p++) {
+        const isi = await kumpulkanHalaman(doc, p, edits()[String(p)] || []);
+        pages.push({ items: isi.items, breakBefore: p > 1 });
+      }
+    } finally {
+      try { await doc.destroy(); } catch (_) { /* abaikan */ }
+    }
+    return C.buildDocx(C.baseName(f.name), pages);
+  }
+
+  async function exportDocx() {
+    const f = file();
+    if (!f) {
+      toast("Pilih satu PDF dulu.", "err");
+      return;
+    }
+    const btn = S.wrap && S.wrap.querySelector("[data-ed=docx]");
+    if (btn) btn.disabled = true;
+    toast("Menyiapkan berkas Word…");
+    try {
+      const blob = await buildDocxFromState(f);
+      const name = C.safeName(C.baseName(f.name)) + "-edit.docx";
+      unduhBlob(blob, name);
+      toast("Berkas Word dibuat: " + name);
+    } catch (err) {
+      toast("Ekspor Word gagal: " + ((err && err.message) || err), "err");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  /* ============================================================
+     Ekspor XPS — paket OpenXPS (seperti .docx: paket ZIP/OPC).
+     ------------------------------------------------------------
+     Isi setiap halaman:
+       1. latar  = render halaman (teks lama sudah ditutup)
+       2. gambar = ImageBrush (Path + Path.Fill)
+       3. teks   = Glyphs vektor memakai font yang ditanam (ODTTF)
+     Teks hasil edit karena itu bukan gambar, tapi teks XPS asli
+     yang bisa dicari & disalin di penampil XPS.
+     ============================================================ */
+  async function ukuranGambar(dataUrl) {
+    return new Promise((res) => {
+      try {
+        const im = new Image();
+        im.onload = () => res({ w: im.naturalWidth || 1, h: im.naturalHeight || 1 });
+        im.onerror = () => res({ w: 1, h: 1 });
+        im.src = dataUrl;
+      } catch (_) {
+        res({ w: 1, h: 1 });
+      }
+    });
+  }
+
+  async function buildXpsFromState(f) {
+    const X = window.PDFToolsXPS;
+    if (!X) throw new Error("Modul XPS tidak termuat.");
+    const doc = await C.openPdfjs(f.bytes);
+    const srcDoc = await C.loadDoc(f.bytes);
+    const srcPages = srcDoc.getPages();
+    const pages = [];
+    try {
+      for (let p = 1; p <= doc.numPages; p++) {
+        const ops = edits()[String(p)] || [];
+        const { width, height } = srcPages[p - 1].getSize();
+
+        /* Latar: render halaman lalu tutup area teks/gambar lama
+           (tanpa menggambar teks baru — itu jadi lapisan vektor). */
+        const scale = 2;
+        const { canvas, ctx: c2, viewport } = await C.renderPage(doc, p, scale);
+        await C.applyEdits(c2, viewport, ops, { maskOnly: true });
+        let background = null;
+        try {
+          background = { data: canvas.toDataURL("image/png"), w: canvas.width, h: canvas.height };
+        } catch (_) { background = null; }
+        canvas.width = canvas.height = 0;
+
+        const isi = await kumpulkanHalaman(doc, p, ops);
+        const texts = [];
+        for (const it of isi.items) {
+          if (it.type !== "text") continue;
+          /* Teks yang sudah diedit digambar penuh (vektor terlihat).
+             Teks asal PDF yang tidak disentuh tetap ada di latar
+             raster, jadi cukup ditambah sebagai lapisan tak kasat mata
+             supaya seluruh isi halaman tetap bisa dicari/ disalin. */
+          texts.push({
+            text: it.text, x: it.x, y: it.y, w: it.w, h: it.h, by: it.by,
+            size: it.size, font: it.font, bold: it.bold, italic: it.italic,
+            color: it.color, align: it.align, lineHeight: it.lineHeight,
+            letterSpacing: it.letterSpacing, underline: it.underline, strike: it.strike,
+            opacity: it.edited ? null : 0,
+          });
+        }
+        const images = [];
+        for (const it of isi.items) {
+          if (it.type !== "image" || !it.edited || !it.dataUrl) continue;
+          const px = await ukuranGambar(it.dataUrl);
+          images.push({
+            data: it.dataUrl, x: it.x, y: it.y, w: it.w, h: it.h,
+            pw: px.w, ph: px.h,
+          });
+        }
+        pages.push({ widthPt: width, heightPt: height, background, texts, images });
+      }
+    } finally {
+      try { await doc.destroy(); } catch (_) { /* abaikan */ }
+    }
+    return X.build({ title: C.baseName(f.name), pages });
+  }
+
+  async function exportXps() {
+    const f = file();
+    if (!f) {
+      toast("Pilih satu PDF dulu.", "err");
+      return;
+    }
+    const btn = S.wrap && S.wrap.querySelector("[data-ed=xps]");
+    if (btn) btn.disabled = true;
+    toast("Menyiapkan berkas XPS…");
+    try {
+      const blob = await buildXpsFromState(f);
+      const name = C.safeName(C.baseName(f.name)) + "-edit.xps";
+      unduhBlob(blob, name);
+      toast("Berkas XPS dibuat: " + name);
+    } catch (err) {
+      toast("Ekspor XPS gagal: " + ((err && err.message) || err), "err");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   }
 
   /* Keadaan internal (dipakai harness audit dan debug). */
@@ -759,9 +1560,22 @@
       texts: S.texts.length,
       images: S.images.length,
       pendingImage: !!S.pendingImage,
+      viewport: S.viewport ? {
+        scale: S.viewport.scale,
+        width: S.viewport.width,
+        height: S.viewport.height,
+        transform: S.viewport.transform,
+      } : null,
+      undoDepth: S.hist.past.length,
+      redoDepth: S.hist.future.length,
       ops: pageOps(),
     };
   }
 
-  window.PDFToolsEditor = { render, debug };
+  window.PDFToolsEditor = {
+    render, debug, undo, redo,
+    exportDocx, exportXlsx, exportPptx, exportXps, saveProject,
+    /* batalkan seleksi (dipakai pengujian otomatis) */
+    deselect: () => { S.sel = null; if (S.redraw) S.redraw(); },
+  };
 })();

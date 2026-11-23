@@ -2764,7 +2764,20 @@
     return true;
   }
 
-  window.PDFApp = { setTab, setMode, activeTab: () => activeTab };
+  window.PDFApp = {
+    setTab,
+    setMode,
+    activeTab: () => activeTab,
+    /* keadaan seleksi untuk pengujian otomatis & debugging */
+    state: () => ({
+      selected: state.selected.size,
+      deleted: state.deleted.size,
+      mode: currentMode(),
+      files: state.files.length,
+    }),
+    selectedCount: () => state.selected.size,
+    deletedCount: () => state.deleted.size,
+  };
 
   if (window.PDFToolsUI) {
     /* Tautan ke alur yang SUDAH ada di aplikasi (bukan menu baru):

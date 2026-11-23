@@ -819,7 +819,28 @@ code{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;
   width:100%;max-width:640px;height:auto;aspect-ratio:640/220;
   border:1px dashed var(--line);border-radius:10px;background:#fff;cursor:crosshair;touch-action:none;
 }
-.sign-actions{display:flex;gap:8px;margin-top:8px}
+.sign-actions{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center}
+.sign-import{
+  margin-top:10px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);
+}
+.sign-import .sign-actions{margin-top:0}
+.sign-import .muted.tiny{margin:8px 0 0}
+.sign-preview{
+  margin-top:10px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);
+}
+.sign-preview-head{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;
+}
+.sign-preview-nav{display:flex;align-items:center;gap:6px}
+.sign-preview-nav .muted.tiny{min-width:52px;text-align:center}
+.sign-preview-canvas{
+  display:block;width:100%;max-width:340px;height:auto;margin:0 auto;
+  border:1px solid var(--line);border-radius:8px;background:#fff;
+}
+.sign-preview .muted.tiny{margin:8px 0 0;text-align:center}
+@media (max-width:520px){
+  .sign-preview-canvas{max-width:100%}
+}
 
 /* ---------- redaksi ---------- */
 .redact-list{display:flex;flex-direction:column;gap:4px;margin-top:8px;max-height:260px;overflow:auto}
@@ -921,3 +942,17 @@ code{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;
 .ed-field input[type="color"]{width:100%;height:34px;padding:2px;border:1px solid var(--line);border-radius:9px;background:var(--paper)}
 .ed-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .ed-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.ed-layers{display:flex;flex-direction:column;gap:4px;max-height:190px;overflow:auto}
+.ed-layer-row{
+  display:flex;align-items:center;gap:4px;padding:4px 6px;
+  border:1px solid var(--line);border-radius:8px;background:var(--paper);
+}
+.ed-layer-name{
+  flex:1;min-width:0;font-size:12px;color:var(--ink-2);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.ed-layer-row .btn{
+  min-width:26px;padding:3px 5px;font-size:11px;
+  display:inline-flex;align-items:center;justify-content:center;
+}
+.ed-layer-row .btn svg{width:13px;height:13px;display:block}
