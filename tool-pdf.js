@@ -317,6 +317,13 @@
     multiple: false,
     custom: "editor",
     fields: [
+      {
+        type: "select", id: "quality", label: "Kualitas hasil", value: "vector",
+        options: [
+          ["vector", "Vektor — teks tetap bisa dicari, gambar tajam"],
+          ["raster", "Raster — tampilan persis (halaman jadi gambar)"],
+        ],
+      },
       { type: "number", id: "dpi", label: "Resolusi render halaman yang diedit (DPI)", value: 200, min: 96, max: 400 },
       { type: "check", id: "removeAnnots", label: "Hapus anotasi yang sudah ada di PDF", value: false },
     ],
@@ -326,6 +333,7 @@
       const edits = (ctx.opts && ctx.opts.edits) || {};
       const pageKeys = Object.keys(edits).filter((k) => (edits[k] || []).length);
       const dpi = Math.min(400, Math.max(96, Number(ctx.opts.dpi) || 200));
+      const quality = ctx.opts.quality === "raster" ? "raster" : "vector";
 
       const src = await loadDoc(f.bytes);
       const srcPages = src.getPages();
@@ -346,6 +354,51 @@
           }
           continue;
         }
+        if (quality === "vector") {
+          /* Vektor: halaman asli disalin apa adanya (teks tetap bisa
+             dicari), lalu edit digambar sebagai objek vektor di atasnya. */
+          ctx.progress(null, `Menyusun halaman ${n} dari ${srcPages.length}…`);
+          const [copied] = await dst.copyPages(src, [i]);
+          const p = dst.addPage(copied);
+          if (ctx.opts.removeAnnots) p.node.delete(PDFName.of("Annots"));
+          const crops = new Map();
+          /* Render sekali untuk dua keperluan: memotong gambar yang
+             digeser, dan mengambil warna latar saat menutup teks lama. */
+          const scale = 2;
+          const { canvas, ctx: pageCtx, viewport } = await renderPage(pdfjs, n, scale);
+          const bgFor = (op) => {
+            const rect = op.copyFrom || op.box;
+            if (!rect) return null;
+            try {
+              const r = C.pdfRectToCanvas(viewport, rect);
+              return C.sampleBackground(pageCtx, r);
+            } catch (_) {
+              return null;
+            }
+          };
+          await C.applyVectorEdits(p, ops, {
+            bgFor,
+            cropBytes: async (op) => {
+              if (!op.copyFrom) return null;
+              const key = JSON.stringify(op.copyFrom);
+              if (crops.has(key)) return crops.get(key);
+              const r = C.pdfRectToCanvas(viewport, op.copyFrom);
+              const w = Math.max(1, Math.round(r.w));
+              const h = Math.max(1, Math.round(r.h));
+              const off = document.createElement("canvas");
+              off.width = w;
+              off.height = h;
+              off.getContext("2d").drawImage(canvas, r.x, r.y, w, h, 0, 0, w, h);
+              const bytes = await C.canvasToBytes(off, "image/png");
+              crops.set(key, bytes);
+              return bytes;
+            },
+          });
+          canvas.width = canvas.height = 0;
+          raster++;
+          await tick();
+          continue;
+        }
         ctx.progress(null, `Merender halaman ${n} dari ${srcPages.length}…`);
         const scale = dpi / 72;
         const { canvas, ctx: c2, viewport } = await renderPage(pdfjs, n, scale);
@@ -363,7 +416,9 @@
       try { await pdfjs.destroy(); } catch (_) {}
       const bytes = await saveDoc(dst);
       const note = raster
-        ? `${raster} halaman diedit (dirender ulang), sisanya tetap vektor`
+        ? (quality === "vector"
+          ? `${raster} halaman diedit (vektor — teks tetap bisa dicari)`
+          : `${raster} halaman diedit (dirender ulang), sisanya tetap vektor`)
         : "Tidak ada perubahan — PDF disalin apa adanya";
       return [{
         name: C.safeName(C.baseName(f.name)) + "-edit.pdf",

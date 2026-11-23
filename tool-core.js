@@ -635,6 +635,323 @@ ${rels.join("\n")}
     return zip.generateAsync({ type: "blob", compression: "DEFLATE" });
   }
 
+/* ============================================================
+   Tambahan tool-core.js (bagian 1): font aproksimasi + ekspor
+   vektor. Sisipkan sebelum blok "window.PDFToolsCore = {".
+   ============================================================ */
+
+  /* Petakan nama font internal pdf.js ke font yang paling dekat
+     (dipakai saat teks yang sudah ada digeser supaya tetap mirip). */
+  function approxFont(fontName) {
+    const n = String(fontName || "").toLowerCase();
+    if (!n) return "helvetica";
+    if (/times|serif|roman|georgia|garamond|minion|book/.test(n)) return "times";
+    if (/courier|mono|consol/.test(n)) return "courier";
+    if (/comic|hand|script|cursive/.test(n)) return "comic";
+    if (/impact|black|heavy/.test(n)) return "impact";
+    if (/trebuchet|verdana|tahoma|arial|helvetica|sans/.test(n)) return "helvetica";
+    return "helvetica";
+  }
+
+  /* Font standar pdf-lib untuk setiap gaya teks. */
+  function stdFontName(fontId, bold, italic) {
+    const serif = fontId === "times" || fontId === "georgia";
+    const mono = fontId === "courier";
+    const sans = !serif && !mono;
+    if (mono) {
+      if (bold && italic) return "CourierBoldOblique";
+      if (bold) return "CourierBold";
+      if (italic) return "CourierOblique";
+      return "Courier";
+    }
+    if (serif) {
+      if (bold && italic) return "TimesRomanBoldItalic";
+      if (bold) return "TimesRomanBold";
+      if (italic) return "TimesRomanItalic";
+      return "TimesRoman";
+    }
+    if (bold && italic) return "HelveticaBoldOblique";
+    if (bold) return "HelveticaBold";
+    if (italic) return "HelveticaOblique";
+    return "Helvetica";
+  }
+
+  /* Gambar garis bawah & coret sebagai garis tipis. */
+  function drawDecoration(page, x0, x1, y, width, color) {
+    try {
+      page.drawLine({
+        start: { x: x0, y },
+        end: { x: x1, y },
+        thickness: width,
+        color,
+      });
+    } catch (_) {
+      /* abaikan */
+    }
+  }
+
+  /* Terapkan operasi edit sebagai vektor di atas halaman asli.
+     - teks digambar dengan font standar (tetap bisa dicari & tajam)
+     - teks yang dihapus ditutup dengan persegi sesuai warna latar
+     - gambar disisipkan dari berkas (src) atau potongan render (crop)
+     opts:
+       { cropBytes: async (op) => Uint8Array|null }
+     */
+  async function applyVectorEdits(page, ops, opts) {
+    const o = opts || {};
+    const doc = page.doc;
+    const fontCache = new Map();
+    const asyncFont = async (name) => {
+      if (!fontCache.has(name)) fontCache.set(name, await doc.embedFont(StandardFonts[name]));
+      return fontCache.get(name);
+    };
+    let applied = 0;
+    for (const op of ops || []) {
+      if (!op || !op.box) continue;
+      const box = op.box;
+      if (op.k === "erase") {
+        /* Tutup teks lama dengan persegi. Warnanya diambil dari
+           latar sekitar (kalau tersedia) supaya hasil ekspansi
+           tidak terlihat berbeda dari aslinya. */
+        const bg = o.bgFor ? o.bgFor(op) : null;
+        try {
+          page.drawRectangle({
+            x: box.x - 1, y: box.y - 1, width: box.w + 2, height: box.h + 2,
+            color: bg ? parseColor(bg, rgb(1, 1, 1)) : rgb(1, 1, 1),
+            borderWidth: 0,
+          });
+          applied++;
+        } catch (_) { /* abaikan */ }
+        continue;
+      }
+      if (op.k === "text") {
+        const size = op.size || 12;
+        const font = await asyncFont(stdFontName(op.font, op.bold, op.italic));
+        const color = parseColor(op.color, rgb(0.07, 0.07, 0.07));
+        const step = size * (op.lineHeight || 1.2);
+        const lines = wrapTextPdf(font, op.text || "", box.w, size);
+        const align = op.align || "left";
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (!line) continue;
+          let w = 0;
+          try { w = font.widthOfTextAtSize(line, size); } catch (_) { w = 0; }
+          let x = box.x;
+          if (align === "center") x = box.x + (box.w - w) / 2;
+          else if (align === "right") x = box.x + box.w - w;
+          const baseY = op.by != null ? op.by : box.y + box.h * TEXT_ASCENT;
+          const y = baseY - i * step - size * 0.22;
+          try {
+            page.drawText(line, { x, y, size, font, color });
+            applied++;
+          } catch (_) {
+            /* karakter di luar jangkauan font */
+          }
+          if (op.underline) {
+            drawDecoration(page, x, x + w, y + size * 0.12, Math.max(0.5, size * 0.05), color);
+          }
+          if (op.strike) {
+            drawDecoration(page, x, x + w, y + size * 0.3, Math.max(0.5, size * 0.05), color);
+          }
+        }
+        continue;
+      }
+      if (op.k === "image") {
+        /* gambar yang digeser/diubah ukuran: area asal ikut ditutup
+           supaya gambar lama tidak tertinggal di halaman. */
+        if (op.copyFrom) {
+          const bg = o.bgFor ? o.bgFor(op) : null;
+          try {
+            page.drawRectangle({
+              x: op.copyFrom.x - 1, y: op.copyFrom.y - 1,
+              width: op.copyFrom.w + 2, height: op.copyFrom.h + 2,
+              color: bg ? parseColor(bg, rgb(1, 1, 1)) : rgb(1, 1, 1),
+              borderWidth: 0,
+            });
+          } catch (_) { /* abaikan */ }
+        }
+        let bytes = null;
+        try {
+          if (op.src && /^data:image\//.test(op.src)) {
+            const m = /^data:image\/(png|jpe?g);base64,(.*)$/s.exec(op.src);
+            if (m) {
+              const bin = atob(m[2]);
+              bytes = new Uint8Array(bin.length);
+              for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+            }
+          } else if (typeof o.cropBytes === "function") {
+            bytes = await o.cropBytes(op);
+          }
+        } catch (_) {
+          bytes = null;
+        }
+        if (!bytes || !bytes.length) continue;
+        try {
+          const isJpg = bytes[0] === 0xff && bytes[1] === 0xd8;
+          const img = isJpg ? await doc.embedJpg(bytes) : await doc.embedPng(bytes);
+          page.drawImage(img, { x: box.x, y: box.y, width: box.w, height: box.h });
+          applied++;
+        } catch (_) {
+          /* gambar gagal disisipkan */
+        }
+      }
+    }
+    return applied;
+  }
+
+  /* Bungkus teks dengan font pdf-lib (mengukur lebar sebenarnya). */
+  function wrapTextPdf(font, text, maxW, size) {
+    const out = [];
+    for (const para of String(text == null ? "" : text).split(/\r?\n/)) {
+      const words = para.split(/\s+/).filter(Boolean);
+      if (!words.length) { out.push(""); continue; }
+      let cur = "";
+      for (const w of words) {
+        const t = cur ? cur + " " + w : w;
+        let width = 0;
+        try { width = font.widthOfTextAtSize(t, size); } catch (_) { width = 0; }
+        if (maxW > 0 && cur && width > maxW) {
+          out.push(cur);
+          cur = w;
+        } else {
+          cur = t;
+        }
+      }
+      if (cur) out.push(cur);
+    }
+    return out.length ? out : [""];
+  }
+
+/* ============================================================
+   Tambahan tool-core.js (bagian 2): pembuat XLSX & PPTX untuk
+   ekspor langsung dari editor.
+   ============================================================ */
+
+  function colNameX(n) {
+    let s = "";
+    n += 1;
+    while (n > 0) {
+      const rem = (n - 1) % 26;
+      s = String.fromCharCode(65 + rem) + s;
+      n = Math.floor((n - 1) / 26);
+    }
+    return s;
+  }
+
+  /* sheets: [{ name, rows: [[cell, ...], ...] }] */
+  async function buildXlsx(title, sheets) {
+    const zip = new JSZip();
+    const list = sheets && sheets.length ? sheets : [{ name: "Sheet1", rows: [] }];
+    const n = list.length;
+    zip.file("[Content_Types].xml", XML_HEAD + `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+${Array.from({ length: n }, (_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("\n")}
+<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
+</Types>`);
+    zip.file("_rels/.rels", XML_HEAD + `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
+</Relationships>`);
+    zip.file("xl/workbook.xml", XML_HEAD + `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${list.map((s, i) => `<sheet name="${xmlEsc((s.name || "Sheet" + (i + 1)).slice(0, 28))}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join("")}</sheets></workbook>`);
+    zip.file("xl/_rels/workbook.xml.rels", XML_HEAD + `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${list.map((s, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join("")}</Relationships>`);
+    list.forEach((s, si) => {
+      const rows = (s.rows || []).map((r, ri) => {
+        const cells = r.map((v, ci) => `<c r="${colNameX(ci)}${ri + 1}" t="inlineStr"><is><t xml:space="preserve">${xmlEsc(v)}</t></is></c>`).join("");
+        return `<row r="${ri + 1}">${cells}</row>`;
+      }).join("");
+      zip.file(`xl/worksheets/sheet${si + 1}.xml`, XML_HEAD + `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${rows}</sheetData></worksheet>`);
+    });
+    const now = new Date().toISOString().replace(/\.\d+Z$/, "Z");
+    zip.file("docProps/core.xml", XML_HEAD + `<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${xmlEsc(title)}</dc:title><dc:creator>Pemisah PDF</dc:creator><cp:lastModifiedBy>Pemisah PDF</cp:lastModifiedBy><dcterms:created xsi:type="dcterms:W3CDTF">${now}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">${now}</dcterms:modified></cp:coreProperties>`);
+    zip.file("docProps/app.xml", XML_HEAD + `<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>Pemisah PDF</Application></Properties>`);
+    return zip.generateAsync({ type: "blob", compression: "DEFLATE" });
+  }
+
+  const PPTX_THEME_MIN = XML_HEAD + `<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Sederhana"><a:themeElements><a:clrScheme name="Sederhana"><a:dk1><a:sysClr val="windowText" lastClr="000000"/></a:dk1><a:lt1><a:sysClr val="window" lastClr="FFFFFF"/></a:lt1><a:dk2><a:srgbClr val="1F2937"/></a:dk2><a:lt2><a:srgbClr val="F3F4F6"/></a:lt2><a:accent1><a:srgbClr val="2563EB"/></a:accent1><a:accent2><a:srgbClr val="059669"/></a:accent2><a:accent3><a:srgbClr val="D97706"/></a:accent3><a:accent4><a:srgbClr val="DC2626"/></a:accent4><a:accent5><a:srgbClr val="7C3AED"/></a:accent5><a:accent6><a:srgbClr val="0891B2"/></a:accent6><a:hlink><a:srgbClr val="0561C1"/></a:hlink><a:folHlink><a:srgbClr val="954F72"/></a:folHlink></a:clrScheme><a:fontScheme name="Sederhana"><a:majorFont><a:latin typeface="Calibri Light"/><a:ea typeface=""/><a:cs typeface=""/></a:majorFont><a:minorFont><a:latin typeface="Calibri"/><a:ea typeface=""/><a:cs typeface=""/></a:minorFont></a:fontScheme><a:fmtScheme name="Sederhana"><a:fillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:fillStyleLst><a:lnStyleLst><a:ln w="6350"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln></a:lnStyleLst><a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle></a:effectStyleLst><a:bgFillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:bgFillStyleLst></a:fmtScheme></a:themeElements></a:theme>`;
+
+  const PPTX_EMPTY_TREE = `<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>`;
+
+  /* slides: [{ wPt, hPt, items: [...] }]
+     item teks : { type:"text", text, x, y, w, h, size, bold, italic, color, align }
+     item gambar: { type:"image", dataUrl, x, y, w, h }   (koordinat PDF, titik) */
+  async function buildPptx(title, slides) {
+    const zip = new JSZip();
+    const list = slides && slides.length ? slides : [{ wPt: 595, hPt: 842, items: [] }];
+    const n = list.length;
+    const media = [];
+    const rels = [];
+
+    zip.file("[Content_Types].xml", XML_HEAD + `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Default Extension="png" ContentType="image/png"/>
+<Default Extension="jpeg" ContentType="image/jpeg"/>
+<Default Extension="jpg" ContentType="image/jpeg"/>
+<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
+<Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>
+<Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>
+<Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>
+${Array.from({ length: n }, (_, i) => `<Override PartName="/ppt/slides/slide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`).join("\n")}
+</Types>`);
+    zip.file("_rels/.rels", XML_HEAD + `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/></Relationships>`);
+
+    const first = list[0];
+    const cx = Math.round((first.wPt || 595) * 12700);
+    const cy = Math.round((first.hPt || 842) * 12700);
+    zip.file("ppt/presentation.xml", XML_HEAD + `<p:presentation xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst><p:sldIdLst>${list.map((s, i) => `<p:sldId id="${256 + i}" r:id="rId${i + 2}"/>`).join("")}</p:sldIdLst><p:sldSz cx="${cx}" cy="${cy}"/><p:notesSz cx="6858000" cy="9144000"/></p:presentation>`);
+    zip.file("ppt/_rels/presentation.xml.rels", XML_HEAD + `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="ppt/slideMasters/slideMaster1.xml"/>${list.map((s, i) => `<Relationship Id="rId${i + 2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${i + 1}.xml"/>`).join("")}</Relationships>`);
+    zip.file("ppt/slideMasters/slideMaster1.xml", XML_HEAD + `<p:sldMaster xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree>${PPTX_EMPTY_TREE}</p:spTree></p:cSld><p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/><p:sldLayoutIdLst><p:sldLayoutId id="214748649" r:id="rId1"/></p:sldLayoutIdLst></p:sldMaster>`);
+    zip.file("ppt/slideMasters/_rels/slideMaster1.xml.rels", XML_HEAD + `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme1.xml"/></Relationships>`);
+    zip.file("ppt/slideLayouts/slideLayout1.xml", XML_HEAD + `<p:sldLayout xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" type="blank" preserve="1"><p:cSld name="Kosong"><p:spTree>${PPTX_EMPTY_TREE}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>`);
+    zip.file("ppt/slideLayouts/_rels/slideLayout1.xml.rels", XML_HEAD + `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="../slideMasters/slideMaster1.xml"/></Relationships>`);
+    zip.file("ppt/theme/theme1.xml", PPTX_THEME_MIN);
+
+    for (let i = 0; i < list.length; i++) {
+      const s = list[i];
+      const hPt = s.hPt || 842;
+      const shapes = [];
+      const slideRels = [];
+      let rid = 2;
+      for (const it of s.items || []) {
+        if (!it) continue;
+        if (it.type === "image") {
+          const img = dataUrlToBytes(it.dataUrl);
+          if (!img) continue;
+          const name = `image${media.length + 1}.${img.ext}`;
+          zip.file("ppt/media/" + name, img.bytes);
+          media.push(name);
+          const r = "rId" + (rid++);
+          slideRels.push(`<Relationship Id="${r}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/${name}"/>`);
+          const x = Math.round((it.x || 0) * 12700);
+          const yTop = Math.round((hPt - ((it.y || 0) + (it.h || 0))) * 12700);
+          const w = Math.round(Math.max(1, it.w || 100) * 12700);
+          const h = Math.round(Math.max(1, it.h || 100) * 12700);
+          shapes.push(`<p:pic><p:nvPicPr><p:cNvPr id="${shapes.length + 2}" name="Gambar ${shapes.length + 2}"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="${r}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="${x}" y="${yTop}"/><a:ext cx="${w}" cy="${h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>`);
+          continue;
+        }
+        const txt = String(it.text == null ? "" : it.text);
+        if (!txt.trim()) continue;
+        const size = it.size || 12;
+        const x = Math.round((it.x || 0) * 12700);
+        const yTop = Math.round((hPt - ((it.y || 0) + (it.h || 0))) * 12700);
+        const w = Math.round(Math.max(1, it.w || 100) * 12700);
+        const h = Math.round(Math.max(1, it.h || 12) * 12700);
+        const align = it.align === "center" ? "ctr" : it.align === "right" ? "r" : "l";
+        const rpr = ` lang="id-ID" sz="${Math.round(size * 100)}"${it.bold ? ' b="1"' : ""}${it.italic ? ' i="1"' : ""}${it.underline ? ' u="sng"' : ""}${it.strike ? ' strike="sngStrike"' : ""} dirty="0"`;
+        const fill = it.color ? `<a:solidFill><a:srgbClr val="${hexColor(it.color, "111111")}"/></a:solidFill>` : "";
+        const paras = txt.split(/\r?\n/).map((ln) => `<a:p><a:pPr algn="${align}"/><a:r><a:rPr${rpr}>${fill}<a:latin typeface="Arial"/></a:rPr><a:t>${xmlEsc(ln)}</a:t></a:r></a:p>`).join("");
+        shapes.push(`<p:sp><p:nvSpPr><p:cNvPr id="${shapes.length + 2}" name="Teks ${shapes.length + 2}"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${x}" y="${yTop}"/><a:ext cx="${w}" cy="${h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></p:spPr><p:txBody><a:bodyPr wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" anchor="t"/><a:lstStyle/>${paras}</p:txBody></p:sp>`);
+      }
+      zip.file(`ppt/slides/slide${i + 1}.xml`, XML_HEAD + `<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree>${PPTX_EMPTY_TREE}${shapes.join("")}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>`);
+      zip.file(`ppt/slides/_rels/slide${i + 1}.xml.rels`, XML_HEAD + `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>${slideRels.join("")}</Relationships>`);
+    }
+    return zip.generateAsync({ type: "blob", compression: "DEFLATE" });
+  }
+
   window.PDFToolsCore = {
     L, PDFDocument, PDFName, PDFNumber, PDFArray, PDFString, PDFHexString, PDFRef,
     PDFRawStream, PDFBool, PDFDict, PDFInvalidObject,
@@ -644,7 +961,8 @@ ${rels.join("\n")}
     loadDoc, saveDoc, pdfjsTask, openPdfjs, renderPage, canvasToBytes,
     extractText, pageText, decodeImage, makeZip,
     FONT_LIST, fontCss, mulMat, applyMat, wrapText,
-    TEXT_STYLES, textStyle, buildDocx,
+    TEXT_STYLES, textStyle, buildDocx, buildXlsx, buildPptx,
+    approxFont, stdFontName, applyVectorEdits, wrapTextPdf,
     pageTextBoxes, pageImageBoxes, pdfPointToCanvas, pdfRectToCanvas,
     sampleBackground, loadImageEl, applyEdits,
     fontFor, drawTextSafe, getFont,
