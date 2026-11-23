@@ -203,6 +203,70 @@ tetap ada. Unlock kini memakai dekriptor sendiri (`tool-decrypt.js`).
 | Tekssis acak (Cyrillic/CJK) bocor ke UI | dibersihkan (`tool-pdf.js` + `tool-smart.js`) |
 | Berkas rusak total menimbulkan error teknis | pesan "rusak total: tidak ada halaman yang bisa dipulihkan" |
 
+## Audit mode gelap & cache (2026-11-22)
+
+Laporan bug: di mode gelap, panel editor ("Ubah semua teks") menampilkan
+input/select **putih** dengan teks nyaris tak terlihat, tombol "Proses"
+berteks putih di atas biru terang. encompassed: submenu, badge, tooltip,
+disabled, metadata terkompresi, popover, iframe, dan cache deployment.
+
+### Kronologi — bug-nya nyata, tapi bukan CSS server
+
+| Waktu (UTC) | WIB | Kejadian |
+|---|---|---|
+| 2026-11-23 10:49 | 17:49 | Commit `d3807f1` (perbaikan CSS) — **masih di branch feature** |
+| 2026-11-23 11:04 | 18:04 | **Screenshot bug diambil** → Pages masih menyajikan CSS lama |
+| sesudahnya | — | PR #11 merge → deploy → CSS baru tayang |
+
+`gh api repos/Putra1996/PDF/pages` mengonfirmasi sumber deploy adalah
+`main` dengan `status: built`, dan `style.css` yang ter-deploy memuat
+seluruh perbaikan. Jadi **bukan** CSS server yang rusak, melainkan
+perbaikannya belum sempat ter-deploy saat screenshot diambil.
+
+### Akar masalah cache
+
+- Tidak ada service worker di repo (`serviceWorker`/`caches`/`workbox` nihil).
+- GitHub Pages memaksa `Cache-Control: max-age=600` (10 menit) untuk
+  semua aset dan tidak bisa diubah dari repo.
+- `index.html` memuat `style.css` **tanpa** `?v=` → peramban yang menahan
+  URL itu di cache akan terus memakai versi lama.
+
+### Perbaikan yang dibuat
+
+| Temuan | Perbaikan |
+|---|---|
+| CSS basi di cache tidak pernah tergantikan | aset kini ber-`?v=<build>`; `style.css` mendeklarasikan `--css-build` |
+| Tidak ada deteksi stylesheet basi | penjaga cache di `index.html`: jika `--css-build` tidak cocok, stylesheet dimuat ulang dengan URL baru + toast |
+| Toast sukses/gagal di mode gelap berupa blok warna terang | memakai permukaan gelap + teks berwarna (`--green-soft`/`--danger-soft`) |
+| Audit lama hanya mengukur kontras teks | audit baru mengukur **blok terang**, kontras terhadap **latar efektif**, dan `color-scheme` tiap kontrol native |
+| State "Ubah semua teks" (tanpa blok terpilih) belum pernah diuji | kini menjadi state wajib dalam audit |
+
+### Hasil suite
+
+| Suite | Pemeriksaan | Gagal | Cakupan |
+|---|---|---|---|
+| `audit-deep2.mjs` | 169 | 0 | semua state dinamis: split/merge/compress/28 alat/editor (5 state)/overlay/toast, desktop + ponsel |
+| `audit-cache.mjs` | 9 | 0 | pemulihan mandiri dari `style.css` basi (disimulasikan end-to-end) |
+| `test-fungsi.mjs` | 18 | 0 | split, merge, compress, 4 alat, editor + "Ubah semua teks" |
+| **Total** | **196** | **0** | |
+
+### Cara kerja penjaga cache
+
+```
+index.html  →  window.PDF_BUILD = "20261123b"
+style.css   →  :root { --css-build: 20261123b; }
+```
+
+1. Halaman meminta `style.css?v=20261123b` → URL baru, pasti diambil dari server.
+2. Setelah `load`, penjaga membandingkan `--css-build` pada stylesheet aktif
+   dengan `PDF_BUILD`. Kalau beda (artinya cache lama), `href` diganti
+   `style.css?v=<build>.<timestamp>` → versi terbaru aktif tanpa hard refresh.
+3. `app.js` memberi tahu pengguna lewat toast.
+
+> **Wajib saat deploy:** naikkan `PDF_BUILD` di `index.html` **dan**
+> `--css-build` di `style.css` setiap kali `style.css`/skrip berubah.
+> Keduanya harus sama.
+
 ## Catatan perilaku
 
 - **OCR** dan **Terjemah** memakai mesin bawaan browser (`TextDetector`,

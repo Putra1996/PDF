@@ -3,6 +3,9 @@
    sehingga seluruh komponen otomatis menyesuaikan tema.
    ================================================ */
 :root{
+  /* Penanda build — naikkan setiap kali style.css berubah.
+     Dipakai index.html untuk mendeteksi style.css basi di cache browser. */
+  --css-build:20261123b;
   --bg:#f5f6fa;
   --bg-glow:#e6ebff;
   --surface:#ffffff;
@@ -1014,8 +1017,14 @@ code{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;
 [data-theme="dark"] .thumb.todelete .tclose{
   background:var(--red);border-color:var(--red);color:var(--on-red);
 }
-[data-theme="dark"] .toast.err{background:var(--red-ink);color:#1b0f0c}
-[data-theme="dark"] .toast.ok{background:var(--green-ink);color:#08201a}
+/* Toast: pakai permukaan gelap + teks berwarna, bukan blok warna terang
+   yang menyilaukan di mode gelap. */
+[data-theme="dark"] .toast.err{
+  background:var(--danger-soft);color:var(--red-text);border:1px solid var(--danger-line);
+}
+[data-theme="dark"] .toast.ok{
+  background:var(--green-soft);color:var(--green-ink);border:1px solid var(--green-line);
+}
 
 /* Kursor & garis bantu editor di atas kertas putih */
 [data-theme="dark"] .ed-handle{border-color:#0f172a}

@@ -186,3 +186,25 @@ pemisah-pdf/
 ```
 
 Folder `vendor/` wajib ada di samping `index.html`. Tidak perlu internet.
+
+## Deploy (GitHub Pages)
+
+GitHub Pages memaksa `Cache-Control: max-age=600` dan tidak bisa diubah dari
+repo, jadi peramban bisa menahan `style.css` versi lama upto 10 menit. Agar
+perubahan tema/CSS langsung terlihat, aset di-`index.html` memakai alamat
+ber-versi:
+
+```html
+<link rel="stylesheet" href="style.css?v=20261123b" />
+<script src="app.js?v=20261123b"></script>
+```
+
+**Setiap kali `style.css` atau skrip aplikasi berubah, naikkan versinya:**
+
+1. `index.html` → `window.PDF_BUILD = "20261123b"` dan semua `?v=`.
+2. `style.css` → `--css-build: 20261123b;` di dalam `:root`.
+
+Kedua nilai **wajib sama**. Selain memaksa peramban mengambil aset terbaru,
+`index.html` punya penjaga cache: bila stylesheet yang termuat ternyata versi
+lama (`--css-build` tidak cocok), stylesheet dimuat ulang dengan alamat baru
+dan pengguna diberi tahu lewat toast — tanpa perlu hard refresh.
