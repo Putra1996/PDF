@@ -183,8 +183,9 @@
         await addOne(f);
         added++;
       } catch (err) {
-        console.error(err);
-        toast(`Gagal membaca "${f.name}". ${err?.message || ""}`.trim(), "err", 5000);
+        /* kondisi yang sudah ditangani (berkas rusak) -> warning, bukan error */
+        console.warn(`Gagal membaca "${f.name}":`, pesanReader(err));
+        toast(`Gagal membaca "${f.name}". ${pesanReader(err)}`.trim(), "err", 5000);
       }
       await tick();
     }
@@ -212,7 +213,13 @@
         return addDecrypted(file, opened);
       }
       // struktur xref rusak/aneh: coba muat dengan toleransi
-      doc = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false, throwOnInvalidObject: false });
+      try {
+        doc = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false, throwOnInvalidObject: false });
+      } catch (err2) {
+        // pdf-lib melempar error teknis (mis. TypeError "reading 'Pages'")
+        // untuk PDF rusak total — ganti dengan kalimat yang dipahami pengguna.
+        throw new Error(pesanReader(err2));
+      }
     }
     if (!doc) throw new Error("Tidak dapat membaca struktur PDF.");
 
@@ -236,6 +243,16 @@
     // bookmark / daftar isi (diam-diam, untuk mode pisah per penanda)
     entry.bookmarks = await readOutline(bytes).catch(() => []);
     return entry;
+  }
+
+  /* Pesan error teknis (mis. TypeError dari pdf-lib saat menghitung
+     halaman PDF rusak) tidak boleh tampil mentah ke pengguna. */
+  function pesanReader(err) {
+    const m = String((err && err.message) || err || "").trim();
+    const teknis = /cannot read|of undefined|typeerror|referenceerror|is not a function|unexpected token|invalid or unexpected|cannot access/i;
+    if (!m) return "Berkas tidak bisa dibaca.";
+    if (teknis.test(m)) return "Berkas rusak atau tidak bisa dibaca. Coba PDF lain.";
+    return m;
   }
 
   function isEncryptedError(err) {
@@ -1605,8 +1622,8 @@
         });
         added++;
       } catch (err) {
-        console.error(err);
-        toast(`Gagal membaca "${file.name}". ${err?.message || ""}`.trim(), "err", 5000);
+        console.warn(`Gagal membaca "${file.name}":`, pesanReader(err));
+        toast(`Gagal membaca "${file.name}". ${pesanReader(err)}`.trim(), "err", 5000);
       }
       await tick();
     }
