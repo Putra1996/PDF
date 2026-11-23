@@ -5,7 +5,7 @@
 :root{
   /* Penanda build — naikkan setiap kali style.css berubah.
      Dipakai index.html untuk mendeteksi style.css basi di cache browser. */
-  --css-build:20261123f;
+  --css-build:20261123g;
   --bg:#f5f6fa;
   --bg-glow:#e6ebff;
   --surface:#ffffff;
@@ -998,6 +998,18 @@ code{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;
   .tool-layout{grid-template-columns:minmax(0,1fr)}
   .tool-grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
   .tool-card{padding:12px}
+  /* Di layar sempit rail pilihan ikut mengalir di bawah konten utama.
+     Kalau rail tetap "nempel" (sticky), panelnya menimpa dropzone
+     berkas dan toolbar editor sehingga alat tidak bisa dipakai. */
+  .tool-side{
+    position:static;top:auto;bottom:auto;
+    max-height:none;overflow:visible;
+  }
+  /* Tombol aksi mengikuti aliran di layar sempit: kalau tetap sticky
+    _bottom_, tombolnya melayang di atas kolom lain. */
+  .tool-side > .card:first-child > .btn-block{
+    position:static;bottom:auto;box-shadow:none;
+  }
 }
 @media (max-width:640px){
   .tool-grid{grid-template-columns:1fr 1fr;gap:8px}
