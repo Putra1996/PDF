@@ -2,7 +2,8 @@
 
 Audit ini memetakan **setiap** item pada screenshot referensi ke status
 **existing / extended / new**, beserta bukti kode dan bukti pengujian.
-Tanggal audit: 2026-11-22. Branch: `arena/cfb38d43-pdf` (basis `main` `864838e`).
+Tanggal audit: 2026-11-22 (audit feature) dan 2026-11-23 (audit pascamerge
+komprehensif). Branch: `arena/44607f6f-pdf` (basis `main` `0888b1e`).
 
 ## Ringkasan
 
@@ -72,7 +73,7 @@ persis seperti susunan screenshot.
 
 | Item screenshot | Status | Bukti kode | Bukti uji |
 |---|---|---|---|
-| Unlock PDF | **new** | `tool-smart.js:55` `unlock` (buka dengan password via pdf.js → simpan salinan tanpa enkripsi) | `tools2.mjs` → "buka PDF terkunci menghasilkan PDF", "password salah ditolak" |
+| Unlock PDF | **new** | `tool-smart.js` `unlock` + `tool-decrypt.js` (dekriptor mandiri: Standard Security Handler R2–R6, RC4/AES, object stream + xref stream → tulis ulang tanpa `/Encrypt`) | `exp-decrypt.mjs` (16/16) + `deep-unlock.mjs` (21/21) + `validate_outputs.py` (14/14 pypdf/pikepdf) |
 | Protect PDF | **new** | `tool-smart.js:251` `protect` + `tool-crypto.js` (MD5/RC4/AES-128-CBC + Standard Security Handler ISO 32000-1 §7.6.3: Algorithm 1/2/3/5) | `protect-test.mjs` (17 pemeriksaan, reader independen pypdf) + `crypto-test.mjs` (12 vektor, nilai `/O`/kunci/`/U` identik dengan pypdf 7.1.1) |
 | Sign PDF | **new** | `tool-smart.js:319` `sign` (tanda tangan tulisan tangan, posisi & ukuran, multi halaman) | `tools2.mjs` → "tanda tangan menghasilkan PDF valid", "tanpa gambar ditolak" |
 | Redact PDF | **new** | `tool-smart.js:413` `redact` (cari teks → render ulang halaman → teks benar-benar hilang) | `tools.mjs` → "redaksi menghasilkan berkas"; panel menampilkan jumlah hit |
@@ -147,6 +148,60 @@ Vektor kripto (crypto-test.mjs) — semua cocok persis:
 `/O = 68e5704a…52534d`, `kunci berkas = 65e91bc7…f783d`,
 `/U = 661359d2…fa0108`, AES-128 blok FIPS-197 `69c4e0d8…4b55a`,
 AES-128-CBC dicocokkan silang dengan WebCrypto.
+
+## Audit pascamerge komprehensif (2026-11-23)
+
+Audit sebelumnya memakai pdf.js untuk membuka PDF terenkripsi lalu
+menyimpan ulang hasilnya. Terbukti hasilnya **masih terenkripsi** —
+`pdf.js.saveDocument()` hanya menulis ulang berkas apa adanya, `/Encrypt`
+tetap ada. Unlock kini memakai dekriptor sendiri (`tool-decrypt.js`).
+
+### Hasil suite
+
+| Suite | Pemeriksaan | Gagal | Cakupan |
+|---|---|---|---|
+| `audit-all.mjs` | 56 | 0 | struktur launcher/registry + 28 alat dijalankan nyata + 5 alur existing + console bersih |
+| `validate_audit_outputs.py` | 37 | 0 | validasi **independen** keluaran audit (pypdf + pikepdf/libqpdf, ZIP/OOXML, JPEG, HTML, Markdown) |
+| `deep-security.mjs` | 41 | 0 | Protect/Sign/Redact/Compare/Unlock, guard berkas rusak, password non-ASCII |
+| `deep-unlock.mjs` | 21 | 0 | Unlock di browser: AES/RC4/object stream/40 halaman/password salah |
+| `exp-decrypt.mjs` | 16 | 0 | dekripsi multi-variant (R2–R6), user & owner password |
+| `validate_outputs.py` | 14 | 0 | hasil dekripsi dibuka reader independen (pypdf + pikepdf) |
+| `smoke.mjs` | 4 | 0 | halaman muat, tab, registry, console |
+| **Total** | **189** | **0** | |
+
+### Yang dibuktikan audit ini
+
+- **Unlock benar-benar menghapus enkripsi.** Keluaran tidak memuat
+  `/Encrypt`, dapat dibuka pypdf maupun pikepdf tanpa password, dan
+  jumlah halaman serta teks sumber tetap utuh (tidak dirasterisasi).
+- **Struktur launcher konsisten.** 33 item (28 alat registry + 5 tautan alur
+  existing) dalam 7 kategori; `id` dan nama unik; tidak ada alat yang
+  menduplikasi kemampuan alur existing.
+- **Setiap alat menghasilkan keluaran nyata**, bukan sekadar "tidak error":
+  ukuran, jumlah halaman, isi ZIP/OOXML, dan validity PDF diperiksa ulang
+  dengan pustaka di luar aplikasi.
+- **Alur existing tidak degraded.** Gabung (3 + 40 = 43 halaman), Pisah
+  (tiap berkas 1 halaman), Hapus halaman (3 → 2), Ekstrak (hanya terpilih),
+  Kompres (tidak lebih besar, halaman tetap).
+- **Kemampuan browser yang tidak ada ditangani sebagai degradasi aman.**
+  `translate` dan `ocr` menolak dengan pesan jelas bila mesin bawaan
+  peramban tidak tersedia — bukan diam-diam gagal.
+- **Berkas rusak total ditolak dengan pesan ramah.** Tool "Rapi PDF"
+  kini melaporkan "rusak total: tidak ada halaman yang bisa dipulihkan"
+  alih-alih melempar error teknis; PDF dengan `startxref` rusak (tetap
+  berisi halaman) berhasil dipulihkan.
+
+### Perbaikan yang lahir dari audit ini
+
+| Temuan | Perbaikan |
+|---|---|
+| Unlock memakai pdf.js → berkas tetap terenkripsi | dekriptor mandiri `tool-decrypt.js` (R2–R6) |
+| Password non-ASCII ditolak | mode password `latin1`/`utf8` di `tool-crypto.js` & `tool-decrypt.js` |
+| "Buka kunci" pada PDF terenkripsi lewat prompt membingungkan | pesan "Buka dulu dengan tool ..." pada Protect/Compare |
+| Compare tidak melaporkan perbedaan jumlah halaman | laporan menampilkan "3 vs 4 halaman" |
+| PNG rusak membuat pdf-lib berputar tanpa henti | preflight `assertValidPng()` sebelum embed |
+| Tekssis acak (Cyrillic/CJK) bocor ke UI | dibersihkan (`tool-pdf.js` + `tool-smart.js`) |
+| Berkas rusak total menimbulkan error teknis | pesan "rusak total: tidak ada halaman yang bisa dipulihkan" |
 
 ## Catatan perilaku
 

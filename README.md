@@ -140,8 +140,11 @@ Catatan:
   termasuk nilai `/O` dan `/U` sesuai ISO 32000-1 §7.6.3, plus bit izin
   (cetak / ubah / salin / anotasi). Hasilnya **dapat dibuka reader lain**
   (diverifikasi dengan pypdf) dan **ditolak** bila password salah.
-- **Unlock PDF** membuka PDF terenkripsi lalu menyimpan salinan tanpa
-  enkripsi; teks & vektor tetap utuh.
+- **Unlock PDF** memakai dekriptor sendiri (`tool-decrypt.js`): membaca
+  Standard Security Handler **R2–R6** (RC4-40/128, AES-128, AES-256 R5/R6),
+  termasuk object stream dan xref stream, lalu menulis ulang PDF **tanpa
+  `/Encrypt`**. Teks & vektor tetap utuh (tidak dirasterisasi), dan
+  password sowohl pengguna maupun pemilik diterima.
 - **Redact PDF** merender ulang halaman sehingga teks yang disensor benar-benar
   hilang dari isi PDF, bukan sekadar ditutup.
 - **OCR** dan **Terjemah** memakai mesin bawaan browser (`TextDetector`,
@@ -163,6 +166,7 @@ pemisah-pdf/
 │                      formulir, rapikan, PDF/A, susun)
 ├── tool-convert.js   (konversi gambar/Office/HTML/PDF)
 ├── tool-crypto.js    (MD5, RC4, AES-128-CBC + Standard Security Handler)
+├── tool-decrypt.js   (dekriptor PDF mandiri: R2-R6, object/xref stream)
 ├── tool-smart.js     (kunci, lindungi, tanda tangan, redaksi, banding,
 │                      Markdown, ringkas, terjemah, OCR)
 ├── tool-ui.js        (launcher 7 kategori + workspace alat generik)
