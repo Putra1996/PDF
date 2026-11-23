@@ -10,3 +10,6 @@ Thumbs.db
 # Folder hasil sementara
 tmp/
 temp/
+
+# Harness verifikasi produksi (duplikat dari .devtest, dipakai CI)
+fixtures/
