@@ -50,7 +50,25 @@
 
   /* ============================================================
      1. Buka kunci PDF
+     ------------------------------------------------------------
+     Memakai dekriptor sendiri (tool-decrypt.js) yang membaca
+     Standard Security Handler (R2-R6), lalu menulis ulang PDF
+     tanpa /Encrypt. Isi dokumen tetap utuh — bukan dirasterisasi.
      ============================================================ */
+  const DEC = () => window.PDFToolsDecrypt;
+
+  function describeEncryption(info) {
+    if (!info) return "";
+    if (info.notEncrypted) return "Tidak terenkripsi — disalin apa adanya.";
+    const bits = info.lengthBits ? info.lengthBits + "-bit" : "";
+    const meth = info.method === "AESV2" ? "AES-128 (CBC)"
+      : info.method === "AESV3" ? "AES-256 (CBC)"
+      : info.method === "V2" ? "RC4" : info.method;
+    return `Dekripsi ${info.V}/${info.R}, ${meth} ${bits}` +
+      ` — ${info.objects} objek, ${info.pages} halaman` +
+      (info.ownerPassword ? ", memakai password pemilik." : ".");
+  }
+
   register({
     id: "unlock",
     cat: "security",
@@ -63,38 +81,93 @@
     fields: [],
     async run(ctx) {
       const out = [];
+      const dec = DEC();
+      if (!dec || typeof dec.decryptPdf !== "function") {
+        throw new Error("Modul dekripsi tidak termuat.");
+      }
       for (const f of ctx.files) {
-        let opened = null;
-        const pw = ctx.opts.password;
-        if (pw) {
+        const bytes = new Uint8Array(f.bytes);
+        let res = null;
+        let lastErr = null;
+
+        const tryPw = async (pw) => {
           try {
-            const pdfjs = await openPdfjs(f.bytes, { password: pw });
-            if (typeof pdfjs.saveDocument === "function") {
-              const raw = await pdfjs.saveDocument();
-              if (raw && raw.length) opened = new Uint8Array(raw);
-            }
-            try { await pdfjs.destroy(); } catch (_) {}
-          } catch (_) {
-            opened = null;
+            return await dec.decryptPdf(bytes, pw);
+          } catch (e) {
+            lastErr = e;
+            return null;
+          }
+        };
+
+        /* Coba password yang sudah diisi pengguna lebih dulu (bisa kosong:
+           PDF tanpa enkripsi akan terdeteksi di sini). */
+        const given = ctx.opts.password != null ? String(ctx.opts.password) : "";
+        res = await tryPw(given);
+
+        if (!res && lastErr && lastErr.code === "NOT_ENCRYPTED") {
+          out.push({
+            name: C.safeName(C.baseName(f.name)) + "-terbuka.pdf",
+            bytes,
+            note: describeEncryption({ notEncrypted: true }),
+          });
+          await tick();
+          continue;
+        }
+
+        if (!res) {
+          const ask = window.prompt(
+            `PDF "${f.name}" masih terkunci.\nMasukkan passwordnya:`, "");
+          if (ask === null) throw new Error("Dibatalkan: password tidak diberikan.");
+          res = await tryPw(ask);
+          if (!res && lastErr && lastErr.code === "NOT_ENCRYPTED") {
+            out.push({
+              name: C.safeName(C.baseName(f.name)) + "-terbuka.pdf",
+              bytes,
+              note: describeEncryption({ notEncrypted: true }),
+            });
+            await tick();
+            continue;
           }
         }
-        if (!opened) {
-          const ask = window.prompt(`PDF "${f.name}" masih terkunci.\nMasukkan passwordnya:`, "");
-          if (!ask) throw new Error("Dibatalkan: password tidak diberikan.");
-          const pdfjs = await openPdfjs(f.bytes, { password: ask });
-          if (typeof pdfjs.saveDocument === "function") {
-            const raw = await pdfjs.saveDocument();
-            if (raw && raw.length) opened = new Uint8Array(raw);
-          }
-          try { await pdfjs.destroy(); } catch (_) {}
+
+        if (!res) {
+          throw new Error("Password salah atau PDF tidak bisa dibuka" +
+            (lastErr && lastErr.message ? ": " + lastErr.message : "."));
         }
-        if (!opened) throw new Error("Password salah atau PDF tidak bisa dibuka.");
-        out.push({ name: C.safeName(C.baseName(f.name)) + "-terbuka.pdf", bytes: opened });
+        out.push({
+          name: C.safeName(C.baseName(f.name)) + "-terbuka.pdf",
+          bytes: res.bytes,
+          note: describeEncryption(res.info),
+        });
         await tick();
       }
       return out;
     },
   });
+
+  /* Periksa struktur PNG sebelum memberikannya ke pdf-lib: PNG rusak bisa
+     membuat decoder pdf-lib berputar tanpa henti (halaman beku). */
+  function assertValidPng(bytes) {
+    const b = bytes;
+    const sig = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+    if (!b || b.length < 8) throw new Error("Berkas tanda tangan bukan PNG yang valid.");
+    for (let i = 0; i < 8; i++) {
+      if (b[i] !== sig[i]) throw new Error("Tanda tangan harus berupa berkas PNG.");
+    }
+    let off = 8;
+    let sawIHDR = false, sawIEND = false;
+    const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+    while (off + 8 <= b.length) {
+      const len = dv.getUint32(off);
+      const type = String.fromCharCode(b[off + 4], b[off + 5], b[off + 6], b[off + 7]);
+      if (off + 12 + len > b.length) throw new Error("PNG rusak: chunk \"" + type + "\" tidak lengkap.");
+      if (type === "IHDR") sawIHDR = true;
+      if (type === "IEND") { sawIEND = true; break; }
+      off += 12 + len;
+    }
+    if (!sawIHDR) throw new Error("PNG rusak: blok IHDR tidak ada.");
+    if (!sawIEND) throw new Error("PNG rusak: blok IEND tidak ada.");
+  }
 
   /* ============================================================
      2. Lindungi PDF (enkripsi AES-128)
@@ -132,8 +205,9 @@
     }
     const idHex = hexBytes(idBytes);
 
-    const userPad = K.padPassword(userPassword);
-    const ownerPad = K.padPassword(ownerPassword || userPassword);
+    /* Satu byte per karakter (mode latin1) — sama dengan pembaca umum. */
+    const userPad = K.padPassword(userPassword, "latin1");
+    const ownerPad = K.padPassword(ownerPassword || userPassword, "latin1");
 
     /* ---------- 2. Algorithm 3: nilai /O ---------- */
     const O = K.ownerValue(ownerPad, userPad, R, keyBytes);
@@ -270,7 +344,15 @@
       if (pw.length > 127) throw new Error("Password terlalu panjang (maksimal 127 karakter).");
       const out = [];
       for (const f of files) {
-        const doc = await loadDoc(f.bytes);
+        let doc;
+        try {
+          doc = await loadDoc(f.bytes);
+        } catch (e) {
+          if (/encrypt/i.test(String(e && e.message))) {
+            throw new Error("PDF ini sudah memiliki enkripsi. Buka dulu dengan tool \"Buka PDF terkunci\".");
+          }
+          throw e;
+        }
         /* Bit izin (ISO 32000-1 Table 22):
            3 = cetak, 4 = ubah isi, 5 = salin teks, 6 = anotasi,
            9 = isi formulir, 10 = aksesibilitas, 11 = rakit, 12 = cetak resolusi tinggi */
@@ -334,6 +416,7 @@
       const { files, opts } = ctx;
       if (!opts.signature) throw new Error("Buat tanda tangan dulu.");
       const sigBytes = unhex(opts.signature);
+      assertValidPng(sigBytes);
       const out = [];
       for (const f of files) {
         const doc = await loadDoc(f.bytes);
@@ -517,6 +600,7 @@
       const lb = [];
       for (let i = 1; i <= pa.numPages; i++) la.push(...(await C.pageText(pa, i)).split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean));
       for (let i = 1; i <= pb.numPages; i++) lb.push(...(await C.pageText(pb, i)).split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean));
+      const pagesA = pa.numPages, pagesB = pb.numPages;
       try { await pa.destroy(); await pb.destroy(); } catch (_) {}
       const ops = diffLines(la, lb);
       const same = ops.filter((o) => o.t === "=").length;
@@ -537,7 +621,7 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
 .d- td:nth-child(2){background:#fef2f2}.d+ td:nth-child(3){background:#f0fdf4}
 </style></head><body>
 <h1>Perbandingan PDF</h1>
-<p class="meta">${escapeHtml(a.name)} &harr; ${escapeHtml(b.name)} · ${same} baris sama, ${changed} hilang, ${added} baru</p>
+<p class="meta">${escapeHtml(a.name)} &harr; ${escapeHtml(b.name)} · ${same} baris sama, ${changed} hilang, ${added} baru · ${pagesA} vs ${pagesB} halaman</p>
 <table>${rows}</table>
 </body></html>`;
       const blob = new Blob([html], { type: "text/html;charset=utf-8" });

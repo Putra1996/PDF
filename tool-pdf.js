@@ -1,5 +1,5 @@
 /* ============================================================
-   Alat族群 PDF: putar, nomor halaman, watermark, potong,
+   Alat PDF: putar, nomor halaman, watermark, potong,
    anotasi, formulir, rapikan, PDF/A.
    ============================================================ */
 (function () {
@@ -25,7 +25,7 @@
     multiple: true,
     fields: [
       { type: "select", id: "angle", label: "Sudut putar", value: "90", options: [["90", "90°"], ["180", "180°"], ["270", "270°"]] },
-      { type: "select", id: "dir", label: "Arah", value: "cw", options: [["cw", "Se时针 jarum jam"], ["ccw", "Berlawanan jarum jam"]] },
+      { type: "select", id: "dir", label: "Arah", value: "cw", options: [["cw", "Searah jarum jam"], ["ccw", "Berlawanan jarum jam"]] },
       { type: "select", id: "scope", label: "Halaman", value: "all", options: [["all", "Semua halaman"], ["odd", "Halaman ganjil"], ["even", "Halaman genap"]] },
     ],
     async run(ctx) {
@@ -482,8 +482,19 @@
         } catch (err) {
           /* Cara 2: render tiap halaman lalu susun ulang. */
           if (!opts.fallbackRaster) throw new Error("PDF tidak bisa diperbaiki: " + (err.message || err));
-          const pdfjs = await openPdfjs(f.bytes);
+          let pdfjs = null;
+          try {
+            pdfjs = await openPdfjs(f.bytes);
+          } catch (err2) {
+            /* Tidak ada satu pun halaman yang bisa dibaca: berkas ini bukan
+               PDF yang utuh (misalnya potongan unduhan atau teks acak). */
+            throw new Error(
+              "Berkas ini rusak total: tidak ada halaman yang bisa dipulihkan. " +
+              "Pastikan berkas memang PDF utuh, bukan potongan atau teks acak."
+            );
+          }
           const dst = await PDFDocument.create();
+          let rendered = 0;
           for (let i = 1; i <= pdfjs.numPages; i++) {
             ctx.progress(null, `Merender halaman ${i} dari ${pdfjs.numPages}…`);
             const { canvas, viewport } = await renderPage(pdfjs, i, 2);
@@ -492,9 +503,16 @@
             const img = await dst.embedJpg(jpg);
             const p = dst.addPage([viewport.width / 2, viewport.height / 2]);
             p.drawImage(img, { x: 0, y: 0, width: viewport.width / 2, height: viewport.height / 2 });
+            rendered++;
             await tick();
           }
           try { await pdfjs.destroy(); } catch (_) {}
+          if (!rendered) {
+            throw new Error(
+              "Berkas ini rusak total: tidak ada halaman yang bisa dipulihkan. " +
+              "Pastikan berkas memang PDF utuh, bukan potongan atau teks acak."
+            );
+          }
           bytes = await saveDoc(dst, { useObjectStreams: false });
           how = "halaman dirender ulang (teks tidak bisa dicari)";
         }
