@@ -267,6 +267,42 @@ style.css   →  :root { --css-build: 20261123b; }
 > `--css-build` di `style.css` setiap kali `style.css`/skrip berubah.
 > Keduanya harus sama.
 
+## Audit v3 — fokus keyboard, hover, lebar sempit, slider, ikon, state error (2026-11-22)
+
+Audit mode gelap sebelumnya sudah mengukur kontras teks dan "blok putih",
+tapi belum pernah menyentuh **indikator fokus**. Audit ini menambah
+dimensi baru dan menemukan tiga bug nyata.
+
+### Temuan & perbaikan
+
+| Temuan | Dampak | Perbaikan |
+|---|---|---|
+| `--focus-ring` memakai `--brand-soft` (#1c2542 di gelap) | **Cincin fokus nyaris tak terlihat** di mode gelap (kontras 1,05–1,32:1). Melanggar WCAG 2.4.7 Focus Visible & 1.4.11 Non-text Contrast. | `--focus-ring` memakai `var(--brand)` solid → kontras ≥ 5:1 di kedua tema |
+| `.tab.active` ditulis **setelah** `.tab:focus-visible` | Tab yang sedang aktif **tidak punya penanda fokus sama sekali** (specificity sama, gaya aktif menimpa) | aturan `:focus-visible` dipindahkan setelah `.tab.active` |
+| `.opt-row input:focus` & `.slider-row select:focus` memakai `brand-soft` | outline fokus tak terlihat | diganti `var(--brand)` + `outline-offset` |
+| Input editor (`.ed-field`) tanpa aturan fokus | penanda fokus hanya bawaan peramban | ditambahkan outline `var(--brand)` |
+| PDF rusak → pdf-lib melempar `TypeError: Cannot read properties of undefined (reading 'Pages')` | **pesan teknis mentah tampil ke pengguna** | `pesanReader()` memetakan error teknis → "Berkas rusak atau tidak bisa dibaca. Coba PDF lain."; log diubah jadi `console.warn` (sudah ditangani, bukan error) |
+
+### Dimensi baru yang diuji
+
+| Dimensi | Cara diuji |
+|---|---|
+| **Fokus keyboard** | navigasi `Tab` sungguhan (bukan `focus()` pogramatis — `:focus-visible` hanya aktif untuk interaksi keyboard), lalu ukur indikator + kontrasnya terhadap latar induk |
+| **Hover** | tiap tombol/tab di-hover; teks tetap terbaca |
+| **Lebar sempit** | 320 px & 360 px: tidak boleh ada scroll horizontal di 4 tab + editor |
+| **Slider** | kontras rel `input[type=range]` terhadap latar induk |
+| **Ikon SVG** | kontras `currentColor` terhadap latar efektif (gradient ikut dihitung) |
+| **State error** | PDF rusak & rusak total → pesan ramah + toast error kontras ≥ 4.5:1 |
+| **Dokumen besar** | 120 halaman: thumbnail + editor tetap rapi, tanpa error |
+
+### Hasil suite
+
+| Suite | Pemeriksaan | Gagal | Cakupan |
+|---|---|---|---|
+| `audit-deep3.mjs` | 251 | 0 | fokus keyboard di semua state, lebar 320/360 px, slider, ikon, state error, dokumen 120 halaman, seluruh state dinamis, desktop + ponsel |
+| `audit-regresi.mjs` | 24 | 0 | split/merge/compress/4 alat/editor + pemulihan cache + konsistensi penanda versi |
+| **Total** | **275** | **0** | |
+
 ## Catatan perilaku
 
 - **OCR** dan **Terjemah** memakai mesin bawaan browser (`TextDetector`,
