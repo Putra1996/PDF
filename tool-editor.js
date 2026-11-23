@@ -167,6 +167,7 @@
         <button type="button" class="btn btn-ghost btn-sm" data-ed="docx" title="Unduh isi dokumen sebagai berkas .docx">Ekspor ke Word</button>
         <button type="button" class="btn btn-ghost btn-sm" data-ed="xlsx" title="Unduh isi dokumen sebagai lembar kerja .xlsx">Ekspor ke Excel</button>
         <button type="button" class="btn btn-ghost btn-sm" data-ed="pptx" title="Unduh isi dokumen sebagai presentasi .pptx">Ekspor ke PowerPoint</button>
+        <button type="button" class="btn btn-ghost btn-sm" data-ed="xps" title="Unduh halaman sebagai berkas XPS (teks vektor)">Ekspor ke XPS</button>
         <span class="ed-sep"></span>
         <button type="button" class="btn btn-ghost btn-sm" data-ed="saveProject" title="Simpan semua perubahan sebagai berkas proyek .edit.json">Simpan proyek</button>
         <button type="button" class="btn btn-ghost btn-sm" data-ed="openProject" title="Buka berkas proyek .edit.json">Buka proyek</button>
@@ -213,6 +214,7 @@
       else if (act === "docx") { exportDocx(); }
       else if (act === "xlsx") { exportXlsx(); }
       else if (act === "pptx") { exportPptx(); }
+      else if (act === "xps") { exportXps(); }
       else if (act === "saveProject") { saveProject(); }
       else if (act === "openProject") { wrap.querySelector("[data-ed=projectFile]").click(); }
     });
@@ -289,6 +291,8 @@
     /* ---------- render ---------- */
     let redrawing = false;
     let redrawQueued = false;
+    /* Faktor supersampling untuk anti-alias teks & gambar. */
+    const AA = 2;
 
     async function redraw() {
       S.redraw = redraw;
@@ -319,17 +323,25 @@
     S.redraw = redraw;
 
     async function redrawInner() {
-      const { canvas: cv, ctx, viewport } = await C.renderPage(S.doc, S.pageNo, S.zoom);
+      /* Anti-alias: halaman dirender pada resolusi AA kali lebih besar,
+         lalu diperkecil dengan filter halus (supersampling). Teks
+         hasil edit digambar pada kanvas resolusi tinggi itu juga,
+         jadi hurufnya ikut halus — bukan hanya isi halaman aslinya. */
+      const { canvas: cv, viewport: vpHi } = await C.renderPage(S.doc, S.pageNo, S.zoom * AA);
+      const viewport = C.scaledViewport(vpHi, AA);
       lastViewport = viewport;
       S.viewport = viewport;
-      canvas.width = cv.width;
-      canvas.height = cv.height;
-      canvas.style.width = cv.width + "px";
-      canvas.style.height = cv.height + "px";
+      canvas.width = Math.max(1, Math.round(viewport.width));
+      canvas.height = Math.max(1, Math.round(viewport.height));
+      canvas.style.width = canvas.width + "px";
+      canvas.style.height = canvas.height + "px";
       const c2 = canvas.getContext("2d");
+      c2.imageSmoothingEnabled = true;
+      try { c2.imageSmoothingQuality = "high"; } catch (_) { /* diabaikan */ }
       c2.clearRect(0, 0, canvas.width, canvas.height);
-      c2.drawImage(cv, 0, 0);
-      await C.applyEdits(c2, viewport, pageOps());
+      const cHi = cv.getContext("2d");
+      await C.applyEdits(cHi, vpHi, pageOps());
+      c2.drawImage(cv, 0, 0, cv.width, cv.height, 0, 0, canvas.width, canvas.height);
       cv.width = cv.height = 0;
 
       wrap.querySelector(".ed-page").textContent = `Halaman ${S.pageNo} / ${S.pages}`;
@@ -515,6 +527,9 @@
         startX: e.clientX,
         startY: e.clientY,
         box0: Object.assign({}, op.box),
+        /* garis dasar teks ikut bergerak agar huruf tetap di dalam
+           kotak yang digeser (kalau tidak, teksnya tertinggal). */
+        by0: op.by != null ? op.by : null,
         pxPerPt: (lastViewport ? lastViewport.scale : 1) * (box.offsetWidth ? r.width / op.box.w : 1) / (op.box.w || 1),
       };
       drag.pxPerPt = (lastViewport ? lastViewport.scale : 1);
@@ -531,6 +546,9 @@
       } else {
         drag.op.box.x = drag.box0.x + dx;
         drag.op.box.y = drag.box0.y - dy;
+        if (drag.op.k === "text" && drag.by0 != null) {
+          drag.op.by = drag.by0 - dy;
+        }
       }
       drawLayer(lastViewport);
     });
@@ -1309,6 +1327,12 @@
         size, color: src ? src.color : "#111111",
         align: src ? src.align : "left",
         x: t.x, y: t.y, w: t.w, h: t.h,
+        /* dipakai ekspor XPS: teks yang benar-benar diedit */
+        edited: !!src,
+        font: src ? (src.font || "helvetica") : C.approxFont(t.fontName),
+        lineHeight: src ? (src.lineHeight || 1.2) : 1.2,
+        letterSpacing: src ? (src.letterSpacing || 0) : 0,
+        by: src ? (src.by != null ? src.by : t.by) : t.by,
       };
       textItems.push(item);
       rows.push([text, "Teks", font, size,
@@ -1323,6 +1347,11 @@
         underline: !!o.underline, strike: !!o.strike,
         size: o.size || 12, color: o.color || "#111111", align: o.align || "left",
         x: o.box.x, y: o.box.y, w: o.box.w, h: o.box.h,
+        edited: true,
+        font: o.font || "helvetica",
+        lineHeight: o.lineHeight || 1.2,
+        letterSpacing: o.letterSpacing || 0,
+        by: o.by != null ? o.by : o.box.y + o.box.h * 0.78,
       };
       textItems.push(item);
       rows.push([o.text || "", "Teks baru", o.font || "helvetica", o.size || 12,
@@ -1336,15 +1365,15 @@
       const op = opImg.get(im.id);
       if (!op && dihapus.has(im.id)) continue;
       if (op && op.src) {
-        imgItems.push({ dataUrl: op.src, src: null, box: op.box, x: op.box.x, y: op.box.y, w: op.box.w, h: op.box.h });
+        imgItems.push({ dataUrl: op.src, src: null, box: op.box, x: op.box.x, y: op.box.y, w: op.box.w, h: op.box.h, edited: true });
       } else {
         const box = op ? op.box : im;
-        imgItems.push({ dataUrl: null, src: op ? op.copyFrom : im, box, x: box.x, y: box.y, w: box.w, h: box.h });
+        imgItems.push({ dataUrl: null, src: op ? op.copyFrom : im, box, x: box.x, y: box.y, w: box.w, h: box.h, edited: !!op });
       }
     }
     for (const o of ops || []) {
       if (o.k !== "image" || !o.newItem || !o.src) continue;
-      imgItems.push({ dataUrl: o.src, src: null, box: o.box, x: o.box.x, y: o.box.y, w: o.box.w, h: o.box.h });
+      imgItems.push({ dataUrl: o.src, src: null, box: o.box, x: o.box.x, y: o.box.y, w: o.box.w, h: o.box.h, edited: true });
     }
     if (imgItems.some((it) => !it.dataUrl)) {
       const scale = 2;
@@ -1369,7 +1398,7 @@
     const imageItems = [];
     for (const it of imgItems) {
       if (!it.dataUrl) continue;
-      imageItems.push({ type: "image", dataUrl: it.dataUrl, x: it.x, y: it.y, w: it.w, h: it.h });
+      imageItems.push({ type: "image", dataUrl: it.dataUrl, x: it.x, y: it.y, w: it.w, h: it.h, edited: !!it.edited });
       rows.push(["", "Gambar", "", "", "", "", "", Math.round(it.x), Math.round(it.y), Math.round(it.w), Math.round(it.h)]);
     }
 
@@ -1421,6 +1450,106 @@
     }
   }
 
+  /* ============================================================
+     Ekspor XPS — paket OpenXPS (seperti .docx: paket ZIP/OPC).
+     ------------------------------------------------------------
+     Isi setiap halaman:
+       1. latar  = render halaman (teks lama sudah ditutup)
+       2. gambar = ImageBrush (Path + Path.Fill)
+       3. teks   = Glyphs vektor memakai font yang ditanam (ODTTF)
+     Teks hasil edit karena itu bukan gambar, tapi teks XPS asli
+     yang bisa dicari & disalin di penampil XPS.
+     ============================================================ */
+  async function ukuranGambar(dataUrl) {
+    return new Promise((res) => {
+      try {
+        const im = new Image();
+        im.onload = () => res({ w: im.naturalWidth || 1, h: im.naturalHeight || 1 });
+        im.onerror = () => res({ w: 1, h: 1 });
+        im.src = dataUrl;
+      } catch (_) {
+        res({ w: 1, h: 1 });
+      }
+    });
+  }
+
+  async function buildXpsFromState(f) {
+    const X = window.PDFToolsXPS;
+    if (!X) throw new Error("Modul XPS tidak termuat.");
+    const doc = await C.openPdfjs(f.bytes);
+    const srcDoc = await C.loadDoc(f.bytes);
+    const srcPages = srcDoc.getPages();
+    const pages = [];
+    try {
+      for (let p = 1; p <= doc.numPages; p++) {
+        const ops = edits()[String(p)] || [];
+        const { width, height } = srcPages[p - 1].getSize();
+
+        /* Latar: render halaman lalu tutup area teks/gambar lama
+           (tanpa menggambar teks baru — itu jadi lapisan vektor). */
+        const scale = 2;
+        const { canvas, ctx: c2, viewport } = await C.renderPage(doc, p, scale);
+        await C.applyEdits(c2, viewport, ops, { maskOnly: true });
+        let background = null;
+        try {
+          background = { data: canvas.toDataURL("image/png"), w: canvas.width, h: canvas.height };
+        } catch (_) { background = null; }
+        canvas.width = canvas.height = 0;
+
+        const isi = await kumpulkanHalaman(doc, p, ops);
+        const texts = [];
+        for (const it of isi.items) {
+          if (it.type !== "text") continue;
+          /* Teks yang sudah diedit digambar penuh (vektor terlihat).
+             Teks asal PDF yang tidak disentuh tetap ada di latar
+             raster, jadi cukup ditambah sebagai lapisan tak kasat mata
+             supaya seluruh isi halaman tetap bisa dicari/ disalin. */
+          texts.push({
+            text: it.text, x: it.x, y: it.y, w: it.w, h: it.h, by: it.by,
+            size: it.size, font: it.font, bold: it.bold, italic: it.italic,
+            color: it.color, align: it.align, lineHeight: it.lineHeight,
+            letterSpacing: it.letterSpacing, underline: it.underline, strike: it.strike,
+            opacity: it.edited ? null : 0,
+          });
+        }
+        const images = [];
+        for (const it of isi.items) {
+          if (it.type !== "image" || !it.edited || !it.dataUrl) continue;
+          const px = await ukuranGambar(it.dataUrl);
+          images.push({
+            data: it.dataUrl, x: it.x, y: it.y, w: it.w, h: it.h,
+            pw: px.w, ph: px.h,
+          });
+        }
+        pages.push({ widthPt: width, heightPt: height, background, texts, images });
+      }
+    } finally {
+      try { await doc.destroy(); } catch (_) { /* abaikan */ }
+    }
+    return X.build({ title: C.baseName(f.name), pages });
+  }
+
+  async function exportXps() {
+    const f = file();
+    if (!f) {
+      toast("Pilih satu PDF dulu.", "err");
+      return;
+    }
+    const btn = S.wrap && S.wrap.querySelector("[data-ed=xps]");
+    if (btn) btn.disabled = true;
+    toast("Menyiapkan berkas XPS…");
+    try {
+      const blob = await buildXpsFromState(f);
+      const name = C.safeName(C.baseName(f.name)) + "-edit.xps";
+      unduhBlob(blob, name);
+      toast("Berkas XPS dibuat: " + name);
+    } catch (err) {
+      toast("Ekspor XPS gagal: " + ((err && err.message) || err), "err");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
   /* Keadaan internal (dipakai harness audit dan debug). */
   function debug() {
     return {
@@ -1445,7 +1574,7 @@
 
   window.PDFToolsEditor = {
     render, debug, undo, redo,
-    exportDocx, exportXlsx, exportPptx, saveProject,
+    exportDocx, exportXlsx, exportPptx, exportXps, saveProject,
     /* batalkan seleksi (dipakai pengujian otomatis) */
     deselect: () => { S.sel = null; if (S.redraw) S.redraw(); },
   };

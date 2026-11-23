@@ -868,60 +868,190 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
   });
 
   /* ============================================================
-     9. OCR PDF (memakai deteksi teks bawaan peramban bila ada)
+     9. OCR PDF — mesin Tesseract offline (disimpan di vendor/)
+     ------------------------------------------------------------
+     Mesin OCR dimuat malas dari vendor/tesseract (tanpa internet),
+     lalu setiap kata hasil pengenalan diletakkan sebagai lapisan
+     teks tak terlihat di atas gambar halaman. Hasilnya PDF hasil
+     pindai jadi bisa dicari & disalin teksnya.
      ============================================================ */
+
+  let tessLib = null;
+  let tessLibPromise = null;
+
+  /* Muat pustaka Tesseract dari folder vendor (sekali saja). */
+  function loadTesseract() {
+    if (window.Tesseract) { tessLib = window.Tesseract; return Promise.resolve(tessLib); }
+    if (tessLibPromise) return tessLibPromise;
+    tessLibPromise = new Promise((res, rej) => {
+      const s = document.createElement("script");
+      s.src = "vendor/tesseract/tesseract.min.js";
+      s.onload = () => {
+        if (!window.Tesseract) { rej(new Error("Pustaka OCR tidak termuat.")); return; }
+        tessLib = window.Tesseract;
+        res(tessLib);
+      };
+      s.onerror = () => {
+        tessLibPromise = null;
+        rej(new Error("Mesin OCR offline tidak ditemukan (vendor/tesseract)."));
+      };
+      document.head.appendChild(s);
+    });
+    return tessLibPromise;
+  }
+
+  /* Buat worker OCR. Ada dua core (SIMD & biasa); kalau yang SIMD
+     gagal dipakai, otomatis turun ke yang biasa. */
+  async function createOcrWorker(langs, onLog) {
+    const T = await loadTesseract();
+    const base = new URL("vendor/tesseract/", location.href).href;
+    const cores = ["tesseract-core-simd-lstm.wasm.js", "tesseract-core-lstm.wasm.js"];
+    let lastErr = null;
+    for (const core of cores) {
+      try {
+        return await T.createWorker(langs, 1, {
+          workerPath: base + "worker.min.js",
+          corePath: base + core,
+          langPath: base + "lang",
+          gzip: true,
+          logger: (m) => { if (onLog) onLog(m); },
+        });
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    throw new Error("Mesin OCR tidak bisa dijalankan: " + ((lastErr && lastErr.message) || lastErr));
+  }
+
+  /* Kumpulkan kata + kotaknya dari hasil pengenalan Tesseract. */
+  function kumpulkanKata(data) {
+    const out = [];
+    const blocks = (data && data.blocks) || [];
+    for (const b of blocks) {
+      for (const p of (b.paragraphs || [])) {
+        for (const l of (p.lines || [])) {
+          for (const w of (l.words || [])) {
+            const bb = w.bbox;
+            const text = (w.text || "").trim();
+            if (!text || !bb) continue;
+            out.push({ text, x0: bb.x0, y0: bb.y0, x1: bb.x1, y1: bb.y1 });
+          }
+        }
+      }
+    }
+    if (!out.length && data && data.text) {
+      /* tanpa blok: pakai baris kasar supaya teks tetap terbaca */
+      const lines = String(data.text).split(/\r?\n/).map((t) => t.trim()).filter(Boolean);
+      lines.forEach((text, i) => {
+        out.push({ text, x0: 0, y0: i * 30, x1: 200, y1: i * 30 + 24, kasar: true });
+      });
+    }
+    return out;
+  }
+
   register({
     id: "ocr",
     cat: "optimize",
     name: "OCR PDF",
-    desc: "Tambahkan lapisan teks ke PDF hasil pindai, memakai mesin OCR bawaan peramban bila tersedia.",
+    desc: "Tambahkan lapisan teks ke PDF hasil pindai dengan mesin OCR offline (Tesseract).",
     icon: "ocr",
     accept: ".pdf,application/pdf",
     multiple: true,
     fields: [
+      {
+        type: "select", id: "lang", label: "Bahasa pengenalan", value: "ind",
+        options: [
+          ["ind", "Indonesia + Inggris"],
+          ["eng", "Inggris"],
+          ["ind+eng", "Indonesia dan Inggris (gabungan)"],
+        ],
+      },
       { type: "number", id: "scale", label: "Resolusi OCR (DPI)", value: 200, min: 100, max: 400 },
+      {
+        type: "select", id: "mode", label: "Hasil", value: "searchable",
+        options: [
+          ["searchable", "Teks tak terlihat (PDF bisa dicari)"],
+          ["visible", "Teks terlihat di atas gambar"],
+        ],
+      },
     ],
     async run(ctx) {
-      if (!("TextDetector" in window)) {
-        throw new Error(
-          "Peramban ini belum punya mesin OCR bawaan (Chrome dengan flag TextDetector). " +
-          "Aplikasi ini offline, jadi tidak bisa mengunduh mesin OCR dari internet."
-        );
-      }
+      const dpi = Math.min(400, Math.max(100, Number(ctx.opts.scale) || 200));
+      const langs = String(ctx.opts.lang || "ind");
+      const visible = ctx.opts.mode === "visible";
       const out = [];
+      let worker = null;
+      try {
+        worker = await createOcrWorker(langs, (m) => {
+          if (m && m.status && m.status.indexOf("recognizing") === 0) {
+            ctx.progress(null, "Mengenali teks…");
+          }
+        });
+      } catch (err) {
+        /* mesin offline tidak tersedia -> pakai deteksi bawaan peramban */
+        if (!("TextDetector" in window)) throw err;
+        worker = null;
+      }
       for (const f of ctx.files) {
         const pdfjs = await openPdfjs(f.bytes);
         const dst = await PDFDocument.create();
-        const detector = new window.TextDetector();
         for (let i = 1; i <= pdfjs.numPages; i++) {
           ctx.progress(null, `OCR halaman ${i}/${pdfjs.numPages}…`);
-          const { canvas, viewport } = await renderPage(pdfjs, i, (Number(ctx.opts.scale) || 200) / 72);
-          const bitmap = await createImageBitmap(canvas);
-          const blocks = await detector.detect(bitmap);
+          const { canvas, viewport } = await renderPage(pdfjs, i, dpi / 72);
           const srcPage = (await loadDoc(f.bytes)).getPages()[i - 1];
           const { width, height } = srcPage.getSize();
           const p = dst.addPage([width, height]);
           const jpg = await canvasToBytes(canvas, "image/jpeg", 0.92);
-          canvas.width = canvas.height = 0;
           const img = await dst.embedJpg(jpg);
           p.drawImage(img, { x: 0, y: 0, width, height });
           const k = width / viewport.width;
-          for (const b of blocks) {
-            const bb = b.boundingBox;
-            const text = b.rawValue || "";
-            if (!text) continue;
-            const size = Math.max(6, (bb.height || 10) * k);
-            await drawTextSafe(p, text, {
-              x: bb.x * k, y: height - bb.y * k - size, size,
-              color: C.rgb(0, 0, 0), opacity: 0,
+
+          let words = [];
+          if (worker) {
+            const res = await worker.recognize(canvas, {}, { text: true, blocks: true });
+            words = kumpulkanKata(res && res.data);
+          } else {
+            const detector = new window.TextDetector();
+            const bitmap = await createImageBitmap(canvas);
+            const blocks = await detector.detect(bitmap);
+            words = blocks.map((b) => ({
+              text: b.rawValue || "",
+              x0: b.boundingBox.x, y0: b.boundingBox.y,
+              x1: b.boundingBox.x + b.boundingBox.width,
+              y1: b.boundingBox.y + b.boundingBox.height,
+            })).filter((w) => w.text);
+          }
+          canvas.width = canvas.height = 0;
+
+          for (const w of words) {
+            if (!w.text) continue;
+            const bw = Math.max(0, (w.x1 - w.x0) * k);
+            const bh = Math.max(0, (w.y1 - w.y0) * k);
+            if (w.kasar) {
+              await drawTextSafe(p, w.text, {
+                x: 10, y: height - 20 - w.y0 * k, size: 11,
+                color: C.rgb(0, 0, 0), opacity: visible ? 1 : 0,
+              });
+              continue;
+            }
+            if (bh <= 0 || bw <= 0) continue;
+            const size = Math.max(4, bh * 0.82);
+            const x = w.x0 * k;
+            const y = height - w.y1 * k + bh * 0.16;
+            await drawTextSafe(p, w.text, {
+              x, y, size,
+              color: C.rgb(0, 0, 0),
+              opacity: visible ? 1 : 0,
+              maxWidth: bw * 1.6,
             });
           }
           await tick();
         }
-        try { await pdfjs.destroy(); } catch (_) {}
+        try { await pdfjs.destroy(); } catch (_) { /* abaikan */ }
         const bytes = await saveDoc(dst);
         out.push({ name: C.safeName(C.baseName(f.name)) + "-ocr.pdf", bytes });
       }
+      if (worker) { try { await worker.terminate(); } catch (_) { /* abaikan */ } }
       return out;
     },
   });

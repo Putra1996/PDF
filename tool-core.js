@@ -86,6 +86,21 @@
     return { canvas, ctx, viewport: vp, page };
   }
 
+  /* Viewport yang diperkecil (anti-alias): render pada resolusi
+     lebih tinggi lalu diperkecil — hasilnya tepi teks lebih halus
+     (supersampling) dibanding render langsung. */
+  function scaledViewport(vp, k) {
+    const f = k || 1;
+    const t = vp.transform;
+    return {
+      scale: (vp.scale || 1) / f,
+      rotation: vp.rotation || 0,
+      width: vp.width / f,
+      height: vp.height / f,
+      transform: [t[0] / f, t[1] / f, t[2] / f, t[3] / f, t[4] / f, t[5] / f],
+    };
+  }
+
   async function canvasToBytes(canvas, type, quality) {
     const mime = type || "image/jpeg";
     const blob = await new Promise((res) => canvas.toBlob(res, mime, quality == null ? 0.92 : quality));
@@ -360,20 +375,33 @@
   }
 
   /* Ambil warna latar di sekeliling kotak (agar teks/gambar yang
-     dihapus tidak meninggalkan kotak putih di atas kertas berwarna). */
+     dihapus tidak meninggalkan kotak putih di atas kertas berwarna).
+     Warna diambil sebagai modus dari titik-titik di sekeliling kotak
+     DAN warnanya sendiri — modus lebih tahan gangguan daripada
+     satu sampel, jadi teks lama tidak sempat ikut terambil. */
   function sampleBackground(ctx, rect) {
     try {
-      const pts = [
-        [rect.x - 2, rect.y - 2], [rect.x + rect.w + 2, rect.y - 2],
-        [rect.x - 2, rect.y + rect.h + 2], [rect.x + rect.w + 2, rect.y + rect.h + 2],
-        [rect.x + rect.w / 2, rect.y - 2], [rect.x + rect.w / 2, rect.y + rect.h + 2],
-        [rect.x - 2, rect.y + rect.h / 2], [rect.x + rect.w + 2, rect.y + rect.h / 2],
-      ];
+      const pts = [];
+      const push = (px, py) => {
+        const x = Math.round(px), y = Math.round(py);
+        if (x < 0 || y < 0 || x >= ctx.canvas.width || y >= ctx.canvas.height) return;
+        pts.push([x, y]);
+      };
+      /* titik tepat di luar kotak (latar yang pasti bersih) */
+      push(rect.x - 2, rect.y - 2); push(rect.x + rect.w + 2, rect.y - 2);
+      push(rect.x - 2, rect.y + rect.h + 2); push(rect.x + rect.w + 2, rect.y + rect.h + 2);
+      push(rect.x + rect.w / 2, rect.y - 2); push(rect.x + rect.w / 2, rect.y + rect.h + 2);
+      push(rect.x - 2, rect.y + rect.h / 2); push(rect.x + rect.w + 2, rect.y + rect.h / 2);
+      /* titik di dalam kotak — modus di sini biasanya warna kertas,
+         bukan warna huruf (huruf menutupi bagian yang lebih kecil). */
+      const cols = 5, rows = 3;
+      for (let i = 0; i < cols; i++) {
+        for (let j = 0; j < rows; j++) {
+          push(rect.x + (rect.w * (i + 0.5)) / cols, rect.y + (rect.h * (j + 0.5)) / rows);
+        }
+      }
       const tally = new Map();
-      for (const [px, py] of pts) {
-        const x = Math.round(px);
-        const y = Math.round(py);
-        if (x < 0 || y < 0 || x >= ctx.canvas.width || y >= ctx.canvas.height) continue;
+      for (const [x, y] of pts) {
         const d = ctx.getImageData(x, y, 1, 1).data;
         const key = `${d[0]},${d[1]},${d[2]}`;
         tally.set(key, (tally.get(key) || 0) + 1);
@@ -426,7 +454,8 @@
      - "image" dengan "src"   : gambar dari berkas (sisipkan/ganti)
      - "image" dengan "copyFrom": salin piksel gambar lama dari halaman
                                  (dipakai untuk menggeser/mengubah ukuran) */
-  async function applyEdits(ctx2d, viewport, ops) {
+  async function applyEdits(ctx2d, viewport, ops, opts) {
+    const o = opts || {};
     const scale = viewport.scale || 1;
     /* Tahap 1: salin sumber gambar SEBELUM area asal ditutup. */
     const copies = new Map();
@@ -445,23 +474,33 @@
       }
     }
 
-    /* Tahap 2: terapkan operasi. */
-    for (const op of ops || []) {
+    /* Tahap 2: terapkan operasi. Operasi "erase" (menutup isi
+       asli) selalu lebih dulu supaya konten baru tidak ikut tertutup
+       dan urutan lapisan tidak mengubahnya. */
+    const daftar = [];
+    for (const op of ops || []) if (op && op.k === "erase") daftar.push(op);
+    for (const op of ops || []) if (op && op.k !== "erase") daftar.push(op);
+    for (const op of daftar) {
       if (!op || !op.box) continue;
       const r = pdfRectToCanvas(viewport, op.box);
       if (op.k === "erase" || op.k === "text" || op.k === "image") {
         ctx2d.save();
-        ctx2d.fillStyle = sampleBackground(ctx2d, r);
-        ctx2d.fillRect(r.x - 1, r.y - 1, r.w + 2, r.h + 2);
-        /* gambar yang digeser/diubah ukuran: area aslinya ikut ditutup */
-        if (op.copyFrom) {
-          const c0 = pdfRectToCanvas(viewport, op.copyFrom);
-          ctx2d.fillStyle = sampleBackground(ctx2d, c0);
-          ctx2d.fillRect(c0.x - 1, c0.y - 1, c0.w + 2, c0.h + 2);
+        /* Saat hanya membuat latar (maskOnly), kotak gambar yang
+           menjadi tujuan tidak boleh ditutup — isinya masih dipakai. */
+        const rects = [];
+        if (op.k === "image" && o.maskOnly) {
+          if (op.copyFrom) rects.push(pdfRectToCanvas(viewport, op.copyFrom));
+        } else {
+          rects.push(r);
+          if (op.copyFrom) rects.push(pdfRectToCanvas(viewport, op.copyFrom));
+        }
+        for (const rc of rects) {
+          ctx2d.fillStyle = sampleBackground(ctx2d, rc);
+          ctx2d.fillRect(rc.x - 1, rc.y - 1, rc.w + 2, rc.h + 2);
         }
         ctx2d.restore();
       }
-      if (op.k === "text") {
+      if (op.k === "text" && !o.maskOnly) {
         ctx2d.save();
         ctx2d.fillStyle = op.color || "#111111";
         ctx2d.textBaseline = "alphabetic";
@@ -510,7 +549,7 @@
         }
         ctx2d.restore();
       }
-      if (op.k === "image") {
+      if (op.k === "image" && !o.maskOnly) {
         if (op.src) {
           try {
             const img = await loadImageEl(op.src);
@@ -706,7 +745,12 @@ ${rels.join("\n")}
       return fontCache.get(name);
     };
     let applied = 0;
-    for (const op of ops || []) {
+    /* "erase" selalu lebih dulu: tutup isi asli, baru gambar
+       pengganti — urutan lapisan tidak boleh menutupi teks baru. */
+    const daftar = [];
+    for (const op of ops || []) if (op && op.k === "erase") daftar.push(op);
+    for (const op of ops || []) if (op && op.k !== "erase") daftar.push(op);
+    for (const op of daftar) {
       if (!op || !op.box) continue;
       const box = op.box;
       if (op.k === "erase") {
@@ -726,6 +770,19 @@ ${rels.join("\n")}
       }
       if (op.k === "text") {
         const size = op.size || 12;
+        /* Teks yang berasal dari blok teks di PDF asli (bukan sisipan
+           baru) menggantikan isi kotak yang sama. Kotak lama harus
+           ditutup dulu, kalau tidak teks lama dan baru bertumpuk. */
+        if (!op.newItem && !op.moved) {
+          const bg = o.bgFor ? o.bgFor(op) : null;
+          try {
+            page.drawRectangle({
+              x: box.x - 1, y: box.y - 1, width: box.w + 2, height: box.h + 2,
+              color: bg ? parseColor(bg, rgb(1, 1, 1)) : rgb(1, 1, 1),
+              borderWidth: 0,
+            });
+          } catch (_) { /* abaikan */ }
+        }
         const font = await asyncFont(stdFontName(op.font, op.bold, op.italic));
         const color = parseColor(op.color, rgb(0.07, 0.07, 0.07));
         const step = size * (op.lineHeight || 1.2);
@@ -958,7 +1015,7 @@ ${Array.from({ length: n }, (_, i) => `<Override PartName="/ppt/slides/slide${i 
     rgb, degrees, StandardFonts,
     registry, register, tick,
     fmtSize, baseName, safeName, looksLikePdf,
-    loadDoc, saveDoc, pdfjsTask, openPdfjs, renderPage, canvasToBytes,
+    loadDoc, saveDoc, pdfjsTask, openPdfjs, renderPage, canvasToBytes, scaledViewport,
     extractText, pageText, decodeImage, makeZip,
     FONT_LIST, fontCss, mulMat, applyMat, wrapText,
     TEXT_STYLES, textStyle, buildDocx, buildXlsx, buildPptx,
