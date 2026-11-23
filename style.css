@@ -868,6 +868,8 @@ code{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;
   background:var(--surface);
 }
 .ed-bar .ed-sep{width:1px;height:20px;background:var(--line);margin:0 4px}
+.ed-bar button svg{width:15px;height:15px;display:block}
+.ed-bar button{display:inline-flex;align-items:center;justify-content:center}
 .ed-page,.ed-zoom{font-size:12.5px;font-weight:600;color:var(--ink-2);min-width:78px;text-align:center}
 .ed-mode{
   border:1px solid var(--line);background:var(--surface);color:var(--ink-2);

@@ -80,9 +80,9 @@
     const wrap = el("div", "ed-wrap");
     wrap.innerHTML = `
       <div class="ed-bar">
-        <button type="button" class="btn btn-ghost btn-sm" data-ed="prev" title="Halaman sebelumnya">◀</button>
+        <button type="button" class="btn btn-ghost btn-sm" data-ed="prev" title="Halaman sebelumnya" aria-label="Halaman sebelumnya"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m14.5 6-6 6 6 6"/></svg></button>
         <span class="ed-page">Halaman 1 / 1</span>
-        <button type="button" class="btn btn-ghost btn-sm" data-ed="next" title="Halaman berikutnya">▶</button>
+        <button type="button" class="btn btn-ghost btn-sm" data-ed="next" title="Halaman berikutnya" aria-label="Halaman berikutnya"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9.5 6 6 6-6 6"/></svg></button>
         <span class="ed-sep"></span>
         <button type="button" class="btn btn-ghost btn-sm" data-ed="zoomout" title="Perkecil">−</button>
         <span class="ed-zoom">125%</span>
