@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#ffffff" />
 <meta name="author" content="Putra" />
 <title>Pemisah PDF — pecah, gabung &amp; kompres PDF, 100% di browser — by Putra</title>
-<link rel="stylesheet" href="style.css" />
+<link rel="stylesheet" href="style.css?v=20261123b" />
 <script>
   /* terapkan tema lebih awal supaya tidak ada kedipan saat halaman dimuat */
   (function () {
@@ -19,6 +19,42 @@
     } catch (e) {
       document.documentElement.setAttribute("data-theme", "light");
     }
+  })();
+
+  /* ============================================================
+     Penjaga cache — GitHub Pages memakai "Cache-Control: max-age=600"
+     (10 menit) dan tidak bisa diubah dari repo. Sebagian peramban
+     (terutama Android Chrome) tetap memakai style.css versi lama dari
+     cache, sehingga perbaikan mode gelap tidak pernah terlihat.
+
+     Solusi berlapis:
+       1) alamat aset memakai ?v=<build> -> URL baru = pasti diambil ulang;
+       2) kalau style.css yang termuat ternyata versi lama (--css-build
+          tidak cocok), stylesheet dimuat ulang dengan alamat baru.
+
+     Cara ini membuat halaman pulih sendiri tanpa perlu hard refresh.
+     ============================================================ */
+  window.PDF_BUILD = "20261123b";
+  (function () {
+    var percobaan = 0;
+    function periksaStylesheet() {
+      var link = document.querySelector('link[rel="stylesheet"]');
+      if (!link) return;
+      var build = getComputedStyle(document.documentElement)
+        .getPropertyValue('--css-build').trim();
+      if (build === window.PDF_BUILD) return;          /* sudah versi terbaru */
+      if (!build) {
+        /* stylesheet belum sempat diterapkan (masih dimuat) — tunggu dulu,
+           jangan buru-buru menukar alamatnya. */
+        if (percobaan++ < 6) { setTimeout(periksaStylesheet, 1000); return; }
+        /* memang gagal dimuat -> paksa muat ulang sekali lagi */
+      }
+      var base = link.getAttribute('href').split('?')[0];
+      link.setAttribute('href', base + '?v=' + window.PDF_BUILD + '.' + Date.now());
+      document.documentElement.setAttribute('data-css-refreshed', '1');
+    }
+    window.addEventListener('load', periksaStylesheet);
+    setTimeout(periksaStylesheet, 2500);   /* cadangan bila 'load' sudah lewat */
   })();
 </script>
 </head>
@@ -486,16 +522,16 @@
 <script src="vendor/jszip.min.js"></script>
 <script src="vendor/pdf.min.js"></script>
 <script src="vendor/fonts/fonts.js"></script>
-<script src="compressor.js"></script>
-<script src="tool-core.js"></script>
-<script src="tool-xps.js"></script>
-<script src="tool-crypto.js"></script>
-<script src="tool-decrypt.js"></script>
-<script src="tool-pdf.js"></script>
-<script src="tool-convert.js"></script>
-<script src="tool-smart.js"></script>
-<script src="tool-editor.js"></script>
-<script src="tool-ui.js"></script>
-<script src="app.js"></script>
+<script src="compressor.js?v=20261123b"></script>
+<script src="tool-core.js?v=20261123b"></script>
+<script src="tool-xps.js?v=20261123b"></script>
+<script src="tool-crypto.js?v=20261123b"></script>
+<script src="tool-decrypt.js?v=20261123b"></script>
+<script src="tool-pdf.js?v=20261123b"></script>
+<script src="tool-convert.js?v=20261123b"></script>
+<script src="tool-smart.js?v=20261123b"></script>
+<script src="tool-editor.js?v=20261123b"></script>
+<script src="tool-ui.js?v=20261123b"></script>
+<script src="app.js?v=20261123b"></script>
 </body>
 </html>

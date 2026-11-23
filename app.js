@@ -2713,6 +2713,15 @@
      Init
      ============================================================ */
   initTheme();
+
+  /* Penjaga cache di index.html mungkin sudah memuat ulang style.css
+     yang basi (--css-build tidak cocok). Beri tahu pengguna supaya
+     tidak mengira tampilan masih salah. */
+  if (document.documentElement.getAttribute("data-css-refreshed") === "1") {
+    setTimeout(() => toast("Stylesheet kedaluwarsa diperbarui otomatis — tampilan terbaru sudah dimuat."),
+      700);
+  }
+
   const themeBtn = $("#themeBtn");
   if (themeBtn) themeBtn.addEventListener("click", toggleTheme);
 
