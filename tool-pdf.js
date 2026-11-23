@@ -297,66 +297,79 @@
   }
 
   /* ============================================================
-     5. Edit PDF (anotasi)
+     5. Edit PDF visual (seperti Word)
+     ------------------------------------------------------------
+     Panel visual (tool-editor.js) menulis daftar operasi per
+     halaman: ubah font/warna/ukuran teks, sisipkan teks, sisipkan
+     gambar, ganti gambar, dan hapus teks/gambar.
+
+     Halaman yang benar-benar diubah dirender ulang menjadi gambar
+     (pola yang sama dengan tool Redaksi), sedangkan halaman lain
+     disalin apa adanya sehingga teksnya tetap bisa dicari.
      ============================================================ */
   register({
     id: "edit",
     cat: "edit",
     name: "Edit PDF",
-    desc: "Tambah teks, kotak, sorotan, atau gambar di halaman tertentu. Anotasi bisa dihapus.",
+    desc: "Ubah font teks, sisipkan atau ganti gambar, dan hapus teks/gambar — seperti mengedit di Word.",
     icon: "edit",
     accept: ".pdf,application/pdf",
-    multiple: true,
+    multiple: false,
+    custom: "editor",
     fields: [
-      { type: "text", id: "page", label: "Halaman (nomor, atau \"semua\")", value: "semua" },
-      { type: "textarea", id: "text", label: "Teks yang ditambahkan", value: "", placeholder: "Tulis teks di sini…" },
-      { type: "number", id: "x", label: "Posisi X (mm dari kiri)", value: 20, min: 0, max: 500 },
-      { type: "number", id: "y", label: "Posisi Y (mm dari bawah)", value: 20, min: 0, max: 500 },
-      { type: "number", id: "size", label: "Ukuran font (pt)", value: 14, min: 6, max: 96 },
-      { type: "color", id: "color", label: "Warna teks", value: "#c81e1e" },
-      { type: "check", id: "rect", label: "Gambar juga kotak di belakang teks", value: false },
+      { type: "number", id: "dpi", label: "Resolusi render halaman yang diedit (DPI)", value: 200, min: 96, max: 400 },
       { type: "check", id: "removeAnnots", label: "Hapus anotasi yang sudah ada di PDF", value: false },
     ],
     async run(ctx) {
-      const { files, opts } = ctx;
-      const out = [];
-      const color = parseColor(opts.color, rgb(0.78, 0.12, 0.12));
-      for (const f of files) {
-        const doc = await loadDoc(f.bytes);
-        const pages = doc.getPages();
-        const want = String(opts.page || "semua").trim();
-        const targets = want && want !== "semua" && want !== "all"
-          ? pages.map((_, i) => i + 1).filter((n) => String(n) === want)
-          : pages.map((_, i) => i + 1);
-        if (!targets.length) throw new Error(`Halaman ${want} tidak ada (file ini punya ${pages.length} halaman).`);
+      const f = ctx.files[0];
+      if (!f) throw new Error("Pilih satu PDF untuk diedit.");
+      const edits = (ctx.opts && ctx.opts.edits) || {};
+      const pageKeys = Object.keys(edits).filter((k) => (edits[k] || []).length);
+      const dpi = Math.min(400, Math.max(96, Number(ctx.opts.dpi) || 200));
 
-        if (opts.removeAnnots) {
-          for (const p of pages) p.node.delete(PDFName.of("Annots"));
-        }
-        const txt = String(opts.text || "");
-        for (const n of targets) {
-          const p = pages[n - 1];
-          const { width, height } = p.getSize();
-          const x = (Number(opts.x) || 0) * MM;
-          const y = (Number(opts.y) || 0) * MM;
-          const size = Number(opts.size) || 14;
-          if (opts.rect) {
-            const wEst = txt ? Math.min(width - x - 4, txt.length * size * 0.5 + 8) : 120;
-            p.drawRectangle({
-              x: x - 3, y: y - 3, width: Math.max(20, wEst), height: size * 1.4,
-              color: rgb(1, 0.95, 0.6), opacity: 0.9, borderColor: rgb(0.85, 0.7, 0.2), borderWidth: 0.7,
-            });
+      const src = await loadDoc(f.bytes);
+      const srcPages = src.getPages();
+      const pdfjs = await openPdfjs(f.bytes);
+      const dst = await PDFDocument.create();
+      let raster = 0;
+
+      for (let i = 0; i < srcPages.length; i++) {
+        const n = i + 1;
+        const ops = edits[String(n)] || [];
+        const needRaster = ops.length > 0;
+        if (!needRaster) {
+          /* halaman tidak disentuh: salin vektor (teks tetap bisa dicari) */
+          const [copied] = await dst.copyPages(src, [i]);
+          dst.addPage(copied);
+          if (ctx.opts.removeAnnots) {
+            dst.getPage(dst.getPageCount() - 1).node.delete(PDFName.of("Annots"));
           }
-          if (txt) {
-            const ok = await drawTextSafe(p, txt, { x, y, size, color });
-            if (!ok) throw new Error("Teks tidak bisa ditulis (karakter di luar jangkauan font).");
-          }
+          continue;
         }
-        const bytes = await saveDoc(doc);
-        out.push({ name: C.safeName(C.baseName(f.name)) + "-edit.pdf", bytes });
+        ctx.progress(null, `Merender halaman ${n} dari ${srcPages.length}…`);
+        const scale = dpi / 72;
+        const { canvas, ctx: c2, viewport } = await renderPage(pdfjs, n, scale);
+        await C.applyEdits(c2, viewport, ops);
+        const jpg = await canvasToBytes(canvas, "image/jpeg", 0.92);
+        canvas.width = canvas.height = 0;
+        const img = await dst.embedJpg(jpg);
+        const w = viewport.width / scale;
+        const h = viewport.height / scale;
+        const p = dst.addPage([w, h]);
+        p.drawImage(img, { x: 0, y: 0, width: w, height: h });
+        raster++;
         await tick();
       }
-      return out;
+      try { await pdfjs.destroy(); } catch (_) {}
+      const bytes = await saveDoc(dst);
+      const note = raster
+        ? `${raster} halaman diedit (dirender ulang), sisanya tetap vektor`
+        : "Tidak ada perubahan — PDF disalin apa adanya";
+      return [{
+        name: C.safeName(C.baseName(f.name)) + "-edit.pdf",
+        bytes,
+        note,
+      }];
     },
   });
 

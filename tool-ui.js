@@ -120,6 +120,10 @@
     state.files = [];
     state.opts = {};
     state.results = [];
+    /* lepaskan sumber daya alat sebelumnya (mis. dokumen pdf.js editor) */
+    if (state.custom && typeof state.custom.disposeEditor === "function") {
+      try { state.custom.disposeEditor(); } catch (_) { /* abaikan */ }
+    }
     state.custom = {};
     /* nilai bawaan opsi */
     for (const f of tool.fields || []) {
@@ -382,6 +386,13 @@
     if (tool.custom === "html") return void renderHtml(host);
     if (tool.custom === "scan") return void renderScan(host);
     if (tool.custom === "unlock") return void renderUnlock(host);
+    if (tool.custom === "editor") {
+      if (window.PDFToolsEditor && typeof window.PDFToolsEditor.render === "function") {
+        return void window.PDFToolsEditor.render(host);
+      }
+      host.appendChild(el("p", "tool-warn", "Modul editor visual tidak termuat."));
+      return;
+    }
   }
 
   /* --- Susun PDF --- */
@@ -729,6 +740,7 @@
         if (state.custom.refreshOrganize) state.custom.refreshOrganize();
         if (state.custom.refreshForms) state.custom.refreshForms();
         if (state.custom.refreshHtml) state.custom.refreshHtml();
+        if (state.custom.refreshEditor) state.custom.refreshEditor();
         void tool;
       });
     }
@@ -755,6 +767,7 @@
         if (state.custom.refreshOrganize) state.custom.refreshOrganize();
         if (state.custom.refreshForms) state.custom.refreshForms();
         if (state.custom.refreshHtml) state.custom.refreshHtml();
+        if (state.custom.refreshEditor) state.custom.refreshEditor();
       });
     }
 
