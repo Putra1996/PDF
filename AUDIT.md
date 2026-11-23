@@ -387,9 +387,15 @@ Harness: `tools/verify-produksi.mjs` (+ `tools/mkfixtures.mjs`).
 | `tools/verify-produksi.mjs` (build `main` sebelum perbaikan) | 62 | 4 — keempatnya persis mereproduksi bug di atas |
 | `tools/verify-produksi.mjs` (setelah perbaikan) | 63 | 0 |
 
-Bukti visual: `beranda-desktop.png` (pintasan langsung tampil),
-`mobile-watermark-fix.png` (dropzone kembali terlihat),
-`mobile-editor-fix.png` (toolbar editor tampil sebelum kanvas).
+Bukti visual ada di `docs/audit-2026-11-23/`:
+
+| Berkas | Isi |
+|---|---|
+| `beranda-pintasan-tampil.png` | Baris pintasan "Paling sering dipakai" langsung tampil di beranda |
+| `sebelum-mobile-watermark.png` | **Sebelum:** panel pilihan menutupi dropzone berkas di 360 px |
+| `sesudah-mobile-watermark.png` | **Sesudah:** dropzone kembali terlihat, panel pilihan mengalir di bawahnya |
+| `sebelum-mobile-editor.png` | **Sebelum:** toolbar editor tertutup panel pilihan di 360 px |
+| `sesudah-mobile-editor.png` | **Sesudah:** toolbar editor tampil sebelum kanvas, lalu opsi, lalu inspektur |
 
 ## Catatan
 
