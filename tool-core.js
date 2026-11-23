@@ -208,6 +208,251 @@
     return fallback || rgb(0, 0, 0);
   }
 
+  /* ============================================================
+     Editor visual: kotak teks, kotak gambar, dan penerapan edit
+     ke kanvas. Semua koordinat kotak memakai "user space" PDF
+     (titik asal kiri-bawah, satuan point PDF).
+     ============================================================ */
+
+  /* Daftar font yang bisa dipilih. Aplikasi berjalan offline, jadi
+     memakai stack font generik — kalau font tidak ada, peramban
+     memakai pengganti yang paling mendekati. */
+  const FONT_LIST = [
+    { id: "helvetica", label: "Helvetica / Arial", css: 'Helvetica, Arial, Arimo, "Liberation Sans", sans-serif' },
+    { id: "times", label: "Times New Roman", css: '"Times New Roman", Times, Tinos, "Liberation Serif", serif' },
+    { id: "courier", label: "Courier New", css: '"Courier New", Courier, Cousine, "Liberation Mono", monospace' },
+    { id: "georgia", label: "Georgia", css: 'Georgia, Gelasio, "DejaVu Serif", serif' },
+    { id: "verdana", label: "Verdana", css: 'Verdana, "DejaVu Sans", "Bitstream Vera Sans", sans-serif' },
+    { id: "tahoma", label: "Tahoma", css: 'Tahoma, "DejaVu Sans", "Liberation Sans", sans-serif' },
+    { id: "trebuchet", label: "Trebuchet MS", css: '"Trebuchet MS", "Fira Sans", "DejaVu Sans", sans-serif' },
+    { id: "impact", label: "Impact", css: 'Impact, Anton, "Arial Black", sans-serif' },
+    { id: "comic", label: "Comic Sans MS", css: '"Comic Sans MS", "Comic Neue", "Chalkboard SE", cursive' },
+  ];
+
+  function fontCss(id) {
+    const f = FONT_LIST.find((x) => x.id === id);
+    return f ? f.css : FONT_LIST[0].css;
+  }
+
+  /* Perkalian matriks 2D (baris-major seperti pdf.js). */
+  function mulMat(m, n) {
+    if (!m) return [1, 0, 0, 1, 0, 0];
+    if (!n) return m.slice();
+    return [
+      m[0] * n[0] + m[2] * n[1],
+      m[1] * n[0] + m[3] * n[1],
+      m[0] * n[2] + m[2] * n[3],
+      m[1] * n[2] + m[3] * n[3],
+      m[0] * n[4] + m[2] * n[5] + m[4],
+      m[1] * n[4] + m[3] * n[5] + m[5],
+    ];
+  }
+
+  function applyMat(m, x, y) {
+    return [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
+  }
+
+  /* Kotak teks yang bisa diklik (blok per item teks pdf.js). */
+  const TEXT_ASCENT = 0.80;
+  const TEXT_DESCENT = 0.22;
+
+  async function pageTextBoxes(pdfDoc, pageNo) {
+    const page = await pdfDoc.getPage(pageNo);
+    const tc = await page.getTextContent();
+    const out = [];
+    for (const it of tc.items) {
+      if (!it.str || !it.str.trim()) continue;
+      const tr = it.transform || [1, 0, 0, 1, 0, 0];
+      const size = Math.hypot(tr[2], tr[3]) || Math.abs(tr[3]) || 10;
+      const w = it.width || 0;
+      if (!w || !size) continue;
+      const bx = tr[4];
+      const by = tr[5];
+      out.push({
+        str: it.str,
+        fontName: it.fontName || "",
+        size,
+        x: bx,
+        y: by - size * TEXT_DESCENT,
+        w,
+        h: size * (TEXT_ASCENT + TEXT_DESCENT),
+        by,
+      });
+    }
+    return out;
+  }
+
+  /* Kotak gambar: dibaca dari operator list (CTM saat gambar digambar). */
+  async function pageImageBoxes(pdfDoc, pageNo) {
+    const OPS = window.pdfjsLib && window.pdfjsLib.OPS;
+    if (!OPS) return [];
+    const page = await pdfDoc.getPage(pageNo);
+    const op = await page.getOperatorList();
+    let ctm = [1, 0, 0, 1, 0, 0];
+    const stack = [];
+    const out = [];
+    for (let i = 0; i < op.fnArray.length; i++) {
+      const fn = op.fnArray[i];
+      const args = op.argsArray[i];
+      if (fn === OPS.save) {
+        stack.push(ctm.slice());
+      } else if (fn === OPS.restore) {
+        ctm = stack.pop() || [1, 0, 0, 1, 0, 0];
+      } else if (fn === OPS.transform && args && args.length >= 6) {
+        ctm = mulMat(ctm, args);
+      } else if (fn === OPS.paintFormXObjectBegin && args && Array.isArray(args[0]) && args[0].length >= 6) {
+        stack.push(ctm.slice());
+        ctm = mulMat(ctm, args[0]);
+      } else if (fn === OPS.paintFormXObjectEnd) {
+        ctm = stack.pop() || [1, 0, 0, 1, 0, 0];
+      } else if (
+        fn === OPS.paintImageXObject ||
+        fn === OPS.paintImageMaskXObject ||
+        fn === OPS.paintImageXObjectRepeat ||
+        fn === OPS.paintInlineImageXObject
+      ) {
+        /* Gambar occupies unit square (0,0)-(1,1) pada ruang user. */
+        const corners = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([u, v]) => applyMat(ctm, u, v));
+        const xs = corners.map((p) => p[0]);
+        const ys = corners.map((p) => p[1]);
+        const x = Math.min.apply(null, xs);
+        const y = Math.min.apply(null, ys);
+        const w = Math.max.apply(null, xs) - x;
+        const h = Math.max.apply(null, ys) - y;
+        if (w > 0.5 && h > 0.5) out.push({ x, y, w, h });
+      }
+    }
+    return out;
+  }
+
+  /* User space -> koordinat kanvas (viewport). */
+  function pdfPointToCanvas(viewport, x, y) {
+    const t = viewport.transform;
+    return [t[0] * x + t[2] * y + t[4], t[1] * x + t[3] * y + t[5]];
+  }
+
+  function pdfRectToCanvas(viewport, box) {
+    const a = pdfPointToCanvas(viewport, box.x, box.y + box.h);
+    const b = pdfPointToCanvas(viewport, box.x + box.w, box.y);
+    return {
+      x: Math.min(a[0], b[0]),
+      y: Math.min(a[1], b[1]),
+      w: Math.abs(b[0] - a[0]),
+      h: Math.abs(b[1] - a[1]),
+    };
+  }
+
+  /* Ambil warna latar di sekeliling kotak (agar teks/gambar yang
+     dihapus tidak meninggalkan kotak putih di atas kertas berwarna). */
+  function sampleBackground(ctx, rect) {
+    try {
+      const pts = [
+        [rect.x - 2, rect.y - 2], [rect.x + rect.w + 2, rect.y - 2],
+        [rect.x - 2, rect.y + rect.h + 2], [rect.x + rect.w + 2, rect.y + rect.h + 2],
+        [rect.x + rect.w / 2, rect.y - 2], [rect.x + rect.w / 2, rect.y + rect.h + 2],
+        [rect.x - 2, rect.y + rect.h / 2], [rect.x + rect.w + 2, rect.y + rect.h / 2],
+      ];
+      const tally = new Map();
+      for (const [px, py] of pts) {
+        const x = Math.round(px);
+        const y = Math.round(py);
+        if (x < 0 || y < 0 || x >= ctx.canvas.width || y >= ctx.canvas.height) continue;
+        const d = ctx.getImageData(x, y, 1, 1).data;
+        const key = `${d[0]},${d[1]},${d[2]}`;
+        tally.set(key, (tally.get(key) || 0) + 1);
+      }
+      let best = null;
+      let bestN = 0;
+      for (const [k, n] of tally) {
+        if (n > bestN) { bestN = n; best = k; }
+      }
+      if (!best) return "#ffffff";
+      const [r, g, b] = best.split(",").map(Number);
+      return `rgb(${r},${g},${b})`;
+    } catch (_) {
+      return "#ffffff";
+    }
+  }
+
+  function loadImageEl(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error("Gambar tidak bisa dibaca."));
+      img.src = src;
+    });
+  }
+
+  /* Terapkan daftar edit ke kanvas halaman yang sudah dirender.
+     Edit: { k: "erase" | "text" | "image", box, ... }
+     - "image" dengan "src"   : gambar dari berkas (sisipkan/ganti)
+     - "image" dengan "copyFrom": salin piksel gambar lama dari halaman
+                                 (dipakai untuk menggeser/mengubah ukuran) */
+  async function applyEdits(ctx2d, viewport, ops) {
+    const scale = viewport.scale || 1;
+    /* Tahap 1: salin sumber gambar SEBELUM area asal ditutup. */
+    const copies = new Map();
+    for (const op of ops || []) {
+      if (!op || op.k !== "image" || !op.copyFrom) continue;
+      const s = pdfRectToCanvas(viewport, op.copyFrom);
+      try {
+        const off = document.createElement("canvas");
+        off.width = Math.max(1, Math.round(s.w));
+        off.height = Math.max(1, Math.round(s.h));
+        off.getContext("2d").drawImage(
+          ctx2d.canvas, s.x, s.y, s.w, s.h, 0, 0, off.width, off.height);
+        copies.set(op.id, off);
+      } catch (_) {
+        /* gagal menyalin: area asal tetap tertutup */
+      }
+    }
+
+    /* Tahap 2: terapkan operasi. */
+    for (const op of ops || []) {
+      if (!op || !op.box) continue;
+      const r = pdfRectToCanvas(viewport, op.box);
+      if (op.k === "erase" || op.k === "text" || op.k === "image") {
+        ctx2d.save();
+        ctx2d.fillStyle = sampleBackground(ctx2d, r);
+        ctx2d.fillRect(r.x - 1, r.y - 1, r.w + 2, r.h + 2);
+        /* gambar yang digeser/diubah ukuran: area aslinya ikut ditutup */
+        if (op.copyFrom) {
+          const c0 = pdfRectToCanvas(viewport, op.copyFrom);
+          ctx2d.fillStyle = sampleBackground(ctx2d, c0);
+          ctx2d.fillRect(c0.x - 1, c0.y - 1, c0.w + 2, c0.h + 2);
+        }
+        ctx2d.restore();
+      }
+      if (op.k === "text") {
+        ctx2d.save();
+        ctx2d.fillStyle = op.color || "#111111";
+        ctx2d.textBaseline = "alphabetic";
+        const align = op.align || "left";
+        ctx2d.textAlign = align === "center" ? "center" : align === "right" ? "right" : "left";
+        const sizePx = (op.size || 12) * scale;
+        ctx2d.font = `${op.bold ? "bold " : ""}${op.italic ? "italic " : ""}${sizePx}px ${fontCss(op.font)}`;
+        const anchorX = align === "center" ? op.box.x + op.box.w / 2
+          : align === "right" ? op.box.x + op.box.w : op.box.x;
+        const baseY = op.by != null ? op.by : op.box.y + op.box.h * TEXT_ASCENT;
+        const p = pdfPointToCanvas(viewport, anchorX, baseY);
+        ctx2d.fillText(op.text || "", p[0], p[1]);
+        ctx2d.restore();
+      }
+      if (op.k === "image") {
+        if (op.src) {
+          try {
+            const img = await loadImageEl(op.src);
+            ctx2d.drawImage(img, r.x, r.y, r.w, r.h);
+          } catch (_) {
+            /* gambar gagal dimuat: kotak asal tetap tertutup */
+          }
+        } else if (copies.has(op.id)) {
+          ctx2d.drawImage(copies.get(op.id), r.x, r.y, r.w, r.h);
+        }
+      }
+    }
+  }
+
   window.PDFToolsCore = {
     L, PDFDocument, PDFName, PDFNumber, PDFArray, PDFString, PDFHexString, PDFRef,
     PDFRawStream, PDFBool, PDFDict, PDFInvalidObject,
@@ -216,6 +461,9 @@
     fmtSize, baseName, safeName, looksLikePdf,
     loadDoc, saveDoc, pdfjsTask, openPdfjs, renderPage, canvasToBytes,
     extractText, pageText, decodeImage, makeZip,
+    FONT_LIST, fontCss, mulMat, applyMat,
+    pageTextBoxes, pageImageBoxes, pdfPointToCanvas, pdfRectToCanvas,
+    sampleBackground, loadImageEl, applyEdits,
     fontFor, drawTextSafe, getFont,
     MM, A4, LETTER, pageSizeName, compactBytes, parseColor,
   };

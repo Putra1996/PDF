@@ -95,7 +95,8 @@
   /* ---------- state ---------- */
   const state = {
     files: [],          // {id, name, bytes, pageCount, doc, bookmarks, thumbs:true[]}
-    selected: new Set(), // key = `${fileId}:${pageIndex}`
+    selected: new Set(), // key = `${fileId}:${pageIndex}` — halaman terpilih
+    deleted: new Set(),  // key = `${fileId}:${pageIndex}` — ditandai X (mode Hapus Halaman)
     results: [],        // {name, blob, url, size}
     busy: false,
     seq: 0,
@@ -427,11 +428,15 @@
     pages.className = "fb-pages";
 
     for (let p = 0; p < f.pageCount; p++) {
-      const btn = document.createElement("button");
-      btn.type = "button";
+      /* <div role=button> (bukan <button>) supaya tombol X di dalam
+         thumbnail tetap markup yang valid (tidak ada button bersarang). */
+      const btn = document.createElement("div");
       btn.className = "thumb";
       btn.dataset.fid = f.id;
       btn.dataset.page = p;
+      btn.setAttribute("role", "button");
+      btn.setAttribute("tabindex", "0");
+      btn.setAttribute("aria-pressed", "false");
       btn.setAttribute("aria-label", `Halaman ${p + 1} dari ${f.name}`);
 
       const num = document.createElement("span");
@@ -442,10 +447,20 @@
       chk.className = "tcheck";
       chk.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4.5 4.5L19 7"/></svg>`;
 
+      /* tombol X: tandai halaman ini untuk dihapus (mode Hapus Halaman) */
+      const close = document.createElement("button");
+      close.type = "button";
+      close.className = "tclose";
+      close.dataset.fid = f.id;
+      close.dataset.page = p;
+      close.setAttribute("aria-label", `Tandai halaman ${p + 1} untuk dihapus`);
+      close.title = "Tandai halaman ini untuk dihapus";
+      close.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>`;
+
       const ph = document.createElement("div");
       ph.className = "ph";
 
-      btn.append(num, chk, ph);
+      btn.append(num, chk, close, ph);
       pages.appendChild(btn);
       observeThumb(btn, f, p);
     }
@@ -471,7 +486,10 @@
     const i = state.files.findIndex((f) => f.id === fid);
     if (i < 0) return;
     const [removed] = state.files.splice(i, 1);
-    for (let p = 0; p < removed.pageCount; p++) state.selected.delete(key(fid, p));
+    for (let p = 0; p < removed.pageCount; p++) {
+      state.selected.delete(key(fid, p));
+      state.deleted.delete(key(fid, p));
+    }
     dropPdfjsDoc(fid);
     if (!state.files.length) clearWorkspace();
     else render();
@@ -609,6 +627,14 @@
      Seleksi
      ============================================================ */
   filesEl.addEventListener("click", (e) => {
+    /* tombol X (tandai untuk dihapus) — tidak ikut ke logika pilih halaman */
+    const xBtn = e.target.closest(".tclose");
+    if (xBtn) {
+      e.stopPropagation();
+      e.preventDefault();
+      toggleDeleted(xBtn.dataset.fid, Number(xBtn.dataset.page));
+      return;
+    }
     const btn = e.target.closest(".thumb");
     if (!btn) return;
     const fid = btn.dataset.fid;
@@ -630,10 +656,42 @@
     updateRunState();
   });
 
+  /* Tandai/batalkan halaman untuk dihapus (ikon X). */
+  function toggleDeleted(fid, p) {
+    const k = key(fid, p);
+    if (state.deleted.has(k)) state.deleted.delete(k);
+    else state.deleted.add(k);
+    paintSelection();
+    updateRunState();
+    const s = window.PDFShared;
+    if (s && s.toast) {
+      s.toast(state.deleted.has(k)
+        ? `Halaman ${p + 1} ditandai untuk dihapus.`
+        : `Tanda hapus halaman ${p + 1} dibatalkan.`);
+    }
+  }
+
+  /* Halaman yang berlaku untuk alur saat ini. */
+  function activeMarks() {
+    return currentMode() === "remove" ? state.deleted : state.selected;
+  }
+
+  /* Thumbnail kini <div role=button>, jadi butuh pintasan keyboard. */
+  filesEl.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+    const btn = e.target.closest(".thumb");
+    if (!btn || e.target.closest(".tclose")) return;
+    e.preventDefault();
+    btn.click();
+  });
+
   function paintSelection() {
+    const rm = currentMode() === "remove";
     filesEl.querySelectorAll(".thumb").forEach((btn) => {
-      const on = state.selected.has(key(btn.dataset.fid, Number(btn.dataset.page)));
-      btn.classList.toggle("sel", on);
+      const k = key(btn.dataset.fid, Number(btn.dataset.page));
+      const on = rm ? state.deleted.has(k) : state.selected.has(k);
+      btn.classList.toggle("sel", !rm && on);
+      btn.classList.toggle("todelete", rm && on);
       btn.setAttribute("aria-pressed", on ? "true" : "false");
     });
     updateSelInfo();
@@ -641,6 +699,12 @@
 
   function updateSelInfo() {
     const total = state.files.reduce((s, f) => s + f.pageCount, 0);
+    if (currentMode() === "remove") {
+      const n = state.deleted.size;
+      selInfo.textContent = `${nf(n)} dari ${nf(total)} halaman ditandai untuk dihapus`;
+      selInfo.classList.toggle("active", n > 0);
+      return;
+    }
     const n = state.selected.size;
     selInfo.textContent = `${nf(n)} dari ${nf(total)} halaman dipilih`;
     selInfo.classList.toggle("active", n > 0);
@@ -654,27 +718,30 @@
   document.querySelector(".selbar").addEventListener("click", (e) => {
     const sel = e.target.closest("[data-sel]")?.dataset.sel;
     if (!sel) return;
+    /* Di mode "Hapus halaman" tombol ini bekerja pada tanda hapus (ikon X),
+       di mode lain pada halaman terpilih. */
+    const target = activeMarks();
     if (sel === "all") {
       state.files.forEach((f) => {
-        for (let p = 0; p < f.pageCount; p++) state.selected.add(key(f.id, p));
+        for (let p = 0; p < f.pageCount; p++) target.add(key(f.id, p));
       });
     } else if (sel === "none") {
-      state.selected.clear();
+      target.clear();
     } else if (sel === "invert") {
       state.files.forEach((f) => {
         for (let p = 0; p < f.pageCount; p++) {
           const k = key(f.id, p);
-          if (state.selected.has(k)) state.selected.delete(k);
-          else state.selected.add(k);
+          if (target.has(k)) target.delete(k);
+          else target.add(k);
         }
       });
     } else if (sel === "odd" || sel === "even") {
-      state.selected.clear();
+      target.clear();
       let g = 1;
       state.files.forEach((f) => {
         for (let p = 0; p < f.pageCount; p++, g++) {
           if ((sel === "odd" && g % 2 === 1) || (sel === "even" && g % 2 === 0)) {
-            state.selected.add(key(f.id, p));
+            target.add(key(f.id, p));
           }
         }
       });
@@ -710,12 +777,15 @@
   document.querySelectorAll('input[name="mode"]').forEach((r) => {
     r.addEventListener("change", () => {
       const m = currentMode();
+      /* Tanda hapus (ikon X) hanya berlaku di mode "Hapus halaman". */
+      if (m !== "remove") state.deleted.clear();
       chunkOpt.hidden = m !== "chunk";
       rangeOpt.hidden = m !== "range";
       eachOpt.hidden = m !== "each";
       if (m === "range" && !$("#rangeInput").value.trim()) {
         $("#rangeInput").value = suggestRanges();
       }
+      paintSelection();
       updateRunState();
     });
   });
@@ -738,8 +808,24 @@
     return cuts.join(", ");
   }
 
+  const SEL_LABELS = {
+    all: ["Semua", "Tandai semua"],
+    none: ["Kosong", "Bersihkan"],
+    invert: ["Balik", "Balik tanda"],
+    odd: ["Ganjil", "Ganjil"],
+    even: ["Genap", "Genap"],
+  };
+
   function updateRunState() {
     const mode = currentMode();
+    /* CSS memakai atribut ini untuk menampilkan ikon X hanya di mode hapus. */
+    filesEl.dataset.mode = mode;
+    for (const b of filesEl.parentElement ? document.querySelectorAll(".selbar [data-sel]") : []) {
+      const pair = SEL_LABELS[b.dataset.sel];
+      if (!pair) continue;
+      const label = mode === "remove" ? pair[1] : pair[0];
+      if (b.textContent !== label) b.textContent = label;
+    }
     const nSel = state.selected.size;
     const total = state.files.reduce((s, f) => s + f.pageCount, 0);
     let label = "Proses";
@@ -751,12 +837,13 @@
       enabled = enabled && nSel > 0;
       hint = nSel ? `${nf(nSel)} halaman akan digabung.` : "Pilih minimal 1 halaman.";
     } else if (mode === "remove") {
-      label = "Hapus halaman terpilih";
-      const left = total - nSel;
-      enabled = enabled && nSel > 0 && left > 0;
-      if (!nSel) hint = "Pilih minimal 1 halaman untuk dibuang.";
-      else if (left <= 0) hint = "Semua halaman terpilih — tidak ada yang tersisa.";
-      else hint = `${nf(nSel)} halaman dibuang, ${nf(left)} halaman tersisa.`;
+      const nDel = state.deleted.size;
+      const left = total - nDel;
+      label = "Hapus halaman bertanda X";
+      enabled = enabled && nDel > 0 && left > 0;
+      if (!nDel) hint = "Tekan ikon X pada halaman yang mau dibuang.";
+      else if (left <= 0) hint = "Semua halaman ditandai — tidak ada yang tersisa.";
+      else hint = `${nf(nDel)} halaman dibuang, ${nf(left)} halaman tersisa.`;
     } else if (mode === "each") {
       const useSel = $("#eachUseSel").checked;
       const eff = useSel ? nSel : total;
@@ -876,9 +963,10 @@
         const name = resultNameForExtract(sel);
         made.push({ name, blob, url: URL.createObjectURL(blob), size: blob.size });
       } else if (mode === "remove") {
-        const sel = selectedPages();
-        const drop = new Set(sel.map((it) => key(it.file.id, it.page)));
+        const drop = new Set(state.deleted);
+        const sel = allPages().filter((it) => drop.has(key(it.file.id, it.page)));
         const keep = allPages().filter((it) => !drop.has(key(it.file.id, it.page)));
+        if (!sel.length) throw new Error("Belum ada halaman yang ditandai — tekan ikon X pada halaman yang mau dibuang.");
         if (!keep.length) throw new Error("Semua halaman dibuang — tidak ada yang tersisa.");
         overlayText.textContent = `Membuang ${sel.length} halaman…`;
         setProgress(25);

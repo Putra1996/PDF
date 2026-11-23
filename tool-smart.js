@@ -776,6 +776,17 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
     return scored.sort((a, b) => b.sc - a.sc).slice(0, want).sort((a, b) => a.i - b.i).map((x) => x.s);
   }
 
+  /* Batas waktu untuk API peramban yang bisa macet. */
+  function withTimeout(promise, ms, message) {
+    return new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error(message)), ms);
+      Promise.resolve(promise).then(
+        (v) => { clearTimeout(t); resolve(v); },
+        (e) => { clearTimeout(t); reject(e); }
+      );
+    });
+  }
+
   /* ============================================================
      8. Terjemah PDF (memakai API Terjemahan bawaan peramban)
      ============================================================ */
@@ -789,7 +800,7 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
     multiple: true,
     fields: [
       { type: "select", id: "lang", label: "Bahasa tujuan", value: "en", options: [["en", "Inggris"], ["id", "Indonesia"], ["ja", "Jepang"], ["de", "Jerman"], ["fr", "Prancis"], ["es", "Spanyol"], ["zh", "Tionghoa"], ["ko", "Korea"]] },
-      { type: "select", id: "src", label: "Bahasa sumber", value: "auto", options: [["auto", "Otomatis"], ["id", "Indonesia"], ["en", "Inggris"]] },
+      { type: "select", id: "src", label: "Bahasa sumber", value: "id", options: [["id", "Indonesia"], ["en", "Inggris"], ["es", "Spanyol"], ["de", "Jerman"], ["fr", "Prancis"], ["ja", "Jepang"], ["ko", "Korea"], ["zh", "Tionghoa"]] },
     ],
     async run(ctx) {
       if (!("Translator" in window)) {
@@ -808,8 +819,40 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
           await tick();
         }
         try { await pdfjs.destroy(); } catch (_) {}
-        const source = ctx.opts.src === "auto" ? undefined : ctx.opts.src;
-        const translator = await window.Translator.create({ sourceLanguage: source, targetLanguage: ctx.opts.lang });
+        const target = ctx.opts.lang;
+        /* API bawaan peramban menuntut tag bahasa yang pasti, jadi
+           "Otomatis" diterjemahkan menjadi beberapa tebakan. */
+        const kandidat = ctx.opts.src === "auto" ? ["id", "en"] : [ctx.opts.src];
+        let translator = null;
+        let lastErr = null;
+        for (const src of kandidat) {
+          try {
+            translator = await withTimeout(
+              window.Translator.create({ sourceLanguage: src, targetLanguage: target }),
+              30000,
+              "Mesin terjemahan bawaan tidak menjawab dalam 30 detik"
+            );
+            break;
+          } catch (err) {
+            lastErr = err;
+          }
+        }
+        if (!translator) {
+          const msg = String((lastErr && lastErr.message) || lastErr || "");
+          if (/invalid language tag|sourceLanguage|source language/i.test(msg)) {
+            throw new Error(
+              "Mesin terjemahan bawaan menolak bahasa sumber itu. " +
+              "Pilih bahasa sumber yang lain di panel."
+            );
+          }
+          if (/not.?supported|not.?available|unavailable|NoModificationAllowed|tidak tersedia|tidak menjawab/i.test(msg)) {
+            throw new Error(
+              "Peramban ini belum punya mesin terjemahan bawaan (Chrome 138+ dengan model's on-device translation). " +
+              "Aplikasi ini berjalan offline, jadi terjemahan butuh kemampuan itu."
+            );
+          }
+          throw new Error("Terjemahan tidak bisa dijalankan: " + msg);
+        }
         const translated = [];
         for (const c of chunks) {
           const r = await translator.translate(c);
