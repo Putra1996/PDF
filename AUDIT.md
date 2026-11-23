@@ -357,9 +357,48 @@ Semua pemeriksaan dijalankan lokal dengan Playwright/Chromium
 | `audit-alat.mjs` | 122 | 0 | seluruh 28 alat registry, 6 mode pemisahan, gabung (termasuk balik urutan), 5 preset kompres, editor, tema terang/gelap, a11y tombol & field |
 | **Total** | **201** | **0** | |
 
+## Putaran audit II — verifikasi terhadap byte produksi (2026-11-23)
+
+Audit sebelumnya hanya berjalan di working tree. Putaran ini menjalankan
+Chromium (Playwright) terhadap **salinan persis branch `main`** yang diunduh
+melalui codeload, lalu menguji **fungsi** (bukan hanya tampilan): pisah,
+gabung, kompres, editor, pencarian, mode gelap, dan aksesibilitas.
+Harness: `tools/verify-produksi.mjs` (+ `tools/mkfixtures.mjs`).
+
+### Bug nyata yang ditemukan di build yang sudah tayang
+
+| # | Gejala | Akar masalah | Perbaikan | Berkas |
+|---|---|---|---|---|
+| 10 | Baris pintasan "Paling sering dipakai" **tidak terlihat** di beranda — 5 kartu sudah ter-render di DOM, tetapi section masih punya atribut `hidden` sampai pengguna berpindah tab | `render()` (satu-satunya tempat yang mengatur `#quickTools.hidden`) tidak pernah dipanggil saat halaman dimuat | `render()` dipanggil pada blok init; baris pintasan langsung tampil | `app.js` |
+| 11 | Di layar sempit (≤900 px) **panel pilihan menimpa dropzone berkas** dan menutupi toolbar editor — berkas tidak bisa dipilih pada semua alat | `.tool-side` memakai `position:sticky; top:78px` juga saat layout berubah jadi satu kolom, sehingga rail menempel di atas kolom utama | Rail jadi `position:static` pada ≤900 px dan mengalir di bawah konten utama; tombol "Proses" ikut mengalir (tidak melayang di atas kolom lain) | `style.css` |
+
+### Pemeriksaan regresi baru (otomatis)
+
+- Baris pintasan tampil sejak halaman pertama dimuat.
+- Rail pilihan tidak menimpa dropzone berkas pada 360 px.
+- Rail pilihan mengalir di bawah konten utama pada 360 px.
+- Toolbar editor terlihat (tidak tertutup panel lain) pada 360 px.
+- Penanda versi aset seragam di `index.html`, `--css-build`, dan `window.PDF_BUILD`.
+
+### Hasil
+
+| Harness | Pemeriksaan | Gagal |
+|---|---|---|
+| `tools/verify-produksi.mjs` (build `main` sebelum perbaikan) | 62 | 4 — keempatnya persis mereproduksi bug di atas |
+| `tools/verify-produksi.mjs` (setelah perbaikan) | 63 | 0 |
+
+Bukti visual: `beranda-desktop.png` (pintasan langsung tampil),
+`mobile-watermark-fix.png` (dropzone kembali terlihat),
+`mobile-editor-fix.png` (toolbar editor tampil sebelum kanvas).
+
 ## Catatan
 
-- Penanda versi aset dinaikkan ke `20261123f` (`--css-build` +
-  `window.PDF_BUILD`).
+- Penanda versi aset dinaikkan ke `20261123g` (`--css-build` +
+  `window.PDF_BUILD`) setelah perbaikan bug mobile & baris pintasan.
 - Verifikasi produksi visual tetap menjadi syarat penutupan; hasil lokal
   di atas belum menggantikan pemeriksaan produksi.
+- `tools/verify-produksi.mjs` dan `tools/mkfixtures.mjs` sengaja ikut ke
+  repo supaya audit yang sama bisa dijalankan GitHub Actions terhadap
+  `https://putra1996.github.io/PDF/`. Workflow-nya ada di
+  `.github/workflows/verify-produksi.yml` (dipasang manual: token yang
+  dipakai sandbox tidak punya scope `workflows`).

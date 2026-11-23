@@ -2777,6 +2777,11 @@
      ============================================================ */
   initTheme();
 
+  /* Render pertama: baris pintasan "Paling sering dipakai" harus
+     langsung terlihat di beranda, bukan tersembunyi sampai pengguna
+     berpindah tab. */
+  render();
+
   /* Penjaga cache di index.html mungkin sudah memuat ulang style.css
      yang basi (--css-build tidak cocok). Beri tahu pengguna supaya
      tidak mengira tampilan masih salah. */
