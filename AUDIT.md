@@ -36,7 +36,7 @@ persis seperti susunan screenshot.
 |---|---|---|---|
 | Compress PDF | **existing** | Tab `#compressView` + `compressor.js` (5 tingkat, estimasi ukuran, anti-membengkak). Launcher: tautan `link:"compress"`. | `regress.mjs` → "compress: ukuran lebih kecil 29241 → 22823", "40 halaman tetap" |
 | Repair PDF | **new** | `tool-pdf.js:448` `repair` — bangun ulang struktur, buang data liar, opsi fallback raster & bersihkan metadata | `tools2.mjs` → "repair PDF menghasilkan PDF valid" |
-| OCR PDF | **new** | `tool-smart.js:747` `ocr` — lapisan teks di atas halaman hasil render (`TextDetector` bawaan browser) | `tools2.mjs` → "OCR PDF gagal dengan pesan jelas bila mesin OCR tidak ada" (degradasi aman) |
+| OCR PDF | **new** | `tool-smart.js` `ocr` — mesin Tesseract **offline** (`vendor/tesseract`), dokumen asli disalamat di tempat, tiga mode hasil (tak terlihat / dokumen bersih / teks terlihat di atas gambar), halaman berteks dilewati, mesin OCR paralel, progres nyata | `tools/audit-ocr.mjs` → **44 pemeriksaan lulus, 0 gagal** (duplikasi, koordinat rotasi/crop, lebar kata, anotasi, bookmark & field formulir, 24 halaman 18,6 detik) — rinci di `docs/audit-ocr-2026-11-23.md` |
 
 ### CONVERT TO PDF (5)
 
@@ -396,6 +396,35 @@ Bukti visual ada di `docs/audit-2026-11-23/`:
 | `sesudah-mobile-watermark.png` | **Sesudah:** dropzone kembali terlihat, panel pilihan mengalir di bawahnya |
 | `sebelum-mobile-editor.png` | **Sebelum:** toolbar editor tertutup panel pilihan di 360 px |
 | `sesudah-mobile-editor.png` | **Sesudah:** toolbar editor tampil sebelum kanvas, lalu opsi, lalu inspektur |
+
+## Audit mendalam fitur OCR (2026-11-23)
+
+Audit khusus alat **OCR PDF** (`tool-smart.js`) dipicu laporan hasil OCR menumpuk
+di atas teks asli pada sertifikat digital. Rincian lengkap ada di
+[`docs/audit-ocr-2026-11-23.md`](docs/audit-ocr-2026-11-23.md).
+
+### Temuan utama
+
+| # | Temuan | Perbaikan |
+|---|---|---|
+| 1 | Teks OCR menumpuk di atas teks asli pada halaman digital | Halaman berteks **dilewati**; opsi "paksa" membangun ulang halaman (gambar + teks OCR) tanpa duplikasi |
+| 2 | Dokumen dibangun ulang dari JPEG → vektor, formulir, anotasi, bookmark, metadata hilang | PDF asli dimodifikasi **di tempat**; hanya isi halaman yang diganti yang dibuang (objek gambarnya dihapus agar berkas tidak membengkak) |
+| 3 | `maxWidth: bw * 1.6` → teks melebar, spasi palsu saat ekstraksi | Ukuran huruf dihitung ulang dari lebar & tinggi kotak; `maxWidth` dikunci `bw * 1.02` |
+| 4 | Koordinat ditulis dengan asumsi halaman tegak | Posisi **dan sudut baseline** diambil dari viewport pdf.js → rotasi `/Rotate` & CropBox tertangani |
+| 5 | `loadDoc()` per halaman (O(n²)) | Dokumen dibaca sekali per berkas |
+| 6 | Worker Tesseract bisa tetap hidup di memory | Semua worker dimatikan di `finally` |
+| 7 | Progres selalu 0% | Persentase nyata: pemeriksaan → pengenalan → penulisan |
+| 8 | Fallback `TextDetector` bisa melempar | Dibungkus `try/catch`; halaman asli dipertahankan bila kosong |
+
+### Hasil suite
+
+| Harness | Pemeriksaan | Gagal |
+|---|---|---|
+| `tools/audit-ocr.mjs` (audit khusus OCR) | 44 | 0 |
+| `tools/verify-produksi.mjs` (termasuk 6 regresi OCR baru) | 69 | 0 |
+| Uji beban 24 halaman | 18,6 detik (sebelumnya timeout > 120 detik) | — |
+
+Bukti visual ada di `docs/audit-ocr-2026-11-23/`.
 
 ## Catatan
 
