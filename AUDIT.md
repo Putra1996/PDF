@@ -314,3 +314,52 @@ dimensi baru dan menemukan tiga bug nyata.
 - **Protect PDF** ditulis dengan `useObjectStreams:false` agar tabel xref
   klasik tetap terbaca reader lama, dan `/ID` ditulis sebagai array langsung
   di trailer (bukan objek tak langsung) supaya tidak ada objek yatim.
+
+---
+
+# Audit Tata Letak Menu & UI (2026-11-23)
+
+Rerapian antarmuka setelah audit visual menemukan 9 masalah tata letak.
+Semua pemeriksaan dijalankan lokal dengan Playwright/Chromium
+(`.devtest/`, tidak ikut ke repo).
+
+## Masalah yang ditemukan & perbaikannya
+
+| # | Masalah audit visual | Perbaikan | Berkas |
+|---|---|---|---|
+| 1 | Tab awal hilang saat tab otomatis ter-scroll (412 px → `scrollLeft=98`, tab pertama `x=-79`; 360 px → `x=-131`) | `syncTabStrip()` menghitung offset relatif terhadap strip (`offsetLeft - offsetParent.offsetLeft`); tab aktif selalu dijaga terlihat di 320/360/412/600/1280 px | `app.js` |
+| 2 | Label tab terlalu panjang di mobile | Label pendek `Pisah / Gabung / Kompres / Alat` (`.tab-txt-short`), label penuh di desktop | `index.html`, `style.css` |
+| 3 | Workspace alat membuang ruang kosong | Sidebar pilihan sticky + pratinjau halaman pertama PDF (pdf.js) di kolom utama | `style.css`, `tool-ui.js` |
+| 4 | Editor memakai tiga kolom sempit (panggung 490 px) | Panel inspektor editor pindah ke rail kanan (`#toolSideExtra`) → panggung 804 px, dua kolom | `index.html`, `tool-editor.js`, `style.css` |
+| 5 | Toolbar editor terlalu padat (9 baris di 360 px) | Toolbar dikelompokkan (`.ed-group`), tombol panjang dilipat jadi ikon, indikator halaman ringkas → 3 baris | `tool-editor.js`, `style.css` |
+| 6 | Kartu alat tidak seragam & ikon berulang | `min-height` seragam, deskripsi 2 baris, ikon unik (`removePage`, `extractPage`, `pdfToImage`, `pdfToWord`, `pdfToXls`, `pdfToPpt`) | `style.css`, `tool-ui.js`, `tool-convert.js` |
+| 7 | Panel kompres terlalu panjang + status "Menghitung perkiraan…" macet | Preset jadi grid `auto-fit`, deskripsi ringkas (teks penuh di `title`), dan `compressEstAbortLoading()` mengubah status `loading` yang menggantung menjadi `error` | `index.html`, `style.css`, `app.js` |
+| 8 | Launcher tidak punya pencarian | Kolom pencarian dengan filter nama/deskripsi + state "tidak ada hasil" | `index.html`, `tool-ui.js` |
+| 9 | Alur yang sama muncul di tab utama & daftar alat | Penanda `Tab Gabung / Tab Pemisah / Tab Kompres` pada kartu launcher; shortcut "Paling sering dipakai" di beranda | `tool-ui.js`, `style.css` |
+
+## Bug nyata yang ditemukan saat pengujian
+
+- **Filter launcher melempar error** — kartu bertipe *link* tidak punya
+  `dataset.tool`, sehingga `card.dataset.tool.includes(q)` melempar
+  `Cannot read properties of undefined`. Diperbaiki dengan memakai
+  `dataset.tool || dataset.toolLink`.
+- **Tombol "Proses" bisa terpotong** di rail pilihan yang panjang.
+  Tombol aksi utama kini `position:sticky` di dalam rail.
+- **Field tanpa label aksesibel** — 5 input berkas/rentang tidak punya
+  nama aksesibel. Ditambahkan `aria-label`.
+
+## Hasil suite
+
+| Suite | Pemeriksaan | Gagal | Cakupan |
+|---|---|---|---|
+| `audit-ui.mjs` | 57 | 0 | hierarki tab, strip responsif 320–1280 px, pencarian & state kosong, ikon unik, kartu seragam, pintasan beranda, panel kompres, editor 2 kolom, menu editor + Escape, toolbar mobile, navigasi keyboard, dark mode, tombol aksi terjangkau |
+| `audit-fungsi.mjs` | 22 | 0 | split, merge, kompres, 4 alat lain + pratinjau, pemulihan cache, kebenaran navigasi |
+| `audit-alat.mjs` | 122 | 0 | seluruh 28 alat registry, 6 mode pemisahan, gabung (termasuk balik urutan), 5 preset kompres, editor, tema terang/gelap, a11y tombol & field |
+| **Total** | **201** | **0** | |
+
+## Catatan
+
+- Penanda versi aset dinaikkan ke `20261123f` (`--css-build` +
+  `window.PDF_BUILD`).
+- Verifikasi produksi visual tetap menjadi syarat penutupan; hasil lokal
+  di atas belum menggantikan pemeriksaan produksi.
