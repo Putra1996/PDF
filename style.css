@@ -12,9 +12,13 @@
   --line-strong:#d3d8e6;
   --ink:#141925;
   --ink-2:#4a5368;
-  --ink-3:#7b849b;
+  --ink-3:#656e83;
+  --ink-disabled:#5f687d;
+  --ink-sep:#656e83;
   --brand:#3b5bfd;
   --brand-dark:#2c46d6;
+  --brand-lift:#4764f8;
+  --on-brand:#ffffff;   /* teks di atas isian brand (latar terang) */
   --brand-soft:#eaeefe;
   --brand-line:#c8d3fe;
   --green:#0f9d75;
@@ -29,9 +33,12 @@
   --red-soft:#fdf3f1;
   --red-line:#f0c4bc;
   --red-ink:#b8392a;
+  --red-text:#a32e22;   /* teks bahaya di atas --danger-soft */
+  --on-red:#ffffff;      /* teks di atas isian merah */
   --danger-soft:#fdf3f1;
   --danger-line:#f4d5cf;
-  --paper:#ffffff;
+  --paper:#ffffff;        /* kertas PDF sungguhan (pratinjau halaman) */
+  --panel:#ffffff;        /* permukaan panel di sekitar kertas */
   --thumb-ph-1:#f1f3f8;
   --thumb-ph-2:#e8ecf5;
   --toast-bg:#141925;
@@ -54,9 +61,13 @@
   --line-strong:#38415a;
   --ink:#e8ebf5;
   --ink-2:#a9b2c6;
-  --ink-3:#7e879e;
+  --ink-3:#949db4;
+  --ink-disabled:#8b94ab;
+  --ink-sep:#8b94ab;
   --brand:#6d86ff;
   --brand-dark:#8ea2ff;
+  --brand-lift:#7d94ff;
+  --on-brand:#0d1017;   /* brand gelap = biru terang, teks harus gelap */
   --brand-soft:#1c2542;
   --brand-line:#33406e;
   --green:#2ebd8c;
@@ -71,9 +82,12 @@
   --red-soft:#2b1714;
   --red-line:#4d2721;
   --red-ink:#ff9c8b;
+  --red-text:#ff9c8b;
+  --on-red:#0d1017;
   --danger-soft:#2b1714;
   --danger-line:#4d2721;
-  --paper:#ffffff;
+  --paper:#ffffff;        /* kertas PDF tetap putih agar terlihat apa adanya */
+  --panel:#161b26;        /* permukaan panggung editor mengikuti tema */
   --thumb-ph-1:#1c2230;
   --thumb-ph-2:#141a26;
   --toast-bg:#1d2433;
@@ -88,6 +102,11 @@
 *{box-sizing:border-box}
 [hidden]{display:none !important}
 html,body{margin:0;padding:0}
+/* Peramban ikut menata kontrol native (checkbox, radio, scrollbar,
+   pemilih tanggal) sesuai tema — tanpa ini kontrol bawaan tetap
+   terang dan "/tombol centang" jadi tak terlihat di mode gelap. */
+:root{color-scheme:light}
+[data-theme="dark"]{color-scheme:dark}
 body{
   background:
     radial-gradient(1200px 420px at 50% -220px, var(--bg-glow) 0%, rgba(0,0,0,0) 70%),
@@ -108,7 +127,7 @@ code{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;
 .small{font-size:13px}
 .tiny{font-size:11.5px}
 .center{text-align:center}
-.dot{opacity:.4}
+.dot{color:var(--ink-sep);opacity:1}
 
 /* ---------- topbar ---------- */
 .topbar{
@@ -219,16 +238,27 @@ code{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;
 .btn svg{width:17px;height:17px}
 .btn:hover{background:var(--surface-2)}
 .btn:active{transform:translateY(1px)}
-.btn:disabled{opacity:.55;cursor:not-allowed;transform:none}
+.btn:disabled{
+  /* Jangan pakai opacity di sini: opacity ikut meredupkan TEKS sehingga
+     kontrasnya jatuh ke ~3.3:1 (gagal WCAG AA). Pakai warna eksplisit. */
+  color:var(--ink-disabled);border-color:var(--line);
+  background:var(--surface-2);cursor:not-allowed;transform:none;
+  box-shadow:none;
+}
+.btn-primary:disabled{
+  background:var(--surface-2);color:var(--ink-disabled);
+  border-color:var(--line);box-shadow:none;
+}
+.btn-primary:disabled:hover{background:var(--surface-2);box-shadow:none}
 .btn:focus-visible{outline:none;box-shadow:var(--focus-ring);border-color:var(--brand)}
 .btn-primary{
-  background:linear-gradient(180deg,#4a68ff,var(--brand));color:#fff;border-color:transparent;
+  background:linear-gradient(180deg,var(--brand-lift),var(--brand));color:var(--on-brand);border-color:transparent;
   box-shadow:0 4px 14px rgba(59,91,253,.28);
 }
-.btn-primary:hover{background:linear-gradient(180deg,#3f5cf5,var(--brand-dark));box-shadow:0 6px 18px rgba(59,91,253,.34)}
+.btn-primary:hover{background:linear-gradient(180deg,var(--brand),var(--brand-dark));box-shadow:0 6px 18px rgba(59,91,253,.34)}
 .btn-ghost{background:var(--surface);border-color:var(--line-strong);color:var(--ink-2)}
 .btn-ghost:hover{background:var(--surface-2);color:var(--ink)}
-.btn-ghost.danger:hover{color:var(--red);border-color:var(--red-line);background:var(--danger-soft)}
+.btn-ghost.danger:hover{color:var(--red-text);border-color:var(--red-line);background:var(--danger-soft)}
 .btn-sm{font-size:13px;padding:8px 12px}
 .btn-tiny{
   font-size:12px;padding:5px 10px;border-radius:8px;font-weight:560;
@@ -286,7 +316,7 @@ code{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;
   display:grid;place-items:center;cursor:pointer;transition:background .15s,color .15s;
 }
 .iconbtn:hover{background:var(--surface-2);color:var(--ink)}
-.iconbtn.danger:hover{background:var(--danger-soft);color:var(--red)}
+.iconbtn.danger:hover{background:var(--danger-soft);color:var(--red-text)}
 .iconbtn svg{width:15px;height:15px}
 .fb-pages{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:10px;padding:14px}
 
@@ -313,25 +343,25 @@ code{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;
 .tcheck{
   position:absolute;right:5px;top:5px;z-index:2;
   width:19px;height:19px;border-radius:50%;
-  border:1.6px solid var(--line-strong);background:rgba(255,255,255,.92);
+  border:1.6px solid var(--line-strong);background:var(--surface-2);
   display:grid;place-items:center;transition:background .14s,border-color .14s;
 }
-.tcheck svg{width:11px;height:11px;color:#fff;opacity:0;transition:opacity .12s}
+.tcheck svg{width:11px;height:11px;color:var(--on-brand);opacity:0;transition:opacity .12s}
 .thumb.sel .tcheck{background:var(--brand);border-color:var(--brand)}
-.thumb.sel .tcheck svg{opacity:1}
+.thumb.sel .tcheck svg{color:var(--on-brand);opacity:1}
 
 /* tombol X di pojok thumbnail — hanya di mode "Hapus halaman" */
 .tclose{
   position:absolute;right:5px;top:5px;z-index:4;
   width:21px;height:21px;padding:0;border-radius:50%;
   display:none;align-items:center;justify-content:center;
-  border:1.6px solid var(--line-strong);background:rgba(255,255,255,.95);
+  border:1.6px solid var(--line-strong);background:var(--surface-2);
   color:var(--ink-2);cursor:pointer;
   box-shadow:0 1px 4px rgba(15,23,42,.22);
   transition:background .14s,border-color .14s,color .14s,transform .14s;
 }
 .tclose svg{width:12px;height:12px}
-.tclose:hover{background:#fee2e2;border-color:#ef4444;color:#b91c1c;transform:scale(1.08)}
+.tclose:hover{background:var(--danger-soft);border-color:var(--red-line);color:var(--red-text);transform:scale(1.08)}
 .tclose:focus-visible{outline:2.5px solid #ef4444;outline-offset:2px}
 .files[data-mode="remove"] .tclose{display:flex}
 .files[data-mode="remove"] .tcheck{display:none}
@@ -339,7 +369,7 @@ code{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;
 .thumb.todelete::after{
   content:"";position:absolute;inset:0;background:rgba(239,68,68,.14);pointer-events:none;
 }
-.thumb.todelete .tclose{background:#ef4444;border-color:#ef4444;color:#fff}
+.thumb.todelete .tclose{background:var(--red);border-color:var(--red);color:var(--on-red)}
 
 /* ---------- sidebar cards ---------- */
 .col-side{display:flex;flex-direction:column;gap:14px;position:sticky;top:100px}
@@ -451,7 +481,7 @@ code{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;
 .tab:hover{background:var(--surface-2);color:var(--ink)}
 .tab:focus-visible{outline:none;box-shadow:var(--focus-ring)}
 .tab.active{
-  background:linear-gradient(180deg,#4a68ff,var(--brand));color:#fff;
+  background:linear-gradient(180deg,var(--brand-lift),var(--brand));color:var(--on-brand);
   box-shadow:0 3px 10px rgba(59,91,253,.28);
 }
 .merge-nav{display:flex;align-items:center;gap:12px;margin:-6px 0 14px;flex-wrap:wrap}
@@ -622,7 +652,8 @@ code{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;
 .slider-row span{display:flex;justify-content:space-between;gap:8px}
 .slider-row b{color:var(--ink);font-weight:650}
 .slider-row input[type=range]{width:100%;accent-color:var(--brand);height:18px}
-.slider-row.disabled{opacity:.45}
+.slider-row.disabled{color:var(--ink-disabled)}
+.slider-row.disabled b{color:var(--ink-disabled)}
 .slider-row select{
   border:1px solid var(--line-strong);border-radius:8px;padding:7px 9px;font-size:13px;
   font-family:inherit;color:var(--ink);background:var(--surface);width:100%;
@@ -645,7 +676,7 @@ code{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;
 }
 .crow-badge.good{background:var(--green-soft);border-color:var(--green-line);color:var(--green-ink)}
 .crow-badge.bad{background:var(--red-soft);border-color:var(--danger-line);color:var(--red-ink)}
-.mrow.compressed .mmeta{opacity:.75}
+.mrow.compressed .mmeta .msub{color:var(--ink-disabled)}
 
 @media (max-width:640px){
   .tabs{
@@ -753,7 +784,7 @@ code{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;
   flex:0 0 auto;width:26px;height:26px;border-radius:7px;border:1px solid var(--line);
   background:var(--surface-2);color:var(--ink-2);cursor:pointer;font-size:15px;line-height:1;
 }
-.tf-remove:hover{background:var(--danger-soft);color:var(--red);border-color:var(--danger-line)}
+.tf-remove:hover{background:var(--danger-soft);color:var(--red-text);border-color:var(--danger-line)}
 
 /* ---------- opsi ---------- */
 .tool-field{margin-bottom:12px}
@@ -781,7 +812,7 @@ code{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;
 .tool-check input{width:17px;height:17px;accent-color:var(--brand);flex:0 0 auto;margin-top:1px}
 .tool-warn{
   margin:8px 0;padding:10px 12px;border-radius:9px;font-size:13px;
-  background:var(--danger-soft);color:var(--red);border:1px solid var(--danger-line);
+  background:var(--danger-soft);color:var(--red-text);border:1px solid var(--danger-line);
 }
 
 /* ---------- susun pdf ---------- */
@@ -795,7 +826,8 @@ code{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;
   position:relative;border:1px solid var(--line);border-radius:10px;overflow:hidden;
   background:var(--surface-2);padding:6px;
 }
-.org-cell.deleted{opacity:.35;filter:grayscale(1)}
+.org-cell.deleted{filter:grayscale(1)}
+.org-cell.deleted .oname{color:var(--ink-disabled)}
 .org-cell img{width:100%;display:block;border-radius:6px;background:#fff}
 .org-num{
   position:absolute;top:10px;left:10px;background:rgba(15,23,42,.75);color:#fff;
@@ -898,13 +930,13 @@ code{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;
   transition:background .14s,border-color .14s,color .14s;
 }
 .ed-mode:hover{border-color:var(--brand-line);color:var(--brand)}
-.ed-mode.on{background:var(--brand);border-color:var(--brand);color:#fff}
+.ed-mode.on{background:var(--brand);border-color:var(--brand);color:var(--on-brand)}
 
 .ed-main{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:14px;align-items:start}
 @media (max-width:900px){.ed-main{grid-template-columns:minmax(0,1fr)}}
 
 .ed-stage{
-  border:1px solid var(--line);border-radius:14px;background:var(--paper);
+  border:1px solid var(--line);border-radius:14px;background:var(--panel);
   padding:14px;overflow:auto;max-height:74vh;
   box-shadow:inset 0 1px 2px rgba(15,23,42,.04);
 }
@@ -936,16 +968,16 @@ code{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;
 .ed-label{font-size:11.5px;font-weight:600;color:var(--ink-3)}
 .ed-field input[type="text"],.ed-field input[type="number"],.ed-field textarea,.ed-field select{
   width:100%;border:1px solid var(--line);border-radius:9px;padding:7px 9px;
-  font:inherit;font-size:13px;background:var(--paper);color:var(--ink);
+  font:inherit;font-size:13px;background:var(--surface);color:var(--ink);
 }
 .ed-field textarea{resize:vertical;min-height:64px;font-family:inherit}
-.ed-field input[type="color"]{width:100%;height:34px;padding:2px;border:1px solid var(--line);border-radius:9px;background:var(--paper)}
+.ed-field input[type="color"]{width:100%;height:34px;padding:2px;border:1px solid var(--line);border-radius:9px;background:var(--surface)}
 .ed-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .ed-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
 .ed-layers{display:flex;flex-direction:column;gap:4px;max-height:190px;overflow:auto}
 .ed-layer-row{
   display:flex;align-items:center;gap:4px;padding:4px 6px;
-  border:1px solid var(--line);border-radius:8px;background:var(--paper);
+  border:1px solid var(--line);border-radius:8px;background:var(--surface);
 }
 .ed-layer-name{
   flex:1;min-width:0;font-size:12px;color:var(--ink-2);
@@ -956,3 +988,73 @@ code{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;
   display:inline-flex;align-items:center;justify-content:center;
 }
 .ed-layer-row .btn svg{width:13px;height:13px;display:block}
+
+
+/* ============================================================
+   Mode gelap — perapian kontrol native & komponen khusus
+   ------------------------------------------------------------
+   Kontrol bawaan peramban (checkbox, radio, slider, color picker,
+   scrollbar) punya warna tetap terang. Di mode gelap warna itu
+   mencolok dan kadang tidak kontras, jadi diberi warna sendiri.
+   ============================================================ */
+[data-theme="dark"] ::-webkit-scrollbar{width:12px;height:12px}
+[data-theme="dark"] ::-webkit-scrollbar-track{background:var(--surface-2)}
+[data-theme="dark"] ::-webkit-scrollbar-thumb{
+  background:var(--line-strong);border-radius:8px;border:3px solid var(--surface-2);
+}
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover{background:var(--ink-3)}
+
+/* Lencana & penanda kecil */
+[data-theme="dark"] .tag-soft{
+  background:var(--brand-soft);color:var(--brand-dark);border-color:var(--brand-line);
+}
+[data-theme="dark"] .tclose:hover{
+  background:var(--danger-soft);border-color:var(--danger-line);color:var(--red-text);
+}
+[data-theme="dark"] .thumb.todelete .tclose{
+  background:var(--red);border-color:var(--red);color:var(--on-red);
+}
+[data-theme="dark"] .toast.err{background:var(--red-ink);color:#1b0f0c}
+[data-theme="dark"] .toast.ok{background:var(--green-ink);color:#08201a}
+
+/* Kursor & garis bantu editor di atas kertas putih */
+[data-theme="dark"] .ed-handle{border-color:#0f172a}
+[data-theme="dark"] .ed-box{border-color:rgba(125,148,255,.6)}
+[data-theme="dark"] .ed-box:hover{background:rgba(125,148,255,.16)}
+
+/* Select & input: hilangkan tampilan terang bawaan */
+[data-theme="dark"] select,
+[data-theme="dark"] input,
+[data-theme="dark"] textarea{
+  color-scheme:dark;
+}
+[data-theme="dark"] input[type="color"]{
+  border-color:var(--line-strong);
+}
+[data-theme="dark"] .sign-pad,
+[data-theme="dark"] .sign-preview-canvas{
+  /* kertas & pratinjau halaman tetap terang — itu isi dokumen */
+  background:#fff;
+}
+
+/* Kartu alat: garis tipis yang tetap terlihat di latar gelap */
+[data-theme="dark"] .tool-card{
+  border-color:var(--line);
+  background:var(--surface);
+}
+[data-theme="dark"] .tool-card:hover{
+  border-color:var(--brand);
+  box-shadow:0 6px 20px rgba(0,0,0,.45);
+}
+[data-theme="dark"] .card,
+[data-theme="dark"] .tool-side{
+  background:var(--surface);
+  border-color:var(--line);
+}
+
+/* Placeholder di seluruh aplikasi */
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder{
+  color:var(--ink-3);
+  opacity:1;
+}
