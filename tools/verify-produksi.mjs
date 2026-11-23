@@ -431,6 +431,100 @@ async function main() {
     await page.click("#themeBtn");
     await page.waitForTimeout(400);
 
+    /* ============ 10b. Alat OCR (regresi) ============ */
+    {
+      /* PDF "hasil pindai" dibuat langsung di peramban: sample.pdf
+         diraster menjadi gambar tanpa lapisan teks. */
+      const sampleB64 = fs.readFileSync(SAMPLE).toString("base64");
+      const bytesPindai = await page.evaluate(async (b64) => {
+        const binSrc = atob(b64);
+        const src = new Uint8Array(binSrc.length);
+        for (let i = 0; i < binSrc.length; i++) src[i] = binSrc.charCodeAt(i);
+        const doc = await pdfjsLib.getDocument({ data: src }).promise;
+        const p = await doc.getPage(1);
+        const vp = p.getViewport({ scale: 2 });
+        const c = document.createElement("canvas");
+        c.width = Math.round(vp.width);
+        c.height = Math.round(vp.height);
+        await p.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
+        const jpg = c.toDataURL("image/jpeg", 0.9);
+        const bin = atob(jpg.split(",")[1]);
+        const u8 = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+        const out = await PDFLib.PDFDocument.create();
+        const img = await out.embedJpg(u8);
+        const pg = out.addPage([595, 842]);
+        pg.drawImage(img, { x: 0, y: 0, width: 595, height: 842 });
+        const res = await out.save();
+        return Array.from(new Uint8Array(res));
+      }, sampleB64);
+      const filePindai = path.join(SHOT_DIR, "ocr-pindai.pdf");
+      fs.mkdirSync(SHOT_DIR, { recursive: true });
+      fs.writeFileSync(filePindai, Buffer.from(bytesPindai));
+
+      await page.click("#tab-tools");
+      await page.waitForTimeout(400);
+      await page.evaluate(() => {
+        const btn = document.querySelector('#toolCategories .tool-card[data-tool="ocr"]')
+          || [...document.querySelectorAll("#toolCategories .tool-card")].find((n) => n.textContent.includes("OCR PDF"));
+        btn?.click();
+      });
+      await page.waitForTimeout(700);
+      await page.evaluate(() => {
+        for (const [id, val] of Object.entries({ mode: "searchable", existing: "skip", workers: 1 })) {
+          const el = document.getElementById("f_" + id);
+          if (!el) continue;
+          el.value = String(val);
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      });
+      await page.setInputFiles("#toolInput", filePindai);
+      await page.waitForTimeout(600);
+      await page.click("#toolRunBtn");
+      let hrefOcr = null;
+      for (let i = 0; i < 90; i++) {
+        await page.waitForTimeout(1000);
+        hrefOcr = await page.evaluate(() => {
+          const a = document.querySelector("#toolResults a");
+          return a ? a.href : null;
+        });
+        if (hrefOcr) break;
+      }
+      check("OCR menghasilkan berkas", !!hrefOcr, hrefOcr ? "selesai" : "timeout");
+      if (hrefOcr) {
+        const info = await page.evaluate(async (u) => {
+          const r = await fetch(u);
+          const buf = new Uint8Array(await r.arrayBuffer());
+          const ukuran = buf.length; /* pdf.js bisa melepas buffer -> catat dulu */
+          const doc = await pdfjsLib.getDocument({ data: buf }).promise;
+          const p = await doc.getPage(1);
+          const tc = await p.getTextContent();
+          const items = tc.items.filter((i) => i.str && i.str.trim());
+          const vp = p.getViewport({ scale: 1 });
+          return {
+            ukuran,
+            halaman: doc.numPages,
+            item: items.length,
+            lebarRata: items.length
+              ? items.reduce((s, i) => s + (i.width || 0), 0) / items.length
+              : 0,
+            teks: items.map((i) => i.str).join(" ").replace(/\s+/g, " ").trim().slice(0, 60),
+            w: Math.round(vp.width),
+            h: Math.round(vp.height),
+          };
+        }, hrefOcr);
+        check("OCR: lapisan teks ditambahkan", info.item >= 5, `item=${info.item}`);
+        check("OCR: teks terbaca", /Uji|halaman|fixture/i.test(info.teks), info.teks);
+        check("OCR: lebar kata wajar", info.lebarRata > 5, `rata=${info.lebarRata.toFixed(1)}pt`);
+        check("OCR: halaman tetap 1 & ukuran halaman dipertahankan",
+          info.halaman === 1 && info.w === 595 && info.h === 842, `${info.halaman} hal ${info.w}x${info.h}`);
+        check("OCR: berkas tidak membengkak tak wajar", info.ukuran > 5000, `${info.ukuran} byte`);
+      }
+      await page.click("#toolBackBtn").catch(() => {});
+      await page.waitForTimeout(400);
+    }
+
     /* ============ 11. Aksesibilitas dasar ============ */
     const a11y = await page.evaluate(() => {
       const tanpaNama = [...document.querySelectorAll("button")]

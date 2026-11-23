@@ -1026,6 +1026,33 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
     throw new Error("Mesin OCR tidak bisa dijalankan: " + ((lastErr && lastErr.message) || lastErr));
   }
 
+  /* ============================================================
+     OCR — mesin Tesseract offline (vendor/tesseract).
+
+     Prinsip:
+     - Dokumen asli DISALAMAT di tempat (pdf-lib). Vektor, metadata,
+       field formulir, anotasi, dan bookmark tetap utuh.
+     - Halaman yang sudah punya lapisan teks TIDAK di-OCR ulang
+       (kecuali dipaksa) supaya hasilnya tidak lebih buruk.
+     - Koordinat kata dihitung lewat viewport pdf.js, jadi rotasi
+       halaman (/Rotate) dan CropBox ikut tertangani.
+     - Lebar teks disesuaikan dengan kotak kata aslinya supaya
+       tidak ada spasi palsu saat teks diekstraksi.
+     ============================================================ */
+
+  /* Buang karakter yang tidak tersedia di font standar (Helvetica)
+     supaya drawText tidak gagal dan kata tetap bisa dibaca. */
+  function bersihkanTeks(t) {
+    return String(t == null ? "" : t)
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/[\u201C\u201D]/g, '"')
+      .replace(/[\u2013\u2014]/g, "-")
+      .replace(/\u2026/g, "...")
+      .replace(/[^\x20-\x7E\xA1-\xFF]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
   /* Kumpulkan kata + kotaknya dari hasil pengenalan Tesseract. */
   function kumpulkanKata(data) {
     const out = [];
@@ -1037,7 +1064,10 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
             const bb = w.bbox;
             const text = (w.text || "").trim();
             if (!text || !bb) continue;
-            out.push({ text, x0: bb.x0, y0: bb.y0, x1: bb.x1, y1: bb.y1 });
+            out.push({
+              text,
+              x0: bb.x0, y0: bb.y0, x1: bb.x1, y1: bb.y1,
+            });
           }
         }
       }
@@ -1046,17 +1076,239 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
       /* tanpa blok: pakai baris kasar supaya teks tetap terbaca */
       const lines = String(data.text).split(/\r?\n/).map((t) => t.trim()).filter(Boolean);
       lines.forEach((text, i) => {
-        out.push({ text, x0: 0, y0: i * 30, x1: 200, y1: i * 30 + 24, kasar: true });
+        out.push({
+          text, x0: 0, y0: i * 30, x1: 200, y1: i * 30 + 24, kasar: true,
+        });
       });
     }
     return out;
+  }
+
+  /* Abu-abu + rentang kontras (percentile 2%-98%). Pindai berkontras
+     rendah jauh lebih sulit dibaca mesin OCR; penyesuaian ini meningkatkan
+     ketepatan tanpa merusak halaman (hanya salinan untuk pengenalan,
+     bukan berkas aslinya). */
+  function perbaikiKontras(src) {
+    const c = document.createElement("canvas");
+    c.width = src.width;
+    c.height = src.height;
+    const ctx = c.getContext("2d", { alpha: false });
+    ctx.drawImage(src, 0, 0);
+    let data;
+    try {
+      data = ctx.getImageData(0, 0, c.width, c.height);
+    } catch (_) {
+      return src; /* data kanvas tidak terbaca -> pakai aslinya */
+    }
+    const d = data.data;
+    const hist = new Uint32Array(256);
+    const total = d.length / 4;
+    for (let i = 0; i < d.length; i += 4) {
+      const l = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000 | 0;
+      d[i] = d[i + 1] = d[i + 2] = l;
+      hist[l]++;
+    }
+    const batasBawah = total * 0.02;
+    const batasAtas = total * 0.98;
+    let lo = 0, hi = 255, n = 0;
+    for (let v = 0; v < 256; v++) { n += hist[v]; if (n >= batasBawah) { lo = v; break; } }
+    n = 0;
+    for (let v = 255; v >= 0; v--) { n += hist[v]; if (n >= total - batasAtas) { hi = v; break; } }
+    if (hi - lo < 24) return c; /* kontras sudah baik */
+    const rentang = hi - lo;
+    for (let i = 0; i < d.length; i += 4) {
+      let v = (d[i] - lo) * 255 / rentang;
+      v = v < 0 ? 0 : v > 255 ? 255 : v;
+      d[i] = d[i + 1] = d[i + 2] = v;
+    }
+    ctx.putImageData(data, 0, 0);
+    return c;
+  }
+
+  /* Kotak kata (px kanvas) -> posisi PDF user space (absolut).
+     Memakai viewport pdf.js supaya rotasi halaman (/Rotate) dan
+     perbedaan CropBox/MediaBox ikut tertangani — tanpa ini lapisan
+     teks akan meleset pada halaman pindai yang berotasi/tercrop.
+     Hasilnya membawa arah baseline (sudut) supaya teks bisa ditulis
+     dengan kemiringan yang sama seperti isi halaman aslinya. */
+  function kotakKePdf(viewport, w) {
+    const kiriBawah = viewport.convertToPdfPoint(w.x0, w.y1);
+    const kananBawah = viewport.convertToPdfPoint(w.x1, w.y1);
+    const kiriAtas = viewport.convertToPdfPoint(w.x0, w.y0);
+    const dx = kananBawah[0] - kiriBawah[0];
+    const dy = kananBawah[1] - kiriBawah[1];
+    const ux = kiriAtas[0] - kiriBawah[0];
+    const uy = kiriAtas[1] - kiriBawah[1];
+    return {
+      x: kiriBawah[0],
+      y: kiriBawah[1],
+      lebar: Math.hypot(dx, dy),
+      tinggi: Math.hypot(ux, uy),
+      sudut: (Math.atan2(dy, dx) * 180) / Math.PI,
+    };
+  }
+
+  /* Kotak kata (px kanvas) -> posisi ruang tampilan (titik PDF,
+     titik-y-bawah, ukuran sama dengan yang tampil di layar). Dipakai
+     untuk halaman yang dibangun ulang (tanpa rotasi). */
+  function kotakKeTampilan(w, scale, tinggiTampil) {
+    const x0 = Math.min(w.x0, w.x1) / scale;
+    const x1 = Math.max(w.x0, w.x1) / scale;
+    const atas = Math.min(w.y0, w.y1) / scale;
+    const bawah = Math.max(w.y0, w.y1) / scale;
+    return {
+      x: x0,
+      y: tinggiTampil - bawah,
+      lebar: x1 - x0,
+      tinggi: bawah - atas,
+      sudut: 0,
+    };
+  }
+
+  /* Tulis satu kata di dalam kotaknya.
+     Ukuran huruf dihitung ulang agar teks mengisi kotak: pdf-lib
+     hanya bisa menyusutkan teks (maxWidth), tidak memperbesar —
+     karena itu lebarnya dibatasi agar tidak menabrak kata sebelah
+     dan tidak menyisakan celah yang berubah jadi spasi palsu. */
+  async function tulisKata(page, teks, box, opsi) {
+    const teksAman = bersihkanTeks(teks);
+    if (!teksAman) return true;
+    const bw = Math.max(0.6, box.lebar);
+    const bh = Math.max(0.6, box.tinggi);
+    const font = await fontFor(page.doc, opsi.font || "Helvetica");
+    const satuan = font.widthOfTextAtSize(teksAman, 1) || 1;
+    const ukuranLebar = bw / satuan;      /* tepat selebar kotak */
+    const ukuranTinggi = bh * 0.82;      /* mengikuti tinggi huruf */
+    let size = Math.min(ukuranLebar, ukuranTinggi * 2);
+    if (!isFinite(size) || size <= 0) size = 8;
+    size = Math.max(4, Math.min(size, 96));
+    /* "font" di drawTextSafe adalah NAMA font, bukan objek font. */
+    const ok = await drawTextSafe(page, teksAman, {
+      x: box.x,
+      y: box.y,
+      size,
+      rotate: C.degrees(box.sudut || 0),
+      color: C.rgb(0, 0, 0),
+      opacity: opsi.visible ? 1 : 0,
+      maxWidth: bw * 1.02,
+    });
+    return ok !== false;
+  }
+
+  /* Kosongkan isi halaman (gambar + teks lama) lalu buang objeknya
+     dari berkas supaya ukurannya tidak membengkak. Dipakai saat
+     halaman harus dibangun ulang (mode dokumen bersih / paksa OCR
+     pada halaman berteks). */
+  function kosongkanHalaman(doc, page) {
+    const node = page.node;
+    const hapus = (ref) => { try { doc.context.delete(ref); } catch (_) { /* abaikan */ } };
+    const isi = node.get(PDFName.of("Contents"));
+    if (isi instanceof PDFArray) {
+      for (const r of isi.asArray()) hapus(r);
+    } else if (isi) {
+      hapus(isi);
+    }
+    node.delete(PDFName.of("Contents"));
+    /* cache stream internal pdf-lib harus dibuang juga */
+    page.contentStream = undefined;
+    page.contentStreamRef = undefined;
+    /* buang gambar lama dari resource (dan objeknya) */
+    const res = node.get(PDFName.of("Resources"));
+    if (res) {
+      const dict = doc.context.lookup(res);
+      if (dict && dict.get) {
+        const xobj = dict.get(PDFName.of("XObject"));
+        if (xobj) {
+          const xd = doc.context.lookup(xobj);
+          if (xd && xd.entries) {
+            for (const [, v] of xd.entries()) hapus(v);
+          }
+          dict.set(PDFName.of("XObject"), doc.context.obj({}));
+        }
+      }
+    }
+  }
+
+  /* OCR satu halaman: render -> recognising -> kotak kata.
+     Mengembalikan kotak dalam dua sistem koordinat:
+       abs  : PDF user space (dipakai pada halaman asli yang dipertahankan)
+       tamp : ruang tampilan (dipakai pada halaman yang dibangun ulang) */
+  async function ocrHalaman(o) {
+    const { pdfjs, nomor, worker, dpi, perbaiki, pakaiJpeg, laporkan } = o;
+    const { canvas, viewport } = await renderPage(pdfjs, nomor, dpi / 72);
+    const scale = dpi / 72;
+    const tinggiTampil = viewport.height / scale;
+    const lebarTampil = viewport.width / scale;
+    let sumber = canvas;
+    if (perbaiki) {
+      try { sumber = perbaikiKontras(canvas); } catch (_) { sumber = canvas; }
+    }
+
+    let kata = [];
+    if (worker) {
+      const res = await worker.recognize(sumber, {}, { text: true, blocks: true });
+      kata = kumpulkanKata(res && res.data);
+    } else if ("TextDetector" in window) {
+      try {
+        const detektor = new window.TextDetector();
+        const bitmap = await createImageBitmap(sumber);
+        const blok = await detektor.detect(bitmap);
+        kata = blok.map((b) => ({
+          text: b.rawValue || "",
+          x0: b.boundingBox.x, y0: b.boundingBox.y,
+          x1: b.boundingBox.x + b.boundingBox.width,
+          y1: b.boundingBox.y + b.boundingBox.height,
+        })).filter((w) => w.text);
+      } catch (_) {
+        kata = [];
+      }
+    }
+
+    let jpeg = null;
+    if (pakaiJpeg) {
+      try { jpeg = await canvasToBytes(canvas, "image/jpeg", 0.9); } catch (_) { jpeg = null; }
+    }
+    canvas.width = canvas.height = 0;
+    if (sumber !== canvas) { sumber.width = sumber.height = 0; }
+
+    /* Buang kotak yang jauh lebih besar daripada rata-rata — biasanya
+       garis/rangka gambar yang salah dibaca mesin OCR sebagai huruf
+       raksasa (mis. "ME" dari garis kotak sertifikat). */
+    let dibuang = 0;
+    if (kata.length >= 8) {
+      const tinggi = kata.map((w) => w.y1 - w.y0).sort((a, b) => a - b);
+      const median = tinggi[Math.floor(tinggi.length / 2)] || 0;
+      if (median > 0) {
+        const batas = median * 3;
+        const tetap = kata.filter((w) => (w.y1 - w.y0) <= batas);
+        if (tetap.length >= kata.length * 0.5) {
+          dibuang = kata.length - tetap.length;
+          kata = tetap;
+        }
+      }
+    }
+    const hasil = kata.map((w, i) => {
+      if (w.kasar) {
+        /* tanpa kotak dari mesin OCR: susun berurutan dari atas halaman */
+        const y = tinggiTampil - 24 - i * 14;
+        const kotak = { x: 12, y: y, lebar: Math.min(320, lebarTampil - 24), tinggi: 12, sudut: 0 };
+        return { teks: w.text, abs: kotak, tamp: kotak };
+      }
+      return {
+        teks: w.text,
+        abs: kotakKePdf(viewport, w),
+        tamp: kotakKeTampilan(w, scale, tinggiTampil),
+      };
+    });
+    if (laporkan) laporkan(hasil.length + (dibuang ? ` (${dibuang} artefak dilewati)` : ""));
+    return { kata: hasil, lebar: lebarTampil, tinggi: tinggiTampil, jpeg };
   }
 
   register({
     id: "ocr",
     cat: "optimize",
     name: "OCR PDF",
-    desc: "Tambahkan lapisan teks ke PDF hasil pindai dengan mesin OCR offline (Tesseract).",
+    desc: "Tambahkan lapisan teks ke PDF hasil pindai dengan mesin OCR offline Tesseract (Indonesia/Inggris). Dokumen asli tetap utuh; teks bisa dicari & disalin.",
     icon: "ocr",
     accept: ".pdf,application/pdf",
     multiple: true,
@@ -1064,98 +1316,171 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
       {
         type: "select", id: "lang", label: "Bahasa pengenalan", value: "ind",
         options: [
-          ["ind", "Indonesia + Inggris"],
+          ["ind", "Indonesia (paling cepat)"],
           ["eng", "Inggris"],
-          ["ind+eng", "Indonesia dan Inggris (gabungan)"],
+          ["ind+eng", "Indonesia + Inggris (paling akurat, lebih lambat)"],
         ],
       },
       { type: "number", id: "scale", label: "Resolusi OCR (DPI)", value: 200, min: 100, max: 400 },
       {
         type: "select", id: "mode", label: "Hasil", value: "searchable",
         options: [
-          ["searchable", "Teks tak terlihat (PDF bisa dicari)"],
-          ["visible", "Teks terlihat di atas gambar"],
+          ["searchable", "Teks tak terlihat — PDF bisa dicari & disalin"],
+          ["clean", "Dokumen bersih — latar putih + teks hasil OCR"],
+          ["overlay", "Teks terlihat di atas gambar pindai"],
         ],
       },
+      {
+        type: "select", id: "existing", label: "Halaman yang sudah ada teksnya", value: "skip",
+        options: [
+          ["skip", "Lewati — pertahankan teks aslinya"],
+          ["force", "OCR juga — teks asli diganti hasil OCR"],
+        ],
+      },
+      { type: "check", id: "contrast", label: "Perbaiki kontras hasil pindai (lebih akurat)", value: true },
+      { type: "number", id: "workers", label: "Jumlah mesin OCR (paralel)", value: 2, min: 1, max: 4 },
     ],
     async run(ctx) {
       const dpi = Math.min(400, Math.max(100, Number(ctx.opts.scale) || 200));
       const langs = String(ctx.opts.lang || "ind");
-      const visible = ctx.opts.mode === "visible";
+      const mode = String(ctx.opts.mode || "searchable");
+      const paksa = ctx.opts.existing === "force";
+      const perbaiki = ctx.opts.contrast !== false;
+      const jumlahMesin = Math.min(4, Math.max(1, Number(ctx.opts.workers) || 2));
       const out = [];
-      let worker = null;
+      const workers = [];
       try {
-        worker = await createOcrWorker(langs, (m) => {
-          if (m && m.status && m.status.indexOf("recognizing") === 0) {
-            ctx.progress(null, "Mengenali teks…");
+        try {
+          for (let i = 0; i < jumlahMesin; i++) {
+            workers.push(await createOcrWorker(langs, (m) => {
+              if (m && m.status && m.status.indexOf("recognizing") === 0) {
+                ctx.progress(null, "Mesin OCR sedang mengenali teks…");
+              }
+            }));
           }
-        });
-      } catch (err) {
-        /* mesin offline tidak tersedia -> pakai deteksi bawaan peramban */
-        if (!("TextDetector" in window)) throw err;
-        worker = null;
-      }
-      for (const f of ctx.files) {
-        const pdfjs = await openPdfjs(f.bytes);
-        const dst = await PDFDocument.create();
-        for (let i = 1; i <= pdfjs.numPages; i++) {
-          ctx.progress(null, `OCR halaman ${i}/${pdfjs.numPages}…`);
-          const { canvas, viewport } = await renderPage(pdfjs, i, dpi / 72);
-          const srcPage = (await loadDoc(f.bytes)).getPages()[i - 1];
-          const { width, height } = srcPage.getSize();
-          const p = dst.addPage([width, height]);
-          const jpg = await canvasToBytes(canvas, "image/jpeg", 0.92);
-          const img = await dst.embedJpg(jpg);
-          p.drawImage(img, { x: 0, y: 0, width, height });
-          const k = width / viewport.width;
-
-          let words = [];
-          if (worker) {
-            const res = await worker.recognize(canvas, {}, { text: true, blocks: true });
-            words = kumpulkanKata(res && res.data);
-          } else {
-            const detector = new window.TextDetector();
-            const bitmap = await createImageBitmap(canvas);
-            const blocks = await detector.detect(bitmap);
-            words = blocks.map((b) => ({
-              text: b.rawValue || "",
-              x0: b.boundingBox.x, y0: b.boundingBox.y,
-              x1: b.boundingBox.x + b.boundingBox.width,
-              y1: b.boundingBox.y + b.boundingBox.height,
-            })).filter((w) => w.text);
-          }
-          canvas.width = canvas.height = 0;
-
-          for (const w of words) {
-            if (!w.text) continue;
-            const bw = Math.max(0, (w.x1 - w.x0) * k);
-            const bh = Math.max(0, (w.y1 - w.y0) * k);
-            if (w.kasar) {
-              await drawTextSafe(p, w.text, {
-                x: 10, y: height - 20 - w.y0 * k, size: 11,
-                color: C.rgb(0, 0, 0), opacity: visible ? 1 : 0,
-              });
-              continue;
-            }
-            if (bh <= 0 || bw <= 0) continue;
-            const size = Math.max(4, bh * 0.82);
-            const x = w.x0 * k;
-            const y = height - w.y1 * k + bh * 0.16;
-            await drawTextSafe(p, w.text, {
-              x, y, size,
-              color: C.rgb(0, 0, 0),
-              opacity: visible ? 1 : 0,
-              maxWidth: bw * 1.6,
-            });
-          }
-          await tick();
+        } catch (err) {
+          /* mesin offline tidak tersedia -> pakai deteksi bawaan peramban */
+          if (!("TextDetector" in window)) throw err;
+          workers.length = 0;
         }
-        try { await pdfjs.destroy(); } catch (_) { /* abaikan */ }
-        const bytes = await saveDoc(dst);
-        out.push({ name: C.safeName(C.baseName(f.name)) + "-ocr.pdf", bytes });
+
+        for (const f of ctx.files) {
+          ctx.progress(0, `Menyiapkan ${f.name}…`);
+          /* Dokumen pdf-lib dibaca SEKALI dan dimodifikasi di tempat:
+             vektor, metadata, field formulir, anotasi, dan bookmark
+             tetap utuh. (Versi lama membuat dokumen baru per halaman
+             sehingga semua itu hilang.) */
+          const doc = await loadDoc(f.bytes);
+          const pdfjs = await openPdfjs(f.bytes);
+          const jumlah = pdfjs.numPages;
+
+          /* 1. Petakan halaman: punya teks atau tidak. */
+          const rencana = [];
+          for (let i = 1; i <= jumlah; i++) {
+            const hal = await pdfjs.getPage(i);
+            let adaTeks = false;
+            try {
+              const tc = await hal.getTextContent();
+              let n = 0;
+              for (const it of tc.items) n += (it.str || "").trim().length;
+              adaTeks = n >= 30;
+            } catch (_) { /* abaikan */ }
+            rencana.push({ nomor: i, adaTeks, lewati: adaTeks && !paksa });
+            ctx.progress(Math.round((i / jumlah) * 5), `Memeriksa halaman ${i}/${jumlah}…`);
+            await tick();
+          }
+
+          /* 2. OCR halaman yang perlu, paralel dengan beberapa mesin. */
+          const antre = rencana.filter((r) => !r.lewati);
+          const hasil = new Map();
+          let selesai = 0;
+          const total = antre.length || 1;
+          const jalankan = async (w, daftar) => {
+            for (const r of daftar) {
+              const h = await ocrHalaman({
+                pdfjs, nomor: r.nomor, worker: w, dpi, perbaiki,
+                pakaiJpeg: mode !== "clean" && r.adaTeks,
+                laporkan: (jumlahKata) => {
+                  selesai++;
+                  ctx.progress(5 + Math.round((selesai / total) * 75),
+                    `Mengenali teks halaman ${r.nomor}/${jumlah} — ${jumlahKata} kata`);
+                },
+              });
+              hasil.set(r.nomor, h);
+            }
+          };
+          if (workers.length) {
+            const bagi = Array.from({ length: workers.length }, () => []);
+            antre.forEach((r, i) => bagi[i % workers.length].push(r));
+            await Promise.all(workers.map((w, wi) => jalankan(w, bagi[wi])));
+          } else {
+            await jalankan(null, antre);
+          }
+
+          /* 3. Tulis hasilnya ke halaman yang sesuai. */
+          for (const r of rencana) {
+            if (r.lewati) continue;
+            const h = hasil.get(r.nomor);
+            if (!h || !h.kata.length) continue;
+            const page = doc.getPage(r.nomor - 1);
+
+            if (mode === "searchable" && !r.adaTeks) {
+              /* Halaman pindai: pertahankan gambar aslinya, tambahkan
+                 lapisan teks tak terlihat. Tidak ada duplikasi dan
+                 berkas tetap ramping. */
+              for (const kata of h.kata) {
+                await tulisKata(page, kata.teks, kata.abs, { visible: false });
+              }
+            } else if (mode === "overlay" && !r.adaTeks) {
+              /* Hasil pindai: teks OCR tampil di atas gambarnya. */
+              for (const kata of h.kata) {
+                await tulisKata(page, kata.teks, kata.abs, { visible: true });
+              }
+            } else {
+              /* Halaman dibangun ulang: gambar pindai (jika ada) +
+                 teks OCR. Teks asli dibuang supaya tidak dobel. */
+              kosongkanHalaman(doc, page);
+              page.setMediaBox(0, 0, h.lebar, h.tinggi);
+              page.setCropBox(0, 0, h.lebar, h.tinggi);
+              page.setRotation(C.degrees(0));
+              if (mode !== "clean" && h.jpeg) {
+                try {
+                  const img = await doc.embedJpg(h.jpeg);
+                  page.drawImage(img, { x: 0, y: 0, width: h.lebar, height: h.tinggi });
+                } catch (_) { /* gambar gagal -> tetap teks saja */ }
+              }
+              if (mode === "overlay" && h.jpeg) {
+                /* tutup teks yang tertanam di gambar supaya tidak dobel */
+                for (const kata of h.kata) {
+                  const b = kata.tamp;
+                  page.drawRectangle({
+                    x: b.x - 0.5, y: b.y - b.tinggi * 0.25,
+                    width: b.lebar + 1, height: b.tinggi * 1.3,
+                    color: C.rgb(1, 1, 1),
+                  });
+                }
+              }
+              for (const kata of h.kata) {
+                await tulisKata(page, kata.teks, kata.tamp, { visible: mode !== "searchable" });
+              }
+            }
+            ctx.progress(80 + Math.round((r.nomor / jumlah) * 15), `Menulis halaman ${r.nomor}…`);
+            await tick();
+          }
+
+          try { await pdfjs.destroy(); } catch (_) { /* abaikan */ }
+          const bytes = await saveDoc(doc);
+          out.push({ name: C.safeName(C.baseName(f.name)) + "-ocr.pdf", bytes });
+          ctx.progress(100, `${f.name} selesai.`);
+        }
+        return out;
+      } finally {
+        /* Worker Tesseract harus selalu dimatikan — kalau tidak, mesin
+           WASM (ratusan MB) tetap hidup di memory peramban. */
+        for (const w of workers) {
+          try { await w.terminate(); } catch (_) { /* abaikan */ }
+        }
       }
-      if (worker) { try { await worker.terminate(); } catch (_) { /* abaikan */ } }
-      return out;
     },
   });
 
