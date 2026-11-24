@@ -75,7 +75,7 @@ persis seperti susunan screenshot.
 |---|---|---|---|
 | Unlock PDF | **new** | `tool-smart.js` `unlock` + `tool-decrypt.js` (dekriptor mandiri: Standard Security Handler R2–R6, RC4/AES, object stream + xref stream → tulis ulang tanpa `/Encrypt`) | `exp-decrypt.mjs` (16/16) + `deep-unlock.mjs` (21/21) + `validate_outputs.py` (14/14 pypdf/pikepdf) |
 | Protect PDF | **new** | `tool-smart.js:251` `protect` + `tool-crypto.js` (MD5/RC4/AES-128-CBC + Standard Security Handler ISO 32000-1 §7.6.3: Algorithm 1/2/3/5) | `protect-test.mjs` (17 pemeriksaan, reader independen pypdf) + `crypto-test.mjs` (12 vektor, nilai `/O`/kunci/`/U` identik dengan pypdf 7.1.1) |
-| Sign PDF | **new** | `tool-smart.js:319` `sign` (tanda tangan tulisan tangan, posisi & ukuran, multi halaman) | `tools2.mjs` → "tanda tangan menghasilkan PDF valid", "tanpa gambar ditolak" |
+| Sign PDF | **new** | `tool-smart.js:319` `sign` (tanda tangan tulisan tangan, posisi & ukuran, multi halaman, **sadar-rotasi `/Rotate` + jepit posisi**) | `tools2.mjs` → "tanda tangan menghasilkan PDF valid", "tanpa gambar ditolak"; `tools/audit-sign.mjs` → 28/0 |
 | Redact PDF | **new** | `tool-smart.js:413` `redact` (cari teks → render ulang halaman → teks benar-benar hilang) | `tools.mjs` → "redaksi menghasilkan berkas"; panel menampilkan jumlah hit |
 | Compare PDF | **new** | `tool-smart.js:502` `compare` (laporan HTML: berubah / sama / baru) | `tools.mjs` → "bandingkan PDF menghasilkan laporan" |
 
@@ -443,6 +443,46 @@ Bukti visual ada di `docs/audit-ocr-2026-11-23/`.
 
 Rincian lengkap: `docs/audit-deskew-2026-11-24.md`;
 bukti visual: `docs/audit-deskew-2026-11-24/`.
+
+### Audit "Tanda tangani PDF" — pratinjau terbalik 90 derajat — 24 November 2026
+
+Laporan bug: *"saat memuat dokumen pdf di preview dokumennya terbalik 90
+derajat"* pada alat **Tanda tangani PDF**.
+
+#### Akar masalah
+
+Pratinjau memakai **halaman yang terlihat** (`pdf.js` sudah memperhitungkan
+`/Rotate`), sedangkan PDF akhir digambar di **ruang pengguna** mentah
+(`pdf-lib` tidak tahu soal rotasi). Pada halaman biasa keduanya sama, tetapi
+pada halaman berotasi (umum pada hasil pindai) posisi tanda tangan di PDF
+akhir meleset sampai **245 mm** dan gambarnya ikut berputar.
+
+#### Yang diperbaiki
+
+| Temuan | Perbaikan |
+|---|---|
+| Pratinjau ≠ PDF akhir untuk halaman `/Rotate` 90/180/270° | Penempatan sadar-rotasi (`kotakTerlihat()` + `gambarTanda()`) memakai CropBox∩MediaBox dan memutar image agar tegak |
+| Tidak ada jepit posisi — `x = 400 mm` diterima, tanda tangan keluar kertas | Posisi **dan** ukuran dijepit ke halaman terkecil di antara target; rasio gambar terjaga; kolom X/Y/Lebar dikoreksi |
+| Pratinjau dan PDF akhir memakai perhitungan berbeda | Keduanya memakai sumber ukuran & batas yang sama → pratinjau = hasil |
+
+#### Hasil suite
+
+| Harness | Pemeriksaan | Gagal |
+|---|---|---|
+| `tools/audit-sign.mjs` (audit khusus tanda tangan) | 28 | 0 |
+| `tools/audit-translate.mjs` | 31 | 0 |
+| `tools/audit-pagerange.mjs` | 106 | 0 |
+| `tools/audit-merge-preview.mjs` | 44 | 0 |
+| `tools/audit-deskew.mjs` | 56 | 0 |
+| `tools/audit-ocr.mjs` | 44 | 0 |
+| `tools/audit-preview-perf.mjs` | 39 | 0 |
+| `tools/verify-produksi.mjs` | 73 | 1 — cacat layout toolbar lama (sudah gagal di commit baseline) |
+
+Selisih posisi tanda tangan antara pratinjau dan PDF akhir setelah
+perbaikan: ≤ **2,31 mm** untuk semua rotasi (sebelumnya sampai 245 mm).
+
+Bukti visual ada di `docs/audit-ttd-2026-11-24/`; rincian lengkap di
+`docs/audit-ttd-2026-11-24.md`.
 
 ## Catatan
 

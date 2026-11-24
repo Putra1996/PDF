@@ -1258,8 +1258,45 @@
     let targets = [];
     let targetIdx = 0;
     let renderToken = 0;
+    /* Batas halaman terkecil di antara halaman tujuan (mm) — dipakai
+       untuk menjepit posisi & ukuran tanda tangan supaya tidak pernah
+       keluar dari halaman. Nilainya sama dengan yang dipakai saat
+       membuat PDF akhir (tool-smart.js), jadi pratinjau = hasil. */
+    let batas = { w: 0, h: 0 };
+    let batasKey = "";
 
     const setHint = (t) => { hint.textContent = t || ""; };
+    const bulat = (n) => Math.round(Number(n) * 100) / 100;
+
+    /* Rasio tinggi/lebar tanda tangan (1 = kotak, belum ada gambar). */
+    const rasioTanda = () => (imgW && imgH ? imgH / imgW : 1);
+
+    /* Sesuaikan ukuran kotak tanda tangan supaya muat di halaman
+       terkecil; rasio gambar tetap terjaga. */
+    const muatKotak = (wmm, hmm) => {
+      if (!batas.w || !batas.h) return { w: Math.max(1, Number(wmm) || 0), h: Math.max(0, Number(hmm) || 0) };
+      const r = wmm > 0 ? hmm / wmm : 1;
+      let w = Math.max(1, Math.min(Number(wmm) || 0, batas.w));
+      let h = w * r;
+      if (h > batas.h) { h = batas.h; w = r > 0 ? h / r : w; }
+      return { w: w, h: h };
+    };
+
+    /* Jepit posisi agar seluruh kotak tanda tangan tetap di dalam
+       halaman (batas = halaman terkecil di antara target). */
+    const jepit = (x, y, w, h) => ({
+      x: Math.min(Math.max(0, Number(x) || 0), Math.max(0, batas.w - w)),
+      y: Math.min(Math.max(0, Number(y) || 0), Math.max(0, batas.h - h)),
+    });
+
+    /* Tulis kolom X / Y / Lebar supaya angka, pratinjau, dan PDF akhir
+       selalu sama. */
+    const setField = (id, v) => {
+      const el = document.getElementById("f_" + id);
+      if (!el) return;
+      if (document.activeElement === el) return;
+      el.value = String(v);
+    };
 
     /* Pratinjau digambar ulang saat opsi berubah — diberi jeda supaya
        mengetik angka tidak memicu render berkali-kali. */
@@ -1408,11 +1445,35 @@
       return out;
     }
 
+    /* Ukuran halaman terkecil di antara halaman tujuan (mm). Dipakai
+       sebagai batas supaya tanda tangan tidak keluar dari halaman
+       mana pun. */
+    async function hitungBatas() {
+      const key = pdfBytesKey + "|" + String((state.opts && state.opts.page) || "");
+      if (key === batasKey && batas.w) return batas;
+      const uk = { w: Infinity, h: Infinity };
+      for (const no of targets) {
+        try {
+          const pg = await pdfDoc.getPage(no);
+          const vp = pg.getViewport({ scale: 1 });
+          const wmm = (vp.width / (vp.scale || 1)) * 25.4 / 72;
+          const hmm = (vp.height / (vp.scale || 1)) * 25.4 / 72;
+          if (wmm < uk.w) uk.w = wmm;
+          if (hmm < uk.h) uk.h = hmm;
+        } catch (_) { /* abaikan */ }
+      }
+      if (!isFinite(uk.w) || !isFinite(uk.h)) { uk.w = 0; uk.h = 0; }
+      batas = uk;
+      batasKey = key;
+      return batas;
+    }
+
     async function refreshPreview() {
       const token = ++renderToken;
       const f = state.files[0];
       if (!f) {
         targets = []; targetIdx = 0;
+        batas = { w: 0, h: 0 }; batasKey = "";
         pctx.fillStyle = "#f1f5f9";
         pctx.fillRect(0, 0, preview.width, preview.height);
         pageLbl.textContent = "—";
@@ -1472,25 +1533,40 @@
         setHint("Halaman tidak bisa dirender: " + ((err && err.message) || err));
         return;
       }
-      /* overlay tanda tangan */
-      const xMm = Number(state.opts.x) || 0;
-      const yMm = Number(state.opts.y) || 0;
-      const wMm = Number(state.opts.w) || 50;
+      /* batas halaman terkecil di antara target (mm) */
+      await hitungBatas();
+      if (token !== renderToken) return;
+      /* overlay tanda tangan — posisi & ukuran dijepit agar tanda
+         tangan tidak keluar dari halaman mana pun */
+      const wMasuk = Number(state.opts.w) || 50;
+      const kotak = muatKotak(wMasuk, wMasuk * rasioTanda());
+      const pos = jepit(Number(state.opts.x) || 0, Number(state.opts.y) || 0, kotak.w, kotak.h);
+      const xMm = pos.x, yMm = pos.y, wMm = kotak.w, hMm = kotak.h;
       /* ukuran halaman dalam mm (1 pt = 25.4/72 mm) */
       const pageWmm = (vp.width / (vp.scale || 1)) * 25.4 / 72;
       const pageHmm = (vp.height / (vp.scale || 1)) * 25.4 / 72;
       const k = preview.width / pageWmm;
       const wPx = wMm * k;
-      const hPx = imgW && imgH ? wPx * (imgH / imgW) : wPx;
-      const hMm = hPx / k;
+      const hPx = hMm * k;
       const xPx = xMm * k;
       const yPx = preview.height - (yMm + hMm) * k;
+      /* nilai di luar halaman dikoreksi — kolom ikut diperbarui */
+      const disesuaikan = Math.abs((Number(state.opts.x) || 0) - xMm) > 0.01
+        || Math.abs((Number(state.opts.y) || 0) - yMm) > 0.01
+        || Math.abs((Number(state.opts.w) || 50) - wMm) > 0.01;
+      if (disesuaikan) {
+        state.opts.x = bulat(xMm); setField("x", bulat(xMm));
+        state.opts.y = bulat(yMm); setField("y", bulat(yMm));
+        state.opts.w = bulat(wMm); setField("w", bulat(wMm));
+      }
       /* expose geometri pratinjau (dipakai audit & pengujian) */
       state.custom.previewInfo = {
         page: no,
         jumlah: targets.length,
         pageWmm: Math.round(pageWmm * 100) / 100,
         pageHmm: Math.round(pageHmm * 100) / 100,
+        batasWmm: bulat(batas.w),
+        batasHmm: bulat(batas.h),
         xMm: xMm, yMm: yMm, wMm: wMm, hMm: Math.round(hMm * 100) / 100,
         xPx: Math.round(xPx * 100) / 100,
         yPx: Math.round(yPx * 100) / 100,
@@ -1519,7 +1595,8 @@
           pctx.lineWidth = 1;
           pctx.strokeRect(xPx + 0.5, yPx + 0.5, wPx, hPx);
           pctx.restore();
-          setHint("Lebar " + wMm + " mm · " + Math.round(wPx) + "×" + Math.round(hPx) + " px di layar." + banyak);
+          setHint((disesuaikan ? "Posisi disesuaikan agar tetap di dalam halaman. " : "")
+            + "Lebar " + wMm + " mm · " + Math.round(wPx) + "×" + Math.round(hPx) + " px di layar." + banyak);
         } catch (_) {
           setHint("Gambar tanda tangan tidak bisa digambar.");
         }
