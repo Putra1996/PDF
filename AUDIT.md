@@ -35,7 +35,7 @@ persis seperti susunan screenshot.
 | Item screenshot | Status | Bukti kode | Bukti uji |
 |---|---|---|---|
 | Compress PDF | **existing** | Tab `#compressView` + `compressor.js` (5 tingkat, estimasi ukuran, anti-membengkak). Launcher: tautan `link:"compress"`. | `regress.mjs` → "compress: ukuran lebih kecil 29241 → 22823", "40 halaman tetap" |
-| Repair PDF | **new** | `tool-pdf.js:448` `repair` — bangun ulang struktur, buang data liar, opsi fallback raster & bersihkan metadata | `tools2.mjs` → "repair PDF menghasilkan PDF valid" |
+| Rapi PDF (Repair) | **new** → **meningkat** | `tool-pdf.js:514` `repair` — bangun ulang struktur, **luruskan halaman hasil pindai yang miring** (deteksi dari piksel tinta, koreksi lewat matriks content stream — vektor/teks/gambar **tidak ditulis ulang**), putar 90° otomatis, pangkas margin, anotasi/field ikut diputar | `tools/audit-deskew.mjs` → **56 pemeriksaan lulus, 0 gagal** (sudut sisa 0,00°, piksel gambar pindai byte-identik, tautan & teks tetap utuh) — rinci di `docs/audit-deskew-2026-11-24.md` |
 | OCR PDF | **new** | `tool-smart.js` `ocr` — mesin Tesseract **offline** (`vendor/tesseract`), dokumen asli disalamat di tempat, tiga mode hasil (tak terlihat / dokumen bersih / teks terlihat di atas gambar), halaman berteks dilewati, mesin OCR paralel, progres nyata | `tools/audit-ocr.mjs` → **44 pemeriksaan lulus, 0 gagal** (duplikasi, koordinat rotasi/crop, lebar kata, anotasi, bookmark & field formulir, 24 halaman 18,6 detik) — rinci di `docs/audit-ocr-2026-11-23.md` |
 
 ### CONVERT TO PDF (5)
@@ -421,10 +421,27 @@ di atas teks asli pada sertifikat digital. Rincian lengkap ada di
 | Harness | Pemeriksaan | Gagal |
 |---|---|---|
 | `tools/audit-ocr.mjs` (audit khusus OCR) | 44 | 0 |
-| `tools/verify-produksi.mjs` (termasuk 6 regresi OCR baru) | 69 | 0 |
-| Uji beban 24 halaman | 18,6 detik (sebelumnya timeout > 120 detik) | — |
+| `tools/verify-produksi.mjs` (termasuk 6 regresi OCR + 5 regresi Rapi PDF) | 73 | 1 — cacat layout toolbar lama, sudah gagal juga di commit baseline `b7861b2` (dibuktikan ulang) |
+| `tools/audit-deskew.mjs` (audit khusus Rapi PDF / pelurusan) | 56 | 0 |
+| Uji beban 24 halaman (OCR) | 18,6 detik (sebelumnya timeout > 120 detik) | — |
+| Uji beban 12 halaman miring (Rapi PDF) | 4,0 detik | — |
 
 Bukti visual ada di `docs/audit-ocr-2026-11-23/`.
+
+### Audit "Rapi PDF" (pelurusan dokumen miring) — 24 November 2026
+
+| Pemeriksaan | Hasil |
+|---|---|
+| Deteksi kemiringan (12 fixture: 0°, ±3°, ±2,5°, ±6°, ±90°, ±180°, foto, kosong) | Sudut salah **0,00°** untuk semua kemiringan bukan nol |
+| Mutu gambar | Stream JPEG pindai **byte-identik** sebelum/sesudah (piksel tak tersentuh) |
+| Mutu teks | Teks tetap vektor & bisa dicari, jumlah item teks tetap, gaya huruf tetap miring |
+| Anotasi & field | Tautan tetap ada dan ikut berputar bersama isinya |
+| Opsi | Batas sudut, `deskew=false`, `autoRotate=false`, pangkas margin, metadata |
+| Kasus batas | Halaman kosong, berkas rusak (pesan jelas), 3 halaman campuran, `/Rotate 90°`, beban 12 halaman (4,0 dtk) |
+| Regresi | OCR 44/0, produksi 73/1 (1 cacat lama, terbukti di baseline) |
+
+Rincian lengkap: `docs/audit-deskew-2026-11-24.md`;
+bukti visual: `docs/audit-deskew-2026-11-24/`.
 
 ## Catatan
 

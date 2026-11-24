@@ -18,8 +18,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { chromium as pwChromium } from "playwright-core";
-import chromium from "@sparticuz/chromium";
+import { chromium } from "./browser.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(process.env.SERVE_DIR || path.join(HERE, ".."));
@@ -59,12 +58,7 @@ function server() {
 
 async function main() {
   const srv = await server();
-  const exe = await chromium.executablePath();
-  const browser = await pwChromium.launch({
-    executablePath: exe,
-    args: [...chromium.args, "--no-sandbox", "--disable-dev-shm-usage"],
-    headless: true,
-  });
+  const browser = await chromium();
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));

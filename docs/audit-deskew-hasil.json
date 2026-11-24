@@ -1,0 +1,282 @@
+[
+  {
+    "name": "Pindai miring 3° -> alat berhasil",
+    "ok": true,
+    "detail": "173718 byte, 1.3s"
+  },
+  {
+    "name": "Jumlah halaman tetap 1",
+    "ok": true,
+    "detail": "halaman=1"
+  },
+  {
+    "name": "Sudut sisa ~0° (halaman jadi lurus)",
+    "ok": true,
+    "detail": "sisa=-0.089°"
+  },
+  {
+    "name": "Halaman memang miring sebelum diperbaiki",
+    "ok": true,
+    "detail": "sebelum=-2.978°"
+  },
+  {
+    "name": "Piksel gambar pindai TIDAK berubah (kualitas utuh)",
+    "ok": true,
+    "detail": "gambar=1->1, ukuran=172292->172292"
+  },
+  {
+    "name": "Ukuran berkas tidak membengkak",
+    "ok": true,
+    "detail": "173607 -> 173718 byte"
+  },
+  {
+    "name": "Catatan hasil informatif",
+    "ok": true,
+    "detail": "170 KB · struktur dibenahi, isi dokumen dipertahankan — 1 halaman diluruskan (rata-rata 3,0°)"
+  },
+  {
+    "name": "Vektor miring 3° -> alat berhasil",
+    "ok": true,
+    "detail": "3163 byte, 0.5s"
+  },
+  {
+    "name": "Sudut sisa vektor ~0°",
+    "ok": true,
+    "detail": "sisa=-0.133°"
+  },
+  {
+    "name": "Teks tetap bisa dicari (tidak diraster)",
+    "ok": true,
+    "detail": "item=17"
+  },
+  {
+    "name": "Jumlah item teks tetap sama",
+    "ok": true,
+    "detail": "17 -> 17"
+  },
+  {
+    "name": "Gaya huruf tetap miring (isi tidak ditulis ulang)",
+    "ok": true,
+    "detail": "rot=0,0,0"
+  },
+  {
+    "name": "Tautan tetap ada",
+    "ok": true,
+    "detail": "anotasi=1"
+  },
+  {
+    "name": "Metadata dibersihkan",
+    "ok": true,
+    "detail": "judul=\"\""
+  },
+  {
+    "name": "Ukuran berkas tetap ramping (bukan gambar)",
+    "ok": true,
+    "detail": "2996 -> 3163 byte"
+  },
+  {
+    "name": "Posisi teks tidak meloncat jauh",
+    "ok": true,
+    "detail": "geser=22.3 pt"
+  },
+  {
+    "name": "Halaman lurus -> alat berhasil",
+    "ok": true,
+    "detail": "168997 byte"
+  },
+  {
+    "name": "Halaman lurus TIDAK diputar",
+    "ok": true,
+    "detail": "sisa=-0.089°"
+  },
+  {
+    "name": "Ukuran halaman lurus tetap sama",
+    "ok": true,
+    "detail": "595.3x841.9 -> 595.3x841.9"
+  },
+  {
+    "name": "Piksel halaman lurus tetap sama",
+    "ok": true,
+    "detail": "gambar=1->1"
+  },
+  {
+    "name": "Foto tanpa teks -> alat berhasil",
+    "ok": true,
+    "detail": "506449 byte"
+  },
+  {
+    "name": "Foto tanpa teks: halaman tidak diputar (ukuran sama)",
+    "ok": true,
+    "detail": "595.3x841.9 -> 595.3x841.9"
+  },
+  {
+    "name": "Piksel foto tetap sama",
+    "ok": true,
+    "detail": "gambar=1->1"
+  },
+  {
+    "name": "Pindai tegak 90° -> alat berhasil",
+    "ok": true,
+    "detail": "167890 byte"
+  },
+  {
+    "name": "Teks tegak jadi mendatar (sisa ~0°)",
+    "ok": true,
+    "detail": "sisa=0°"
+  },
+  {
+    "name": "Teks tegak dulu mendatar, sekarang tidak lagi",
+    "ok": true,
+    "detail": "tegas=false -> true"
+  },
+  {
+    "name": "Piksel pindai tegak tetap sama",
+    "ok": true,
+    "detail": "gambar=1->1"
+  },
+  {
+    "name": "Pindai miring -2,5° -> alat berhasil",
+    "ok": true,
+    "detail": "172649 byte"
+  },
+  {
+    "name": "Sudut sisa -2,5° ~0°",
+    "ok": true,
+    "detail": "sisa=-0.089°"
+  },
+  {
+    "name": "Sudah miring sebelum diperbaiki",
+    "ok": true,
+    "detail": "sebelum=2.489°"
+  },
+  {
+    "name": "Batas sudut 2°: halaman 6° tidak diluruskan",
+    "ok": true,
+    "detail": "175132 byte"
+  },
+  {
+    "name": "Sudut tetap ~6° (tidak disentuh)",
+    "ok": true,
+    "detail": "sisa=-6°"
+  },
+  {
+    "name": "Opsi deskew=false: berkas tetap dibuat",
+    "ok": true,
+    "detail": "173361 byte"
+  },
+  {
+    "name": "Opsi deskew=false: tidak ada pelurusan",
+    "ok": true,
+    "detail": "sisa=-2.978°"
+  },
+  {
+    "name": "Opsi autoRotate=false: halaman tegak dibiarkan",
+    "ok": true,
+    "detail": "167621 byte"
+  },
+  {
+    "name": "Opsi autoRotate=false: tidak diputar 90°",
+    "ok": true,
+    "detail": "sisa=-90°"
+  },
+  {
+    "name": "Pangkas margin: alat berhasil",
+    "ok": true,
+    "detail": "3163 byte"
+  },
+  {
+    "name": "Pangkas margin: halaman jadi lebih rapat",
+    "ok": true,
+    "detail": "ukuran=392.6x372.2"
+  },
+  {
+    "name": "Pangkas margin: teks masih utuh",
+    "ok": true,
+    "detail": "item=17"
+  },
+  {
+    "name": "Halaman kosong: alat tidak error",
+    "ok": true,
+    "detail": "746 byte"
+  },
+  {
+    "name": "Halaman kosong: jumlah halaman tetap",
+    "ok": true,
+    "detail": "halaman=2"
+  },
+  {
+    "name": "Berkas rusak ditolak dengan pesan jelas",
+    "ok": true,
+    "detail": "Berkas ini rusak total: tidak ada halaman yang bisa dipulihkan. Pastikan berkas memang PDF utuh, bukan potongan atau teks acak."
+  },
+  {
+    "name": "PDF 3 halaman -> alat berhasil",
+    "ok": true,
+    "detail": "344905 byte, 1.1s"
+  },
+  {
+    "name": "Jumlah halaman tetap 3",
+    "ok": true,
+    "detail": "halaman=3"
+  },
+  {
+    "name": "Halaman miring jadi lurus",
+    "ok": true,
+    "detail": "sisa=-0.089°"
+  },
+  {
+    "name": "Halaman lurus tetap lurus",
+    "ok": true,
+    "detail": "sisa=-0.089°"
+  },
+  {
+    "name": "Halaman vektor miring jadi lurus",
+    "ok": true,
+    "detail": "sisa=-0.133°"
+  },
+  {
+    "name": "Metadata tidak dibersihkan bila opsi mati",
+    "ok": true,
+    "detail": "1018 byte"
+  },
+  {
+    "name": "Judul tetap ada saat opsi mati",
+    "ok": true,
+    "detail": "judul=\"Judul Uji Coba\""
+  },
+  {
+    "name": "PDF dengan /Rotate 90° -> alat berhasil",
+    "ok": true,
+    "detail": "2547 byte"
+  },
+  {
+    "name": "Halaman /Rotate tidak rusak",
+    "ok": true,
+    "detail": "halaman=1"
+  },
+  {
+    "name": "Teks pada halaman /Rotate tetap ada",
+    "ok": true,
+    "detail": "item=17"
+  },
+  {
+    "name": "Beban 12 halaman -> alat berhasil",
+    "ok": true,
+    "detail": "2079195 byte, 3.7s"
+  },
+  {
+    "name": "Beban: semua 12 halaman lurus",
+    "ok": true,
+    "detail": "sisa=-0.089,-0.089,-0.089,-0.089,-0.089,-0.089,-0.089,-0.089,-0.089,-0.089,-0.089,-0.089"
+  },
+  {
+    "name": "Beban 12 halaman selesai < 60 detik",
+    "ok": true,
+    "detail": "3.7s"
+  },
+  {
+    "name": "Tidak ada error JavaScript selama audit",
+    "ok": true,
+    "detail": ""
+  }
+]

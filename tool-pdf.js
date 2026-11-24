@@ -510,81 +510,361 @@
   });
 
   /* ============================================================
-     7. Rapi/Rrepair PDF
+     7. Rapi PDF
      ============================================================ */
+
+  /* Matriks putaran untuk content stream: isi halaman (teks, gambar,
+     vektor) tidak disentuh sama sekali — hanya dibungkus matriks
+     putaran, jadi kualitas dokumen tetap 100% (tidak diraster
+     ulang, tidak dikompres ulang). */
+  function matriksPutar(sudut, cx, cy) {
+    const rad = (sudut * Math.PI) / 180;
+    const cos = Math.cos(rad), sin = Math.sin(rad);
+    const a = cos, b = sin, c = -sin, d = cos;
+    return { a, b, c, d, e: cx - a * cx - c * cy, f: cy - b * cx - d * cy, sudut };
+  }
+
+  function fmtAngka(n) {
+    return (Math.round(n * 100000) / 100000).toString();
+  }
+
+  function fmtMatriks(m) {
+    return [m.a, m.b, m.c, m.d, m.e, m.f].map(fmtAngka).join(" ");
+  }
+
+  /* Kotak persegi panjang setelah diputar (bounding box). */
+  function kotakPutar(box, m) {
+    const sudut = [
+      [box.x, box.y],
+      [box.x + box.w, box.y],
+      [box.x, box.y + box.h],
+      [box.x + box.w, box.y + box.h],
+    ];
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of sudut) {
+      const X = m.a * p[0] + m.c * p[1] + m.e;
+      const Y = m.b * p[0] + m.d * p[1] + m.f;
+      if (X < minX) minX = X;
+      if (X > maxX) maxX = X;
+      if (Y < minY) minY = Y;
+      if (Y > maxY) maxY = Y;
+    }
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  }
+
+  /* Tampilan (appearance) anotasi ikut diputar supaya tanda field
+     formulir tetap pas di kotak field-nya. Kalau stream memakai
+     /Matrix, tampilan dibiarkan apa adanya (hanya kotaknya yang
+     diputar) supaya bentuknya tidak berubah. */
+  function putarTampilan(doc, dict, m) {
+    let ap = null;
+    try { ap = dict.get(PDFName.of("AP")); } catch (_) { return false; }
+    if (!ap) return false;
+    let apDict = ap;
+    try { if (typeof ap.lookup === "function") apDict = ap.lookup(); } catch (_) { return false; }
+    if (!apDict || typeof apDict.get !== "function") return false;
+    let n = null;
+    try { n = apDict.get(PDFName.of("N")); } catch (_) { return false; }
+    if (!n) return false;
+    let stream = null;
+    try { stream = doc.context.lookup(n); } catch (_) { stream = null; }
+    if (!stream || !stream.contents || !stream.dict) return false;
+    if (stream.dict.get(PDFName.of("Matrix"))) return false;
+    let bb = null;
+    try { bb = stream.dict.get(PDFName.of("BBox")); } catch (_) { bb = null; }
+    if (!bb || typeof bb.asArray !== "function") return false;
+    const a = bb.asArray();
+    if (a.length < 4) return false;
+    const bx0 = a[0].asNumber(), by0 = a[1].asNumber();
+    const bx1 = a[2].asNumber(), by1 = a[3].asNumber();
+    const mm = matriksPutar(m.sudut, (bx0 + bx1) / 2, (by0 + by1) / 2);
+    const isi = stream.contents;
+    const enc = new TextEncoder();
+    const kepala = enc.encode("q\n" + fmtMatriks(mm) + " cm\n");
+    const ekor = enc.encode("\nQ\n");
+    const baru = new Uint8Array(kepala.length + isi.length + ekor.length);
+    baru.set(kepala, 0);
+    baru.set(isi, kepala.length);
+    baru.set(ekor, kepala.length + isi.length);
+    const dictBaru = doc.context.obj({});
+    const res = stream.dict.get(PDFName.of("Resources"));
+    if (res) dictBaru.set(PDFName.of("Resources"), res);
+    dictBaru.set(PDFName.of("Type"), PDFName.of("XObject"));
+    dictBaru.set(PDFName.of("Subtype"), PDFName.of("Form"));
+    const bbBaru = kotakPutar({ x: bx0, y: by0, w: bx1 - bx0, h: by1 - by0 }, mm);
+    dictBaru.set(
+      PDFName.of("BBox"),
+      doc.context.obj([bbBaru.x, bbBaru.y, bbBaru.x + bbBaru.w, bbBaru.y + bbBaru.h])
+    );
+    const streamBaru = doc.context.stream(baru, dictBaru);
+    apDict.set(PDFName.of("N"), doc.context.register(streamBaru));
+    return true;
+  }
+
+  /* Anotasi (tautan, field formulir) ikut diputar supaya tetap
+     menempel pada isi halaman yang ikut berputar. */
+  function putarAnotasi(doc, page, m) {
+    let n = 0;
+    let annots = null;
+    try { annots = page.node.Annots && page.node.Annots(); } catch (_) { annots = null; }
+    if (!annots || typeof annots.asArray !== "function") return 0;
+    for (const ref of annots.asArray()) {
+      let dict = null;
+      try { dict = doc.context.lookup(ref); } catch (_) { dict = null; }
+      if (!dict || typeof dict.get !== "function") continue;
+      const rect = dict.get(PDFName.of("Rect"));
+      if (rect && typeof rect.asArray === "function") {
+        const a = rect.asArray();
+        if (a.length >= 4) {
+          let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+          for (const ij of [[0, 1], [2, 1], [2, 3], [0, 3]]) {
+            const x = a[ij[0]].asNumber(), y = a[ij[1]].asNumber();
+            const X = m.a * x + m.c * y + m.e;
+            const Y = m.b * x + m.d * y + m.f;
+            if (X < x0) x0 = X;
+            if (X > x1) x1 = X;
+            if (Y < y0) y0 = Y;
+            if (Y > y1) y1 = Y;
+          }
+          dict.set(PDFName.of("Rect"), doc.context.obj([x0, y0, x1, y1]));
+          n++;
+        }
+      }
+      putarTampilan(doc, dict, m);
+    }
+    return n;
+  }
+
+  /* Putar isi halaman sebesar sudut (derajat) tanpa menurunkan
+     kualitas: content stream asli dibungkus "q … cm … Q", kotak
+     halaman diperbesar supaya tidak ada bagian yang terpotong, dan
+     anotasi ikut diputar agar tetap menempel pada isinya. */
+  function putarIsiHalaman(doc, page, sudut) {
+    const box = page.getMediaBox();
+    const crop = page.getCropBox();
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    const m = matriksPutar(sudut, cx, cy);
+    const ctx = doc.context;
+    const awal = ctx.register(ctx.stream("q\n" + fmtMatriks(m) + " cm\n"));
+    const akhir = ctx.register(ctx.stream("Q\n"));
+    const isi = page.node.get(PDFName.of("Contents"));
+    const arr = isi instanceof PDFArray ? isi.asArray().slice() : isi ? [isi] : [];
+    page.node.set(PDFName.of("Contents"), ctx.obj([awal, ...arr, akhir]));
+    putarAnotasi(doc, page, m);
+    const baru = kotakPutar({ x: box.x, y: box.y, w: box.width, h: box.height }, m);
+    page.setMediaBox(baru.x, baru.y, baru.w, baru.h);
+    const cropSama =
+      Math.abs(crop.x - box.x) < 0.5 &&
+      Math.abs(crop.y - box.y) < 0.5 &&
+      Math.abs(crop.width - box.width) < 0.5 &&
+      Math.abs(crop.height - box.height) < 0.5;
+    const cropBaru = cropSama
+      ? baru
+      : kotakPutar({ x: crop.x, y: crop.y, w: crop.width, h: crop.height }, m);
+    page.setCropBox(cropBaru.x, cropBaru.y, cropBaru.w, cropBaru.h);
+    return m;
+  }
+
+  /* Pangkas margin kosong (CropBox mengikuti kotak tinta). */
+  function pangkasMargin(doc, page, kotak, m, margin) {
+    if (!kotak || kotak.w <= 1 || kotak.h <= 1) return false;
+    const k = m
+      ? kotakPutar({ x: kotak.x, y: kotak.y, w: kotak.w, h: kotak.h }, m)
+      : { x: kotak.x, y: kotak.y, w: kotak.w, h: kotak.h };
+    const mar = margin == null ? 8 : margin;
+    const box = page.getMediaBox();
+    let x = k.x - mar, y = k.y - mar, w = k.w + mar * 2, h = k.h + mar * 2;
+    if (x < box.x) { w += x - box.x; x = box.x; }
+    if (y < box.y) { h += y - box.y; y = box.y; }
+    if (x + w > box.x + box.width) w = box.x + box.width - x;
+    if (y + h > box.y + box.height) h = box.y + box.height - y;
+    if (w <= 1 || h <= 1) return false;
+    const potongX = 1 - w / box.width;
+    const potongY = 1 - h / box.height;
+    if (potongX < 0.02 && potongY < 0.02) return false;
+    page.setCropBox(x, y, w, h);
+    return true;
+  }
+
   register({
     id: "repair",
     cat: "optimize",
     name: "Rapi PDF",
-    desc: "Bangun ulang PDF yang rusak: struktur dibetulkan, data liar dibuang, font tetap utuh.",
+    desc:
+      "Benahi struktur PDF, luruskan halaman hasil pindai yang miring, dan rapikan margin. " +
+      "Isi dokumen (teks, vektor, gambar) tidak diturunkan kualitasnya.",
     icon: "repair",
     accept: ".pdf,application/pdf",
     multiple: true,
     fields: [
+      { type: "check", id: "deskew", label: "Luruskan halaman miring otomatis", value: true },
+      { type: "number", id: "maxAngle", label: "Sudut maksimum yang diluruskan (°)", value: 8, min: 1, max: 20 },
+      { type: "check", id: "autoRotate", label: "Putar 90° otomatis bila teksnya tegak", value: true },
+      { type: "check", id: "trim", label: "Pangkas margin putih otomatis", value: true },
+      { type: "number", id: "maxPages", label: "Halaman maksimum yang dianalisis (0 = semua)", value: 0, min: 0, max: 5000 },
       { type: "check", id: "fallbackRaster", label: "Kalau tidak bisa diperbaiki tanpa raster, gunakan gambar", value: true },
       { type: "check", id: "stripMeta", label: "Bersihkan metadata", value: true },
     ],
     async run(ctx) {
       const { files, opts } = ctx;
       const out = [];
+      const maksDeg = Math.min(20, Math.max(1, Number(opts.maxAngle) || 8));
+      const maksHal = Math.max(0, Number(opts.maxPages) || 0);
+      const mauDeskew = opts.deskew !== false;
+      const mauPangkas = !!opts.trim;
+      const autoRotate = opts.autoRotate !== false;
+      /* ambang: halaman tanpa struktur teks jelas tidak boleh diputar */
+      const AMBANG_KEPASTIAN = 0.15;
+      const AMBANG_SUDUT = 0.25;
+      /* putaran 90 derajat mengubah halaman banyak, jadi syaratnya lebih ketat */
+      const AMBANG_90 = 0.25;
+
       for (const f of files) {
-        let bytes = null;
-        let how = "";
-        /* Cara 1: salin halaman dengan pdf-lib (teks & font tetap utuh). */
+        /* 1. Analisis kemiringan per halaman (hanya membaca berkas). */
+        const analisis = new Map();
+        let pdfjs = null;
+        let jumlahHalaman = 0;
         try {
-          const src = await loadDoc(f.bytes);
-          const dst = await PDFDocument.create();
-          const pages = src.getPages();
-          const copied = await dst.copyPages(src, pages.map((_, i) => i));
-          copied.forEach((p) => dst.addPage(p));
-          if (opts.stripMeta) {
-            dst.setTitle("");
-            dst.setAuthor("");
-            dst.setSubject("");
-            dst.setKeywords([]);
-            dst.setProducer(C.PRODUCER || "Pemisah PDF");
-            dst.setCreator("");
-          }
-          bytes = await saveDoc(dst, { useObjectStreams: false });
-          how = "struktur disalin ulang";
-        } catch (err) {
-          /* Cara 2: render tiap halaman lalu susun ulang. */
-          if (!opts.fallbackRaster) throw new Error("PDF tidak bisa diperbaiki: " + (err.message || err));
-          let pdfjs = null;
-          try {
-            pdfjs = await openPdfjs(f.bytes);
-          } catch (err2) {
-            /* Tidak ada satu pun halaman yang bisa dibaca: berkas ini bukan
-               PDF yang utuh (misalnya potongan unduhan atau teks acak). */
-            throw new Error(
-              "Berkas ini rusak total: tidak ada halaman yang bisa dipulihkan. " +
-              "Pastikan berkas memang PDF utuh, bukan potongan atau teks acak."
-            );
-          }
-          const dst = await PDFDocument.create();
-          let rendered = 0;
-          for (let i = 1; i <= pdfjs.numPages; i++) {
-            ctx.progress(null, `Merender halaman ${i} dari ${pdfjs.numPages}…`);
-            const { canvas, viewport } = await renderPage(pdfjs, i, 2);
-            const jpg = await canvasToBytes(canvas, "image/jpeg", 0.9);
-            canvas.width = canvas.height = 0;
-            const img = await dst.embedJpg(jpg);
-            const p = dst.addPage([viewport.width / 2, viewport.height / 2]);
-            p.drawImage(img, { x: 0, y: 0, width: viewport.width / 2, height: viewport.height / 2 });
-            rendered++;
+          pdfjs = await openPdfjs(f.bytes);
+          jumlahHalaman = pdfjs.numPages;
+          const batasi = maksHal > 0 ? Math.min(jumlahHalaman, maksHal) : jumlahHalaman;
+          for (let i = 1; i <= batasi; i++) {
+            ctx.progress(null, `Menganalisis kemiringan halaman ${i}/${batasi}…`);
+            const a = await C.analisisHalaman(pdfjs, i, { maksDeg, autoRotate });
+            analisis.set(i, a);
             await tick();
           }
-          try { await pdfjs.destroy(); } catch (_) {}
-          if (!rendered) {
-            throw new Error(
-              "Berkas ini rusak total: tidak ada halaman yang bisa dipulihkan. " +
-              "Pastikan berkas memang PDF utuh, bukan potongan atau teks acak."
-            );
-          }
-          bytes = await saveDoc(dst, { useObjectStreams: false });
-          how = "halaman dirender ulang (teks tidak bisa dicari)";
+        } catch (_) {
+          analisis.clear();
         }
-        out.push({ name: C.safeName(C.baseName(f.name)) + "-rapi.pdf", bytes, note: how });
+
+        /* 2. Terapkan koreksi + benahi struktur. */
+        let bytes = null;
+        let how = "";
+        const catatan = [];
+        let diluruskan = 0, diputar = 0, dipangkas = 0, totalSudut = 0;
+
+        /* Cara 1: muat & simpan berkas apa adanya. Semua isi (vektor,
+           teks, anotasi, bookmark, field formulir) tetap utuh. */
+        try {
+          const doc = await loadDoc(f.bytes);
+          const total = doc.getPageCount();
+          for (let i = 1; i <= total; i++) {
+            const a = analisis.get(i);
+            if (!a) continue;
+            const page = doc.getPage(i - 1);
+            let matriks = null;
+            const sudut = a.sudut || 0;
+            const ambang = a.orientasi ? AMBANG_90 : AMBANG_KEPASTIAN;
+            const layak = a.kepastian >= ambang && Math.abs(sudut) >= AMBANG_SUDUT;
+            if (mauDeskew && layak) {
+              matriks = putarIsiHalaman(doc, page, sudut);
+              diluruskan++;
+              totalSudut += Math.abs(sudut);
+              if (a.orientasi) diputar++;
+            }
+            if (mauPangkas && pangkasMargin(doc, page, a.kotak, matriks, 8)) dipangkas++;
+          }
+          if (opts.stripMeta) {
+            doc.setTitle("");
+            doc.setAuthor("");
+            doc.setSubject("");
+            doc.setKeywords([]);
+            doc.setProducer(C.PRODUCER || "Pemisah PDF");
+            doc.setCreator("");
+          }
+          bytes = await saveDoc(doc, { useObjectStreams: false });
+          how = "struktur dibenahi, isi dokumen dipertahankan";
+          /* validasi: berkas hasil harus bisa dibuka lagi dengan jumlah
+             halaman yang sama */
+          const cek = await loadDoc(bytes);
+          if (cek.getPageCount() !== total) throw new Error("Jumlah halaman berubah setelah perbaikan.");
+        } catch (err) {
+          /* Cara 2: salin halaman ke dokumen baru (untuk PDF yang rantainya
+             rusak). Isi dokumen tetap (teks, gambar, vektor) tapi
+             anotasi & bookmark tidak ikut. */
+          try {
+            const src = await loadDoc(f.bytes);
+            const dst = await PDFDocument.create();
+            const copied = await dst.copyPages(src, src.getPages().map((_, i) => i));
+            copied.forEach((p) => dst.addPage(p));
+            for (let i = 1; i <= copied.length; i++) {
+              const a = analisis.get(i);
+              if (!a) continue;
+              const page = dst.getPage(i - 1);
+              let matriks = null;
+              const sudut = a.sudut || 0;
+              const ambang = a.orientasi ? AMBANG_90 : AMBANG_KEPASTIAN;
+              if (mauDeskew && a.kepastian >= ambang && Math.abs(sudut) >= AMBANG_SUDUT) {
+                matriks = putarIsiHalaman(dst, page, sudut);
+                diluruskan++;
+                totalSudut += Math.abs(sudut);
+                if (a.orientasi) diputar++;
+              }
+              if (mauPangkas && pangkasMargin(dst, page, a.kotak, matriks, 8)) dipangkas++;
+            }
+            if (opts.stripMeta) {
+              dst.setTitle("");
+              dst.setAuthor("");
+              dst.setSubject("");
+              dst.setKeywords([]);
+              dst.setProducer(C.PRODUCER || "Pemisah PDF");
+              dst.setCreator("");
+            }
+            bytes = await saveDoc(dst, { useObjectStreams: false });
+            how = "struktur disalin ulang";
+          } catch (err2) {
+            /* Cara 3: render tiap halaman lalu susun ulang (hanya kalau
+               memang tidak ada pilihan lain). */
+            if (!opts.fallbackRaster) {
+              throw new Error("PDF tidak bisa diperbaiki: " + ((err2 && err2.message) || err2));
+            }
+            if (!pdfjs) {
+              try {
+                pdfjs = await openPdfjs(f.bytes);
+              } catch (_) {
+                throw new Error(
+                  "Berkas ini rusak total: tidak ada halaman yang bisa dipulihkan. " +
+                  "Pastikan berkas memang PDF utuh, bukan potongan atau teks acak."
+                );
+              }
+            }
+            const dst = await PDFDocument.create();
+            let rendered = 0;
+            for (let i = 1; i <= pdfjs.numPages; i++) {
+              ctx.progress(null, `Merender halaman ${i} dari ${pdfjs.numPages}…`);
+              const { canvas, viewport } = await renderPage(pdfjs, i, 2);
+              const jpg = await canvasToBytes(canvas, "image/jpeg", 0.92);
+              canvas.width = canvas.height = 0;
+              const img = await dst.embedJpg(jpg);
+              const p = dst.addPage([viewport.width / 2, viewport.height / 2]);
+              p.drawImage(img, { x: 0, y: 0, width: viewport.width / 2, height: viewport.height / 2 });
+              rendered++;
+              await tick();
+            }
+            if (!rendered) {
+              throw new Error(
+                "Berkas ini rusak total: tidak ada halaman yang bisa dipulihkan. " +
+                "Pastikan berkas memang PDF utuh, bukan potongan atau teks acak."
+              );
+            }
+            bytes = await saveDoc(dst, { useObjectStreams: false });
+            how = "halaman dirender ulang (teks tidak bisa dicari)";
+          }
+        }
+
+        if (pdfjs) { try { await pdfjs.destroy(); } catch (_) { /* abaikan */ } }
+
+        if (diluruskan) {
+          catatan.push(
+            `${diluruskan} halaman diluruskan (rata-rata ${(totalSudut / diluruskan).toFixed(1).replace(".", ",")}°)`
+          );
+        }
+        if (diputar) catatan.push(`${diputar} halaman diputar 90°`);
+        if (dipangkas) catatan.push(`${dipangkas} halaman marginnya dipangkas`);
+        const note = catatan.length ? `${how} — ${catatan.join(", ")}` : how;
+        out.push({ name: C.safeName(C.baseName(f.name)) + "-rapi.pdf", bytes, note });
         await tick();
       }
       return out;
