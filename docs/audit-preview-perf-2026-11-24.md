@@ -174,7 +174,17 @@ Semua audit dijalankan ulang pada build yang sama:
 | `tools/audit-ocr.mjs` | **44 / 0** | OCR PDF aman |
 | `tools/verify-produksi.mjs` | **73 / 1** | satu-satunya kegagalan `Toolbar editor ≤ 3 baris di 360px baris=4` **sudah ada pada baseline** |
 
-## 7. Catatan implementasi
+## 7. Verifikasi produksi (deploy)
+
+PR #23 sudah merged ke `main` (merge commit `54b6e1f`) dan GitHub Pages deployment
+berstatus `success`.
+
+- `https://putra1996.github.io/PDF/style.css` → `--css-build:20261124e`.
+- Hash sha256 berkas ter-deploy (`app.js`, `style.css`, `index.html`, `tool-preview.js`,
+  `tool-ui.js`, `tool-pdf.js`) **identik byte-per-byte** dengan commit yang diaudit,
+  jadi hasil audit lokal berlaku untuk produksi.
+
+## 8. Catatan implementasi
 
 - **Namespace dokumen**: `merge:` dan `compress:` dipakai terpisah supaya dokumen pdf.js
   dan cache thumbnail tidak tertukar antar tab.
