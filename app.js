@@ -1409,6 +1409,12 @@
     files: [],      // {uid, name, bytes, doc, pageCount, uniqPages, allPages, thumbs:Set|null, size}
     results: [],
     busy: false,
+    /* Urutan HALAMAN di hasil gabung. Tiap entri = {uid, page} dengan
+       page 0-based di berkas asalnya. */
+    order: [],
+    /* asis = sesuai urutan file, balik = seluruh halaman dibalik,
+       kustom = susunan manual pengguna. */
+    orderMode: "asis",
   };
   let mergeUid = 0;
   let dragUid = null;
@@ -1429,6 +1435,277 @@
     $("#mergeDrop").hidden = merge.files.length > 0;
   }
 
+  /* ============================================================
+     Pratinjau urutan halaman
+     ------------------------------------------------------------
+     Menampilkan setiap halaman yang akan masuk hasil gabung
+     sebagai kartu ber-thumbnail, lalu membiarkan pengguna
+     mengubah urutannya: "Sesuai file", "Dibalik", atau "Kustom"
+     (seret / tombol panah).
+     ============================================================ */
+  const mergePreview = {
+    observer: null,
+    dragIndex: -1,
+  };
+
+  /* Urutan dasar: file berurutan, halaman berurutan di dalamnya. */
+  function mergeBaseOrder() {
+    const out = [];
+    for (const f of merge.files) {
+      for (let p = 0; p < f.pageCount; p++) out.push({ uid: f.uid, page: p });
+    }
+    return out;
+  }
+
+  /* Selaraskan urutan halaman dengan daftar file yang sekarang.
+     - mode "asis"/"balik": dibangun ulang dari daftar file.
+     - mode "kustom": susunan pengguna dipertahankan; halaman baru
+       (dari file yang ditambahkan) ditambahkan di akhir. */
+  function mergeSyncOrder() {
+    if (merge.orderMode !== "kustom") {
+      const base = mergeBaseOrder();
+      merge.order = merge.orderMode === "balik" ? base.reverse() : base;
+      return;
+    }
+    const known = new Set(merge.files.map((f) => f.uid));
+    const seen = new Set();
+    const next = [];
+    for (const o of merge.order) {
+      if (!known.has(o.uid)) continue;
+      const key = o.uid + ":" + o.page;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      next.push(o);
+    }
+    for (const b of mergeBaseOrder()) {
+      const key = b.uid + ":" + b.page;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      next.push(b);
+    }
+    merge.order = next;
+  }
+
+  function mergeFileByUid(uid) {
+    return merge.files.find((f) => f.uid === uid) || null;
+  }
+
+  /* Pindah satu halaman dalam urutan hasil gabung. */
+  function mergeMovePage(index, delta) {
+    const to = index + delta;
+    if (index < 0 || index >= merge.order.length) return;
+    if (to < 0 || to >= merge.order.length) return;
+    const [item] = merge.order.splice(index, 1);
+    merge.order.splice(to, 0, item);
+    merge.orderMode = "kustom";
+    mergeRenderPreview();
+    mergeEstimateSchedule(150);
+  }
+
+  /* Pindahkan halaman ke posisi baru ( hasil seret ). */
+  function mergeMovePageTo(from, to) {
+    if (from === to) return;
+    if (from < 0 || from >= merge.order.length) return;
+    if (to < 0 || to >= merge.order.length) return;
+    const [item] = merge.order.splice(from, 1);
+    merge.order.splice(to, 0, item);
+    merge.orderMode = "kustom";
+    mergeRenderPreview();
+    mergeEstimateSchedule(150);
+  }
+
+  function mergeSetOrderMode(mode) {
+    const m = mode === "balik" || mode === "kustom" ? mode : "asis";
+    if (m === "kustom") {
+      /* susunan saat ini jadi titik awal mode kustom */
+      merge.orderMode = "kustom";
+    } else {
+      merge.orderMode = m;
+      mergeSyncOrder();
+    }
+    mergeRenderPreview();
+    mergeEstimateSchedule(150);
+  }
+
+  /* Thumbnail satu halaman (dimuat saat kartu benar-benar terlihat).
+     Gambar ~2x ukuran tampilan supaya tetap tajam di layar DPI tinggi. */
+  async function mergePageThumb(el, f, pageNo) {
+    if (!el || el.dataset.done === "1") return;
+    el.dataset.done = "1";
+    try {
+      const pdf = await getThumbDoc(f);
+      const page = await pdf.getPage(pageNo + 1);
+      const base = page.getViewport({ scale: 1 });
+      const vp = page.getViewport({ scale: Math.min(2.6, 210 / base.height) * 2 });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.ceil(vp.width);
+      canvas.height = Math.ceil(vp.height);
+      await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
+      if (!el.isConnected) { canvas.width = canvas.height = 0; return; }
+      const blob = await new Promise((r) => canvas.toBlob(r, "image/jpeg", 0.72));
+      canvas.width = canvas.height = 0;
+      if (!blob) return;
+      const img = document.createElement("img");
+      img.src = URL.createObjectURL(blob);
+      img.alt = "";
+      img.dataset.objectUrl = "1";
+      img.className = "mp-thumb-img";
+      /* gambar replaces isi kotak, bukan kotaknya sendiri, supaya
+         ukurannya tetap mengikuti kotak aspect-ratio 3/4 */
+      el.replaceChildren(img);
+    } catch (err) {
+      /* halaman tidak bisa dirender -> biarkan kotak kosong */
+    }
+  }
+
+  function mergeRenderPreview() {
+    const card = $("#mergePreviewCard");
+    const grid = $("#mergePreviewGrid");
+    const info = $("#mergePreviewInfo");
+    if (!card || !grid) return;
+
+    mergeSyncOrder();
+
+    const nFile = merge.files.length;
+    const nHal = merge.order.length;
+    if (!nFile) {
+      card.hidden = true;
+      grid.innerHTML = "";
+      return;
+    }
+    card.hidden = false;
+
+    /* lepaskan thumbnail lama */
+    releaseThumbs(grid);
+    grid.innerHTML = "";
+
+    /* chip mode */
+    for (const chip of grid.parentElement.querySelectorAll(".mchip[data-order]")) {
+      const on = chip.dataset.order === merge.orderMode;
+      chip.classList.toggle("is-on", on);
+      chip.setAttribute("aria-pressed", String(on));
+    }
+
+    /* ringkasan */
+    const label = {
+      asis: "sesuai urutan file",
+      balik: "dibalik (dari halaman terakhir)",
+      kustom: "kustom (susunan manual)",
+    }[merge.orderMode] || "kustom";
+    if (info) {
+      info.textContent = nHal
+        ? `${nf(nHal)} halaman · urutan ${label}`
+        : "Belum ada halaman untuk disusun.";
+    }
+
+    /* kartu halaman */
+    merge.order.forEach((o, idx) => {
+      const f = mergeFileByUid(o.uid);
+      const cell = document.createElement("div");
+      cell.className = "mp-cell";
+      cell.setAttribute("role", "listitem");
+      cell.draggable = true;
+      cell.dataset.index = String(idx);
+      cell.dataset.uid = o.uid;
+      cell.dataset.page = String(o.page);
+
+      const thumbWrap = document.createElement("div");
+      thumbWrap.className = "mp-thumb";
+      const ph = document.createElement("span");
+      ph.className = "mp-thumb-empty";
+      ph.textContent = "…";
+      thumbWrap.appendChild(ph);
+      cell.appendChild(thumbWrap);
+
+      const pos = document.createElement("span");
+      pos.className = "mp-pos";
+      pos.textContent = String(idx + 1);
+      cell.appendChild(pos);
+
+      const meta = document.createElement("div");
+      meta.className = "mp-meta";
+      const src = document.createElement("span");
+      src.className = "mp-src";
+      src.textContent = f ? `${f.name} · hal. ${o.page + 1}` : `hal. ${o.page + 1}`;
+      src.title = src.textContent;
+      meta.appendChild(src);
+      cell.appendChild(meta);
+
+      const acts = document.createElement("div");
+      acts.className = "mp-acts";
+      const mk = (label2, title, disabled, fn) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "mp-btn";
+        b.textContent = label2;
+        b.title = title;
+        b.setAttribute("aria-label", title);
+        if (disabled) b.disabled = true;
+        b.addEventListener("click", (e) => { e.stopPropagation(); fn(); });
+        return b;
+      };
+      acts.appendChild(mk("←", "Geser halaman ini ke depan", idx === 0, () => mergeMovePage(idx, -1)));
+      acts.appendChild(mk("→", "Geser halaman ini ke belakang", idx === nHal - 1, () => mergeMovePage(idx, 1)));
+      cell.appendChild(acts);
+
+      /* seret untuk mengubah urutan */
+      cell.addEventListener("dragstart", (e) => {
+        mergePreview.dragIndex = idx;
+        cell.classList.add("dragging");
+        e.dataTransfer.effectAllowed = "move";
+        try { e.dataTransfer.setData("text/plain", String(idx)); } catch (_) {}
+      });
+      cell.addEventListener("dragend", () => {
+        mergePreview.dragIndex = -1;
+        cell.classList.remove("dragging");
+        grid.querySelectorAll(".mp-cell.drop-target").forEach((c) => c.classList.remove("drop-target"));
+      });
+      cell.addEventListener("dragover", (e) => {
+        if (mergePreview.dragIndex < 0) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        cell.classList.add("drop-target");
+      });
+      cell.addEventListener("dragleave", () => cell.classList.remove("drop-target"));
+      cell.addEventListener("drop", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const from = mergePreview.dragIndex;
+        mergePreview.dragIndex = -1;
+        cell.classList.remove("drop-target");
+        if (from < 0) return;
+        mergeMovePageTo(from, idx);
+      });
+
+      grid.appendChild(cell);
+
+      /* thumbnail dimuat saat kartu terlihat (hemat memori) */
+      if (f) {
+        const load = () => mergePageThumb(thumbWrap, f, o.page);
+        if (window.IntersectionObserver) {
+          if (!mergePreview.observer) {
+            mergePreview.observer = new IntersectionObserver((entries) => {
+              for (const en of entries) {
+                if (!en.isIntersecting) continue;
+                const target = en.target;
+                mergePreview.observer.unobserve(target);
+                const uid = target.dataset.uid;
+                const page = Number(target.dataset.page);
+                const ff = mergeFileByUid(uid);
+                if (!ff) continue;
+                const slot = target.querySelector(".mp-thumb");
+                if (slot) mergePageThumb(slot, ff, page);
+              }
+            }, { root: grid.closest(".merge-view") || null, rootMargin: "200px" });
+          }
+          mergePreview.observer.observe(cell);
+        } else {
+          void load();
+        }
+      }
+    });
+  }
+
   function mergeRender() {
     const listEl = $("#mlist");
     releaseThumbs(listEl);
@@ -1442,6 +1719,9 @@
     $("#mergePagesInfo").textContent = n ? `${nf(pages)} halaman akan digabung` : "Tarik file PDF untuk mulai";
     $("#mergeRunBtn").disabled = n < 2 || pages === 0;
     $("#mergeInfo").classList.toggle("active", n > 0);
+
+    // pratinjau urutan halaman ikut diperbarui
+    mergeRenderPreview();
 
     // begitu daftar/urutan berubah, angka lama langsung ditandai kedaluwarsa
     // supaya yang tampil bukan angka basi.
@@ -1667,6 +1947,14 @@
     merge.files.reverse();
     mergeRender();
   });
+
+  /* Chip mode urutan halaman: "Sesuai file", "Dibalik", "Kustom". */
+  for (const chip of document.querySelectorAll(".mchip[data-order]")) {
+    chip.addEventListener("click", () => {
+      if (!merge.files.length) return;
+      mergeSetOrderMode(chip.dataset.order);
+    });
+  }
   $("#mergeClearBtn").addEventListener("click", () => {
     if (!merge.files.length) return;
     if (!confirm("Kosongkan daftar file yang akan digabung?")) return;
@@ -1674,6 +1962,8 @@
     revokeResults(merge.results);
     merge.files = [];
     merge.results = [];
+    merge.order = [];
+    merge.orderMode = "asis";
     $("#mergeResultCard").hidden = true;
     $("#mergeResults").innerHTML = "";
     mergeRender();
@@ -1685,20 +1975,46 @@
      Fungsi ini dipakai oleh proses gabung sungguhan DAN oleh
      perkiraan ukuran hasil, sehingga angka yang ditampilkan dijamin
      sama persis dengan berkas yang benar-benar dihasilkan. */
-  async function mergeBuildBytes(files, hooks = {}) {
+  async function mergeBuildBytes(files, order, hooks = {}) {
     const out = await PDFDocument.create();
     out.setProducer(PRODUCER);
     out.setCreator(PRODUCER + " (pdf-lib)");
     out.setCreationDate(new Date());
 
-    const totalPages = files.reduce((n, f) => n + f.pageCount, 0);
+    /* Urutan halaman menentukan urutan di hasil gabung. Tiap entri
+       order = {uid, page}. Halaman yang sama boleh muncul lebih dari
+       satu kali (tiap kemunculan disalin terpisah). */
+    const urutan = Array.isArray(order) && order.length
+      ? order
+      : files.flatMap((f) => Array.from({ length: f.pageCount }, (_, p) => ({ uid: f.uid, page: p })));
+
+    const totalPages = urutan.length || 1;
     let done = 0;
 
+    /* Salin halaman per berkas sekali saja (bisa beberapa halaman
+       sekaligus), lalu tambahkan sesuai urutan akhir. */
+    const salinan = new Map();
     for (const f of files) {
+      const needed = urutan.filter((o) => o.uid === f.uid).map((o) => o.page);
+      if (!needed.length) continue;
       if (hooks.onFile) await hooks.onFile(f, done, totalPages);
-      const pages = await out.copyPages(f.doc, f.doc.getPageIndices());
-      pages.forEach((pg) => out.addPage(pg));
-      done += pages.length;
+      try {
+        const copied = await out.copyPages(f.doc, needed);
+        salinan.set(f.uid, { copied, dipakai: 0 });
+      } catch (err) {
+        /* satu berkas gagal disalin -> lewati, berkas lain tetap jalan */
+        salinan.set(f.uid, { copied: [], dipakai: 0 });
+      }
+      await tick();
+    }
+
+    for (const o of urutan) {
+      const st = salinan.get(o.uid);
+      if (!st) continue;
+      const pg = st.copied[st.dipakai++];
+      if (!pg) continue;
+      out.addPage(pg);
+      done++;
       if (hooks.onProgress) hooks.onProgress((done / totalPages) * 100);
       await tick();
     }
@@ -1715,7 +2031,8 @@
     $("#mergeRunBtn").disabled = true;
     showOverlay("Menggabungkan PDF…");
     try {
-      const res = await mergeBuildBytes(merge.files, {
+      mergeSyncOrder();
+      const res = await mergeBuildBytes(merge.files, merge.order, {
         onFile: (f, done, totalPages) => {
           overlayText.textContent = `Menggabungkan ${f.name}…`;
           setProgress((done / totalPages) * 100);
@@ -1780,7 +2097,9 @@
      otomatis dihitung ulang begitu daftar file atau urutannya berubah.
      ============================================================ */
   function mergeEstKey() {
-    return merge.files.map((f) => `${f.uid}:${f.pageCount}:${f.size}`).join("|");
+    const files = merge.files.map((f) => `${f.uid}:${f.pageCount}:${f.size}`).join("|");
+    const order = merge.order.map((o) => `${o.uid}#${o.page}`).join(",");
+    return `${files}||${merge.orderMode}||${order}`;
   }
 
   function mergeEstTotal() {
@@ -1845,7 +2164,7 @@
     await tick();
 
     try {
-      const res = await mergeBuildBytes(files);
+      const res = await mergeBuildBytes(files, merge.order);
       if (mergeEstKey() !== key) {
         mergeEst.pending = true; // daftar berubah saat dihitung → hitung ulang
         return;

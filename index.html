@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#ffffff" />
 <meta name="author" content="Putra" />
 <title>Pemisah PDF — pecah, gabung &amp; kompres PDF, 100% di browser — by Putra</title>
-<link rel="stylesheet" href="style.css?v=20261124c" />
+<link rel="stylesheet" href="style.css?v=20261124d" />
 <script>
   /* terapkan tema lebih awal supaya tidak ada kedipan saat halaman dimuat */
   (function () {
@@ -34,7 +34,7 @@
 
      Cara ini membuat halaman pulih sendiri tanpa perlu hard refresh.
      ============================================================ */
-  window.PDF_BUILD = "20261124c";
+  window.PDF_BUILD = "20261124d";
   (function () {
     var percobaan = 0;
     function periksaStylesheet() {
@@ -295,6 +295,23 @@
 
     <div id="mlist" class="mlist"></div>
 
+    <!-- ============ PRATINJAU URUTAN HALAMAN ============ -->
+    <div class="card merge-preview" id="mergePreviewCard" hidden>
+      <div class="merge-preview-head">
+        <div class="merge-preview-headings">
+          <h3 class="card-title">Pratinjau urutan halaman</h3>
+          <p class="muted tiny" id="mergePreviewInfo" role="status" aria-live="polite">Menyusun halaman…</p>
+        </div>
+        <div class="merge-preview-modes" role="group" aria-label="Urutan halaman">
+          <button class="mchip is-on" type="button" data-order="asis" aria-pressed="true">Sesuai file</button>
+          <button class="mchip" type="button" data-order="balik" aria-pressed="false">Dibalik</button>
+          <button class="mchip" type="button" data-order="kustom" aria-pressed="false">Kustom</button>
+        </div>
+      </div>
+      <div class="merge-preview-grid" id="mergePreviewGrid" role="list" aria-label="Daftar halaman hasil gabung"></div>
+      <p class="muted tiny merge-preview-hint">Seret kartu halaman untuk mengubah urutan, atau pakai tombol ← → pada tiap kartu.</p>
+    </div>
+
     <div class="merge-foot">
       <div class="merge-stat">
         <span class="chip" id="mergeInfo">0 file</span>
@@ -302,7 +319,7 @@
         <span class="chip merge-est" id="mergeSizeEst" hidden></span>
       </div>
       <div class="merge-foot-actions">
-        <button class="btn btn-ghost" id="mergeReverseBtn" type="button">Balik urutan</button>
+        <button class="btn btn-ghost" id="mergeReverseBtn" type="button" title="Balik urutan file (bukan halaman)">Balik urutan file</button>
         <button class="btn btn-ghost danger" id="mergeClearBtn" type="button">Kosongkan</button>
         <button class="btn btn-primary" id="mergeRunBtn" type="button" disabled>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7h9l-2.5-2.5"/><path d="M16 17H7l2.5 2.5"/><path d="M17 7v10"/></svg>
@@ -544,16 +561,16 @@
 <script src="vendor/jszip.min.js"></script>
 <script src="vendor/pdf.min.js"></script>
 <script src="vendor/fonts/fonts.js"></script>
-<script src="compressor.js?v=20261124c"></script>
-<script src="tool-core.js?v=20261124c"></script>
-<script src="tool-xps.js?v=20261124c"></script>
-<script src="tool-crypto.js?v=20261124c"></script>
-<script src="tool-decrypt.js?v=20261124c"></script>
-<script src="tool-pdf.js?v=20261124c"></script>
-<script src="tool-convert.js?v=20261124c"></script>
-<script src="tool-smart.js?v=20261124c"></script>
-<script src="tool-editor.js?v=20261124c"></script>
-<script src="tool-ui.js?v=20261124c"></script>
-<script src="app.js?v=20261124c"></script>
+<script src="compressor.js?v=20261124d"></script>
+<script src="tool-core.js?v=20261124d"></script>
+<script src="tool-xps.js?v=20261124d"></script>
+<script src="tool-crypto.js?v=20261124d"></script>
+<script src="tool-decrypt.js?v=20261124d"></script>
+<script src="tool-pdf.js?v=20261124d"></script>
+<script src="tool-convert.js?v=20261124d"></script>
+<script src="tool-smart.js?v=20261124d"></script>
+<script src="tool-editor.js?v=20261124d"></script>
+<script src="tool-ui.js?v=20261124d"></script>
+<script src="app.js?v=20261124d"></script>
 </body>
 </html>

@@ -1,0 +1,227 @@
+{
+  "tanggal": "2026-11-24T08:46:35.748Z",
+  "pass": 44,
+  "fail": 0,
+  "results": [
+    {
+      "name": "Tanpa berkas: panel pratinjau disembunyikan",
+      "ok": true,
+      "detail": "hidden=true"
+    },
+    {
+      "name": "Panel pratinjau muncul setelah berkas dimuat",
+      "ok": true,
+      "detail": "terlihat=true"
+    },
+    {
+      "name": "Pratinjau menampilkan satu kartu per halaman (3+4=7)",
+      "ok": true,
+      "detail": "kartu=7"
+    },
+    {
+      "name": "Kartu diberi nomor urut 1..7",
+      "ok": true,
+      "detail": "1,2,3,4,5,6,7"
+    },
+    {
+      "name": "Kartu menyebut asal berkas & nomor halaman",
+      "ok": true,
+      "detail": "alpha.pdf · hal. 1 | alpha.pdf · hal. 2 | alpha.pdf · hal. 3 | beta.pdf · hal. 1"
+    },
+    {
+      "name": "Thumbnail halaman benar-benar dirender",
+      "ok": true,
+      "detail": "gambar=7"
+    },
+    {
+      "name": "Ukuran thumbnail thumbnail nyata (bukan kotak kosong)",
+      "ok": true,
+      "detail": "297x420 tampil 94x132"
+    },
+    {
+      "name": "Kartu bisa diseret (draggable)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Tiap kartu punya tombol panah ← →",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Ringkasan pratinjau menyebut jumlah halaman",
+      "ok": true,
+      "detail": "7 halaman · urutan sesuai urutan file"
+    },
+    {
+      "name": "Mode 'Sesuai file' aktif",
+      "ok": true,
+      "detail": "asis"
+    },
+    {
+      "name": "Gabung mode 'Sesuai file' berhasil",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Urutan 'Sesuai file' = ALFA 1-3 lalu BETA 1-4",
+      "ok": true,
+      "detail": "ALFA 1,ALFA 2,ALFA 3,BETA 1,BETA 2,BETA 3,BETA 4"
+    },
+    {
+      "name": "Mode 'Dibalik' aktif",
+      "ok": true,
+      "detail": "balik"
+    },
+    {
+      "name": "Gabung mode 'Dibalik' berhasil",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Urutan 'Dibalik' = kebalikan seluruh halaman",
+      "ok": true,
+      "detail": "BETA 4,BETA 3,BETA 2,BETA 1,ALFA 3,ALFA 2,ALFA 1"
+    },
+    {
+      "name": "Pratinjau 'Dibalik' menampilkan urutan terbalik",
+      "ok": true,
+      "detail": "beta.pdf · hal. 4 | beta.pdf · hal. 3"
+    },
+    {
+      "name": "Menekan panah → membuat mode 'Kustom'",
+      "ok": true,
+      "detail": "kustom"
+    },
+    {
+      "name": "Pratinjau 'Kustom' menukar dua halaman pertama",
+      "ok": true,
+      "detail": "alpha.pdf · hal. 2 | alpha.pdf · hal. 1"
+    },
+    {
+      "name": "Gabung mode 'Kustom' berhasil",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Urutan 'Kustom' dipakai di berkas hasil",
+      "ok": true,
+      "detail": "ALFA 2,ALFA 1,ALFA 3,BETA 1,BETA 2,BETA 3,BETA 4"
+    },
+    {
+      "name": "Seret halaman ke posisi lain berjalan",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Seret membuat mode 'Kustom'",
+      "ok": true,
+      "detail": "kustom"
+    },
+    {
+      "name": "Seret memindahkan halaman pertama ke akhir",
+      "ok": true,
+      "detail": "alpha.pdf · hal. 2 | alpha.pdf · hal. 3 | beta.pdf · hal. 1 | beta.pdf · hal. 2 | beta.pdf · hal. 3 | beta.pdf · hal. 4 | alpha.pdf · hal. 1"
+    },
+    {
+      "name": "Urutan hasil seret dipakai di berkas hasil",
+      "ok": true,
+      "detail": "ALFA 2,ALFA 3,BETA 1,BETA 2,BETA 3,BETA 4,ALFA 1"
+    },
+    {
+      "name": "Kembali ke 'Sesuai file' mengembalikan urutan asal",
+      "ok": true,
+      "detail": "alpha.pdf · hal. 1 | alpha.pdf · hal. 2 | alpha.pdf · hal. 3 | beta.pdf · hal. 1 | beta.pdf · hal. 2 | beta.pdf · hal. 3 | beta.pdf · hal. 4"
+    },
+    {
+      "name": "Tiga berkas: pratinjau menampilkan 8 halaman",
+      "ok": true,
+      "detail": "kartu=8"
+    },
+    {
+      "name": "Gabung tiga berkas mode 'Dibalik' berhasil",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Urutan 'Dibalik' tiga berkas benar",
+      "ok": true,
+      "detail": "GAMMA 1,BETA 4,BETA 3,BETA 2,BETA 1,ALFA 3,ALFA 2,ALFA 1"
+    },
+    {
+      "name": "Satu berkas: pratinjau tetap tampil (1 halaman)",
+      "ok": true,
+      "detail": "terlihat=true kartu=1"
+    },
+    {
+      "name": "Satu berkas: tombol gabung tetap nonaktif",
+      "ok": true,
+      "detail": "disabled=true"
+    },
+    {
+      "name": "Setelah satu berkas dihapus, pratinjau hanya berisi berkas yang tersisa",
+      "ok": true,
+      "detail": "kartu=4 beta.pdf · hal. 1"
+    },
+    {
+      "name": "Berkas baru ditambahkan -> pratinjau ikut bertambah (5 halaman)",
+      "ok": true,
+      "detail": "kartu=5"
+    },
+    {
+      "name": "Gabung setelah hapus berkas memakai halaman yang tersisa",
+      "ok": true,
+      "detail": "BETA 1,BETA 2,BETA 3,BETA 4,GAMMA 1"
+    },
+    {
+      "name": "Performa: ganti mode < 3 detik",
+      "ok": true,
+      "detail": "430 ms"
+    },
+    {
+      "name": "Performa: semua kartu tetap tampil setelah mode dibalik",
+      "ok": true,
+      "detail": "kartu=8"
+    },
+    {
+      "name": "Screenshot pratinjau mode 'Sesuai file'",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Screenshot pratinjau mode 'Dibalik'",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Mode 'Kustom' menampilkan susunan manual yang berbeda dari 'Dibalik'",
+      "ok": true,
+      "detail": "alpha.pdf · hal. 2 | alpha.pdf · hal. 3 | beta.pdf · hal. 1 | beta.pdf · hal. 2 | beta.pdf · hal. 3 | beta.pdf · hal. 4 | gamma.pdf · hal. 1 | alpha.pdf · hal. 1"
+    },
+    {
+      "name": "Screenshot pratinjau mode 'Kustom'",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Mobile 360px: pratinjau tidak meluber horizontal",
+      "ok": true,
+      "detail": "scrollWidth=false chipOverflow=false"
+    },
+    {
+      "name": "Mobile 360px: chip mode tetap satu baris",
+      "ok": true,
+      "detail": "baris=1"
+    },
+    {
+      "name": "Mobile 360px: grid pratinjau minimal 2 kolom",
+      "ok": true,
+      "detail": "kolom=3"
+    },
+    {
+      "name": "Tidak ada error JavaScript",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}
