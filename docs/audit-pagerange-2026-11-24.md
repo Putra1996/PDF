@@ -8,10 +8,14 @@ OCR PDF, Redaksi PDF, PDF ke JPG.
 
 Unggul satu widget **rentang halaman** (`pagerange`) ke delapan alat. Widget punya:
 
-- Empat mode: **Semua**, **Ganjil**, **Genap**, **Rentang**.
-- **Slider dua-thumb** (tarik dua pegangan) + **kotak angka** (Isi persis halaman awal/akhir).
+- Empat mode: **Semua**, **Ganjil**, **Genap**, **Rentang** — keempatnya dalam satu baris rata.
+- **Slider dua-thumb** (tarik dua pegangan) + **kotak angka** (isi persis halaman awal/akhir).
+- **Slider dan kotak angka selalu terlihat** — bukan baru muncul setelah mode "Rentang" dipilih.
+  Pada mode Semua/Ganjil/Genap kedua thumb-nya dikunci di ujung dokumen; **menggeser slider
+  (atau mengisi angka) otomatis beralih ke mode "Rentang"**, jadi widget langsung bisa dipakai.
 - Batas slider mengikuti jumlah halaman dokumen (deteksi otomatis setelah PDF dimuat).
 - Ringkasan langsung: `Halaman 2–4 (3 halaman dari 7)`.
+- Petunjuk kecil di bawah widget: *"Geser slider atau isi angka di bawah untuk memilih rentang halaman."*
 
 Semantik yang dipakai (helper bersama di `window.PDFToolsCore`):
 
@@ -61,11 +65,17 @@ halaman + rotasi + posisi teks).
 
 ## 3. Hasil
 
-Audit terakhir: **72 lulus / 0 gagal** (`docs/audit-pagerange-hasil.json`).
+Audit terakhir: **106 lulus / 0 gagal** (`docs/audit-pagerange-hasil.json`).
 
 Cakupan pemeriksaan:
 
 - Widget muncul di 8 alat yang relevan, dan **tidak** muncul di 4 alat yang tidak relevan.
+- **Slider benar-benar TERLIHAT** di 8 alat (bukan sekadar ada di DOM): area slider, kedua
+  thumb, dan kedua kotak angka diukur lewat `getBoundingClientRect()` + `offsetParent`.
+- **Slider langsung bisa dipakai dari mode bawaan**: tanpa memilih mode apa pun, menggeser thumb
+  bawah ke halaman 3 membuat mode berpindah ke "Rentang" dan rentangnya jadi `Halaman 3–7`.
+- **Geometri slider tepat**: ujung bar warna persis di bawah pusat thumb (selisih 0,00 px),
+  dan posisi thumb naik monotonis sesuai nomor halaman.
 - Slider membaca jumlah halaman dokumen dengan tepat (7 → `max=7`), dan aktif setelah PDF dimuat.
 - Mode Ganjil / Genap hanya menyentuh halaman sesuai paritasnya.
 - Rentang 2–4 pada Putar PDF: hanya halaman 2, 3, 4 berputar 90°.
@@ -98,11 +108,20 @@ Audit lain (regresi, dijalankan pada kode yang sama):
 Satu-satunya kegagalan verifikasi produksi adalah "Toolbar editor ≤ 3 baris di 360px" — pemeriksaan
 ini **juga gagal pada baseline** (sebelum fitur ini), jadi bukan regresi rentang halaman.
 
-## 4. Catatan implementasi
+## 4. Screenshot widget
+
+| Berkas | Isi |
+| --- | --- |
+| `docs/audit-pagerange-2026-11-24/widget-semua.png` | Mode "Semua" — slider terlihat utuh, thumb di ujung dokumen |
+| `docs/audit-pagerange-2026-11-24/widget-rentang.png` | Mode "Rentang" — bar warna tepat di bawah kedua thumb |
+| `docs/audit-pagerange-2026-11-24/widget-ganjil.png` | Mode "Ganjil" |
+
+## 5. Catatan implementasi
 
 - `tool-core.js` — helper cakupan halaman + `catatanCakupan` + pesan galat PDF rusak yang ramah.
 - `tool-ui.js` — widget (mode, slider dua-thumb, kotak angka, deteksi jumlah halaman).
 - `tool-pdf.js` — integrasi pada Rapi PDF, Putar, Potong, Watermark, Nomor Halaman.
 - `tool-smart.js` — integrasi pada OCR & Redaksi (halaman luar rentang disalin apa adanya).
 - `tool-convert.js` — integrasi pada PDF ke JPG (hanya halaman terpilih yang dirender).
-- `style.css` — gaya widget `tool-pr-*`.
+- `style.css` — gaya widget `tool-pr-*` (rail di-inset setengah lebar thumb supaya bar warna
+  tepat di bawah pusat thumb; chip mode memakai grid 4 kolom agar tidak jatuh baris).

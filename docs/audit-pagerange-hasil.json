@@ -1,45 +1,165 @@
 {
-  "tanggal": "2026-11-24T05:49:16.477Z",
-  "pass": 72,
+  "tanggal": "2026-11-24T06:14:51.694Z",
+  "pass": 106,
   "fail": 0,
   "results": [
     {
-      "name": "Alat \"Rapi PDF\" punya slider rentang halaman",
+      "name": "Alat \"Rapi PDF\" punya widget rentang halaman",
       "ok": true,
       "detail": ""
     },
     {
-      "name": "Alat \"Putar PDF\" punya slider rentang halaman",
+      "name": "Alat \"Rapi PDF\" slider rentang halaman TERLIHAT",
+      "ok": true,
+      "detail": "area=true thumb=true/true"
+    },
+    {
+      "name": "Alat \"Rapi PDF\" kotak angka rentang halaman TERLIHAT",
+      "ok": true,
+      "detail": "angka=true num=true/true"
+    },
+    {
+      "name": "Alat \"Rapi PDF\" punya chip mode Rentang",
       "ok": true,
       "detail": ""
     },
     {
-      "name": "Alat \"Potong PDF\" punya slider rentang halaman",
+      "name": "Alat \"Putar PDF\" punya widget rentang halaman",
       "ok": true,
       "detail": ""
     },
     {
-      "name": "Alat \"Tambah watermark\" punya slider rentang halaman",
+      "name": "Alat \"Putar PDF\" slider rentang halaman TERLIHAT",
+      "ok": true,
+      "detail": "area=true thumb=true/true"
+    },
+    {
+      "name": "Alat \"Putar PDF\" kotak angka rentang halaman TERLIHAT",
+      "ok": true,
+      "detail": "angka=true num=true/true"
+    },
+    {
+      "name": "Alat \"Putar PDF\" punya chip mode Rentang",
       "ok": true,
       "detail": ""
     },
     {
-      "name": "Alat \"Tambah nomor halaman\" punya slider rentang halaman",
+      "name": "Alat \"Potong PDF\" punya widget rentang halaman",
       "ok": true,
       "detail": ""
     },
     {
-      "name": "Alat \"OCR PDF\" punya slider rentang halaman",
+      "name": "Alat \"Potong PDF\" slider rentang halaman TERLIHAT",
+      "ok": true,
+      "detail": "area=true thumb=true/true"
+    },
+    {
+      "name": "Alat \"Potong PDF\" kotak angka rentang halaman TERLIHAT",
+      "ok": true,
+      "detail": "angka=true num=true/true"
+    },
+    {
+      "name": "Alat \"Potong PDF\" punya chip mode Rentang",
       "ok": true,
       "detail": ""
     },
     {
-      "name": "Alat \"Redaksi PDF\" punya slider rentang halaman",
+      "name": "Alat \"Tambah watermark\" punya widget rentang halaman",
       "ok": true,
       "detail": ""
     },
     {
-      "name": "Alat \"PDF ke JPG\" punya slider rentang halaman",
+      "name": "Alat \"Tambah watermark\" slider rentang halaman TERLIHAT",
+      "ok": true,
+      "detail": "area=true thumb=true/true"
+    },
+    {
+      "name": "Alat \"Tambah watermark\" kotak angka rentang halaman TERLIHAT",
+      "ok": true,
+      "detail": "angka=true num=true/true"
+    },
+    {
+      "name": "Alat \"Tambah watermark\" punya chip mode Rentang",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Alat \"Tambah nomor halaman\" punya widget rentang halaman",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Alat \"Tambah nomor halaman\" slider rentang halaman TERLIHAT",
+      "ok": true,
+      "detail": "area=true thumb=true/true"
+    },
+    {
+      "name": "Alat \"Tambah nomor halaman\" kotak angka rentang halaman TERLIHAT",
+      "ok": true,
+      "detail": "angka=true num=true/true"
+    },
+    {
+      "name": "Alat \"Tambah nomor halaman\" punya chip mode Rentang",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Alat \"OCR PDF\" punya widget rentang halaman",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Alat \"OCR PDF\" slider rentang halaman TERLIHAT",
+      "ok": true,
+      "detail": "area=true thumb=true/true"
+    },
+    {
+      "name": "Alat \"OCR PDF\" kotak angka rentang halaman TERLIHAT",
+      "ok": true,
+      "detail": "angka=true num=true/true"
+    },
+    {
+      "name": "Alat \"OCR PDF\" punya chip mode Rentang",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Alat \"Redaksi PDF\" punya widget rentang halaman",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Alat \"Redaksi PDF\" slider rentang halaman TERLIHAT",
+      "ok": true,
+      "detail": "area=true thumb=true/true"
+    },
+    {
+      "name": "Alat \"Redaksi PDF\" kotak angka rentang halaman TERLIHAT",
+      "ok": true,
+      "detail": "angka=true num=true/true"
+    },
+    {
+      "name": "Alat \"Redaksi PDF\" punya chip mode Rentang",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Alat \"PDF ke JPG\" punya widget rentang halaman",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Alat \"PDF ke JPG\" slider rentang halaman TERLIHAT",
+      "ok": true,
+      "detail": "area=true thumb=true/true"
+    },
+    {
+      "name": "Alat \"PDF ke JPG\" kotak angka rentang halaman TERLIHAT",
+      "ok": true,
+      "detail": "angka=true num=true/true"
+    },
+    {
+      "name": "Alat \"PDF ke JPG\" punya chip mode Rentang",
       "ok": true,
       "detail": ""
     },
@@ -79,6 +199,21 @@
       "detail": "disabled=false"
     },
     {
+      "name": "Mode bawaan bukan 'Rentang' (slider tetap tampil utuh)",
+      "ok": true,
+      "detail": "chip=false"
+    },
+    {
+      "name": "Geser slider langsung -> mode berpindah ke 'Rentang'",
+      "ok": true,
+      "detail": "chip=true"
+    },
+    {
+      "name": "Geser slider langsung -> rentang jadi 3 s/d akhir",
+      "ok": true,
+      "detail": "Halaman 3–7 (5 halaman dari 7) dari=3"
+    },
+    {
       "name": "Chip mode 'Ganjil' tersedia",
       "ok": true,
       "detail": ""
@@ -97,6 +232,26 @@
       "name": "Halaman genap TIDAK diputar",
       "ok": true,
       "detail": "rot=90,0,90,0,90,0,90"
+    },
+    {
+      "name": "Geometri slider terukur",
+      "ok": true,
+      "detail": "lebar=286"
+    },
+    {
+      "name": "Ujung bar warna tepat di bawah thumb (halaman 2)",
+      "ok": true,
+      "detail": "selisih=0.00px"
+    },
+    {
+      "name": "Ujung bar warna tepat di bawah thumb (halaman 4)",
+      "ok": true,
+      "detail": "selisih=0.00px"
+    },
+    {
+      "name": "Posisi thumb naik sesuai nomor halaman",
+      "ok": true,
+      "detail": "A=1041.0 B=1130.0"
     },
     {
       "name": "Putar PDF rentang 2-4 berhasil",
@@ -146,7 +301,7 @@
     {
       "name": "Nomor halaman rentang 2-3 berhasil",
       "ok": true,
-      "detail": "2644 byte"
+      "detail": "2645 byte"
     },
     {
       "name": "Halaman 2 diberi nomor 2",
@@ -236,7 +391,7 @@
     {
       "name": "Mode semua: semua halaman diputar",
       "ok": true,
-      "detail": "2115 byte"
+      "detail": "2116 byte"
     },
     {
       "name": "Keempat halaman diputar 90°",
@@ -301,7 +456,7 @@
     {
       "name": "Redaksi rentang 2-2 berhasil",
       "ok": true,
-      "detail": "28792 byte"
+      "detail": "28793 byte"
     },
     {
       "name": "Redaksi: jumlah halaman tetap 4",
@@ -357,6 +512,21 @@
       "name": "Ringkasan menandai rentang di luar jangkauan",
       "ok": true,
       "detail": "Halaman 8–12 di luar jangkauan (dokumen 7 halaman)"
+    },
+    {
+      "name": "Screenshot widget mode bawaan (slider terlihat)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Screenshot widget mode rentang",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Screenshot widget mode ganjil",
+      "ok": true,
+      "detail": ""
     },
     {
       "name": "Tidak ada error JavaScript",

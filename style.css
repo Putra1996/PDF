@@ -5,7 +5,7 @@
 :root{
   /* Penanda build — naikkan setiap kali style.css berubah.
      Dipakai index.html untuk mendeteksi style.css basi di cache browser. */
-  --css-build:20261124b;
+  --css-build:20261124c;
   --bg:#f5f6fa;
   --bg-glow:#e6ebff;
   --surface:#ffffff;
@@ -916,9 +916,13 @@ code{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;
 /* ---------- slider rentang halaman ---------- */
 .tool-field-pagerange{margin-bottom:14px}
 .tool-pagerange{user-select:none}
-.tool-pr-mode{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+/* Empat mode dalam satu baris rata (grid), supaya tidak ada chip
+   yang jatuh ke baris kedua. */
+.tool-pr-mode{
+  display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-bottom:10px;
+}
 .tool-pr-chip{
-  flex:1 1 auto;min-width:58px;padding:6px 10px;border-radius:9px;
+  min-width:0;padding:6px 6px;border-radius:9px;text-align:center;
   border:1px solid var(--line);background:var(--surface-2);color:var(--ink-2);
   font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;line-height:1.2;
   transition:background .12s,border-color .12s,color .12s;
@@ -928,12 +932,14 @@ code{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;
 .tool-pr-chip:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
 
 .tool-pr-area{position:relative;height:26px;margin:2px 0 10px}
+/* Rail di-inset setengah lebar thumb (19px/2) supaya ujung rail tepat
+   berimpit dengan pusat thumb saat nilai min & max. */
 .tool-pr-rail{
-  position:absolute;left:0;right:0;top:11px;height:5px;border-radius:99px;
+  position:absolute;left:9.5px;right:9.5px;top:11px;height:5px;border-radius:99px;
   background:var(--line-strong);
 }
 .tool-pr-isi{
-  position:absolute;top:11px;height:5px;border-radius:99px;background:var(--brand);
+  position:absolute;top:0;left:0;height:5px;border-radius:99px;background:var(--brand);
   min-width:4px;
 }
 /* Dua input range ditumpuk; thumb "atas" (sampai) selalu di atas. */
@@ -970,6 +976,7 @@ code{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;
 }
 .tool-pr-angka-item input:focus{outline:2px solid var(--brand);outline-offset:1px;border-color:var(--brand)}
 .tool-pr-info{font-size:12px;color:var(--ink-3);font-weight:600}
+.tool-pr-hint{font-size:11.5px;color:var(--ink-3);opacity:.85;margin-top:2px}
 .tool-pr-info.is-warn{color:#b4232a}
 .tool-warn{
   margin:8px 0;padding:10px 12px;border-radius:9px;font-size:13px;
