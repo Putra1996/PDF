@@ -37,7 +37,7 @@
   {
     "name": "Vektor miring 3° -> alat berhasil",
     "ok": true,
-    "detail": "3163 byte, 1.5s"
+    "detail": "3163 byte, 1.7s"
   },
   {
     "name": "Sudut sisa vektor ~0°",
@@ -262,7 +262,7 @@
   {
     "name": "Beban 12 halaman -> alat berhasil",
     "ok": true,
-    "detail": "2077671 byte, 3.4s"
+    "detail": "2077671 byte, 3.8s"
   },
   {
     "name": "Beban: semua 12 halaman lurus",
@@ -272,7 +272,7 @@
   {
     "name": "Beban 12 halaman selesai < 60 detik",
     "ok": true,
-    "detail": "3.4s"
+    "detail": "3.8s"
   },
   {
     "name": "Tidak ada error JavaScript selama audit",

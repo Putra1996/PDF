@@ -260,8 +260,37 @@ async function main() {
     for (const nama of dengan) {
       const ok = await bukaAlat(nama);
       if (!ok) { check(`Alat "${nama}" ditemukan`, false, "kartu tidak ditemukan"); continue; }
-      const ada = await page.evaluate(() => !!document.querySelector(".tool-pagerange"));
-      check(`Alat "${nama}" punya slider rentang halaman`, ada);
+      /* Widget ADA + slider benar-benar TERLIHAT (bukan sekadar ada
+         di DOM). Slider harus langsung terlihat saat alat dibuka,
+         tanpa harus memilih mode dulu. */
+      const w = await page.evaluate(() => {
+        const wrap = document.querySelector(".tool-pagerange");
+        const area = document.querySelector(".tool-pr-area");
+        const angka = document.querySelector(".tool-pr-angka");
+        const tA = document.getElementById("f_halaman_dari");
+        const tB = document.getElementById("f_halaman_sampai");
+        const nA = document.getElementById("f_halaman_dari_num");
+        const nB = document.getElementById("f_halaman_sampai_num");
+        const terlihat = (el) =>
+          !!el && !el.hidden && el.offsetParent !== null &&
+          el.getBoundingClientRect().height > 0 && el.getBoundingClientRect().width > 0;
+        return {
+          ada: !!wrap,
+          area: terlihat(area),
+          angka: terlihat(angka),
+          thumbA: terlihat(tA),
+          thumbB: terlihat(tB),
+          numA: terlihat(nA),
+          numB: terlihat(nB),
+          chip: !!document.querySelector('.tool-pr-chip[data-mode="range"]'),
+        };
+      });
+      check(`Alat "${nama}" punya widget rentang halaman`, w.ada);
+      check(`Alat "${nama}" slider rentang halaman TERLIHAT`, w.area && w.thumbA && w.thumbB,
+        `area=${w.area} thumb=${w.thumbA}/${w.thumbB}`);
+      check(`Alat "${nama}" kotak angka rentang halaman TERLIHAT`, w.angka && w.numA && w.numB,
+        `angka=${w.angka} num=${w.numA}/${w.numB}`);
+      check(`Alat "${nama}" punya chip mode Rentang`, w.chip);
     }
     /* alat yang TIDAK relevan tidak boleh punya slider */
     const tanpa = ["Bandingkan PDF", "Lindungi PDF", "PDF ke WORD", "PDF ke PDF/A"];
@@ -296,6 +325,39 @@ async function main() {
     await page.waitForTimeout(300);
   }
 
+  /* ============ 2b. Slider langsung bisa dipakai (mode bawaan) ===== */
+  {
+    await bukaAlat("Putar PDF");
+    await page.setInputFiles("#toolInput", file7);
+    await page.waitForTimeout(1400);
+    /* Tanpa memilih mode apa pun: geser thumb bawah -> mode harus
+       otomatis menjadi "Rentang" dan rentangnya jadi 3-akhir. */
+    const setelah = await page.evaluate(() => {
+      const chipRange = document.querySelector('.tool-pr-chip[data-mode="range"]');
+      const chipOnBefore = chipRange ? chipRange.classList.contains("is-on") : null;
+      const t = document.getElementById("f_halaman_dari");
+      if (!t) return { chipOnBefore, gagal: "slider tidak ada" };
+      t.value = "3";
+      t.dispatchEvent(new Event("input", { bubbles: true }));
+      const info = document.getElementById("f_halaman_info");
+      return {
+        chipOnBefore,
+        chipOnAfter: chipRange ? chipRange.classList.contains("is-on") : null,
+        info: info ? info.textContent : "",
+        dari: document.getElementById("f_halaman_dari_num")?.value,
+      };
+    });
+    check("Mode bawaan bukan 'Rentang' (slider tetap tampil utuh)",
+      setelah.chipOnBefore === false, `chip=${setelah.chipOnBefore}`);
+    check("Geser slider langsung -> mode berpindah ke 'Rentang'",
+      setelah.chipOnAfter === true, `chip=${setelah.chipOnAfter}`);
+    check("Geser slider langsung -> rentang jadi 3 s/d akhir",
+      /^Halaman 3/.test(setelah.info || "") && /7/.test(setelah.info || ""),
+      `${setelah.info} dari=${setelah.dari}`);
+    await page.evaluate(() => document.getElementById("toolBackBtn")?.click());
+    await page.waitForTimeout(300);
+  }
+
   /* ============ 3. Mode ganjil / genap ============ */
   {
     await bukaAlat("Putar PDF");
@@ -313,6 +375,50 @@ async function main() {
       check("Halaman ganjil diputar 90°", ganjil, `rot=${rot.join(",")}`);
       check("Halaman genap TIDAK diputar", genap, `rot=${rot.join(",")}`);
     }
+  }
+
+  /* ============ 3b. Geometri slider: thumb tepat di posisi halaman ==== */
+  {
+    await bukaAlat("Putar PDF");
+    await page.setInputFiles("#toolInput", file7);
+    await page.waitForTimeout(1400);
+    await setRentang("range", 2, 4);
+    const geo = await page.evaluate(() => {
+      const tA = document.getElementById("f_halaman_dari");
+      const tB = document.getElementById("f_halaman_sampai");
+      const isi = document.querySelector(".tool-pr-isi");
+      if (!tA || !tB || !isi) return null;
+      const thumb = 19; /* lebar thumb sesuai CSS */
+      const pusat = (el) => {
+        const r = el.getBoundingClientRect();
+        const kiri = r.left + thumb / 2;
+        const kanan = r.right - thumb / 2;
+        const min = Number(el.min), max = Number(el.max), val = Number(el.value);
+        return kiri + ((val - min) / Math.max(1, max - min)) * (kanan - kiri);
+      };
+      const rIsi = isi.getBoundingClientRect();
+      return {
+        thumbA: pusat(tA),
+        thumbB: pusat(tB),
+        barKiri: rIsi.left,
+        barKanan: rIsi.right,
+        lebar: tA.getBoundingClientRect().width,
+      };
+    });
+    check("Geometri slider terukur", !!geo, geo ? `lebar=${geo.lebar}` : "tidak ada slider");
+    if (geo) {
+      const deltaA = Math.abs(geo.thumbA - geo.barKiri);
+      const deltaB = Math.abs(geo.thumbB - geo.barKanan);
+      check("Ujung bar warna tepat di bawah thumb (halaman 2)",
+        deltaA < 2, `selisih=${deltaA.toFixed(2)}px`);
+      check("Ujung bar warna tepat di bawah thumb (halaman 4)",
+        deltaB < 2, `selisih=${deltaB.toFixed(2)}px`);
+      /* posisi thumb harus naik monotonis (halaman 2 < halaman 4) */
+      check("Posisi thumb naik sesuai nomor halaman",
+        geo.thumbB > geo.thumbA, `A=${geo.thumbA.toFixed(1)} B=${geo.thumbB.toFixed(1)}`);
+    }
+    await page.evaluate(() => document.getElementById("toolBackBtn")?.click());
+    await page.waitForTimeout(300);
   }
 
   /* ============ 4. Rentang membatasi halaman yang diproses ============ */
@@ -631,6 +737,33 @@ async function main() {
     check("Rentang di luar jangkauan TIDAK dijepit di kotak angka",
       w2.dari === "8" && w2.sampai === "12", `dari=${w2.dari} sampai=${w2.sampai}`);
     check("Ringkasan menandai rentang di luar jangkauan", /luar jangkauan/i.test(w2.info), w2.info);
+    await page.evaluate(() => document.getElementById("toolBackBtn")?.click());
+    await page.waitForTimeout(300);
+  }
+
+  /* ============ 17b. Screenshot bukti widget ========================== */
+  {
+    const shotDir = path.join(ROOT, "docs", "audit-pagerange-2026-11-24");
+    fs.mkdirSync(shotDir, { recursive: true });
+    await bukaAlat("Putar PDF");
+    await page.setInputFiles("#toolInput", file7);
+    await page.waitForTimeout(1400);
+    const potret = async (nama) => {
+      const box = await page.evaluate(() => {
+        const el = document.querySelector(".tool-pagerange");
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { x: Math.max(0, r.x - 12), y: Math.max(0, r.y - 12), width: r.width + 24, height: r.height + 24 };
+      });
+      if (!box) return false;
+      await page.screenshot({ path: path.join(shotDir, nama), clip: box });
+      return true;
+    };
+    check("Screenshot widget mode bawaan (slider terlihat)", await potret("widget-semua.png"));
+    await setRentang("range", 2, 4);
+    check("Screenshot widget mode rentang", await potret("widget-rentang.png"));
+    await setRentang("odd");
+    check("Screenshot widget mode ganjil", await potret("widget-ganjil.png"));
     await page.evaluate(() => document.getElementById("toolBackBtn")?.click());
     await page.waitForTimeout(300);
   }

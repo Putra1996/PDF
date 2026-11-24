@@ -435,11 +435,13 @@
 
     const inDari = document.createElement("input");
     inDari.type = "range";
+    inDari.min = "1";
     inDari.className = "tool-pr-thumb tool-pr-thumb-bawah";
     inDari.id = "f_" + f.id + "_dari";
     inDari.setAttribute("aria-label", "Halaman awal");
     const inSampai = document.createElement("input");
     inSampai.type = "range";
+    inSampai.min = "1";
     inSampai.className = "tool-pr-thumb tool-pr-thumb-atas";
     inSampai.id = "f_" + f.id + "_sampai";
     inSampai.setAttribute("aria-label", "Halaman akhir");
@@ -472,12 +474,20 @@
     info.id = "f_" + f.id + "_info";
     wrap.appendChild(info);
 
+    /* --- petunjuk: slider bisa langsung dipakai --- */
+    const hint = el("div", "tool-pr-hint",
+      "Geser slider atau isi angka di bawah untuk memilih rentang halaman.");
+    wrap.appendChild(hint);
+
     /* --- helper --- */
     function perbarui() {
       const diketahui = totalDiketahui();
       const maks = batasAtas();
-      inDari.max = String(maks);
-      inSampai.max = String(maks);
+      /* min = 1 (halaman pertama). max minimal 2 supaya slider tidak
+         degenerat (min == max) sebelum jumlah halaman diketahui. */
+      const maksDom = Math.max(2, maks);
+      inDari.max = String(maksDom);
+      inSampai.max = String(maksDom);
       /* Normalkan TANPA memaksa nilai pengguna ke dalam jangkauan
          dokumen. Nilai di luar jangkauan sengaja dipertahankan supaya
          tool bisa memberi pesan yang jelas ("rentang di luar
@@ -493,15 +503,22 @@
       }
       const a = spec.dari;
       const b = spec.sampai > 0 ? spec.sampai : (diketahui ? maks : a);
+      /* Mode bukan "rentang" (Semua/Ganjil/Genap) tetap menampilkan
+         slider — dua thumb-nya dikunci di ujung dokumen. Jadi widget
+         selalu terlihat dan selalu bisa dipakai, bukan cuma muncul
+         setelah mode "Rentang" dipilih. */
+      const rentang = spec.mode === "range";
+      const tampilA = rentang ? a : 1;
+      const tampilB = rentang ? b : maks;
       /* Slider hanya bisa bergerak di dalam dokumen, jadi posisinya
          dijepit secara visual; kotak angka tetap menampilkan nilai
          yang benar-benar diminta pengguna. */
-      const sliderA = Math.min(Math.max(1, a), maks);
-      const sliderB = Math.min(Math.max(sliderA, b), maks);
+      const sliderA = Math.min(Math.max(1, tampilA), maks);
+      const sliderB = Math.min(Math.max(sliderA, tampilB), maks);
       inDari.value = String(sliderA);
       inSampai.value = String(sliderB);
-      numDari.value = String(a);
-      numSampai.value = String(spec.sampai > 0 ? spec.sampai : b);
+      numDari.value = String(tampilA);
+      numSampai.value = String(tampilB);
       /* nonaktifkan sampai jumlah halaman diketahui */
       const aktif = !!diketahui;
       inDari.disabled = !aktif;
@@ -511,7 +528,8 @@
       /* thumbs: thumb atas selalu di atas agar tidak tertutup */
       inSampai.style.zIndex = "3";
       inDari.style.zIndex = "2";
-      /* isi rail */
+      /* Isi rail: rail di-inset setengah lebar thumb (CSS), jadi
+         persentase di bawah persis sama dengan posisi pusat thumb. */
       const lebar = 100 / Math.max(1, maks - 1 || 1);
       const kiri = (sliderA - 1) * lebar;
       const kanan = (sliderB - 1) * lebar;
@@ -523,10 +541,10 @@
         btnMode[m].classList.toggle("is-on", on);
         btnMode[m].setAttribute("aria-pressed", String(on));
       }
-      /* tampilkan slider hanya untuk mode rentang */
-      const rentang = spec.mode === "range";
-      area.hidden = !rentang;
-      angka.hidden = !rentang;
+      /* Slider dan kotak angka SELALU tampil — hanya isinya yang
+         menyesuaikan mode. */
+      area.hidden = false;
+      angka.hidden = false;
       /* ringkasan */
       let teks;
       let peringatan = false;
@@ -541,9 +559,9 @@
           teks = `Halaman ${a}–${Math.min(b, diketahui)} (${n} halaman dari ${diketahui})`;
         }
       } else if (spec.mode === "odd") {
-        teks = `Halaman ganjil (dari ${diketahui} halaman)`;
+        teks = `Halaman ganjil (1, 3, 5… dari ${diketahui} halaman)`;
       } else if (spec.mode === "even") {
-        teks = `Halaman genap (dari ${diketahui} halaman)`;
+        teks = `Halaman genap (2, 4, 6… dari ${diketahui} halaman)`;
       } else {
         teks = `Semua halaman (${diketahui} halaman)`;
       }
@@ -560,12 +578,23 @@
       }
     }
 
+    /* Geser slider atau isi angka = pengguna memang memilih rentang.
+       Jadi mode otomatis berpindah ke "Rentang" dan pilihan lama
+       (yang disimpan untuk mode lain) dibuang supaya tidak membingungkan. */
+    function mulaiRentang() {
+      if (spec.mode === "range") return;
+      spec.mode = "range";
+      spec.dari = 1;
+      spec.sampai = 0;
+    }
     inDari.addEventListener("input", () => {
+      mulaiRentang();
       spec.dari = Number(inDari.value) || 1;
       if (spec.sampai > 0 && spec.dari > spec.sampai) spec.sampai = spec.dari;
       commit();
     });
     inSampai.addEventListener("input", () => {
+      mulaiRentang();
       spec.sampai = Number(inSampai.value) || 1;
       if (spec.sampai < spec.dari) spec.dari = spec.sampai;
       commit();
@@ -576,6 +605,7 @@
       /* Nilai TIDAK dijepit ke jumlah halaman: rentang di luar
          jangkauan harus tetap utuh supaya tool bisa memberi pesan
          yang jelas, bukan dipaksa menjadi rentang lain. */
+      mulaiRentang();
       spec.dari = v;
       if (spec.sampai > 0 && spec.dari > spec.sampai) spec.sampai = spec.dari;
       commit();
@@ -583,6 +613,7 @@
     numSampai.addEventListener("input", () => {
       const v = Number(numSampai.value);
       if (!isFinite(v) || v < 1) return;
+      mulaiRentang();
       spec.sampai = v;
       if (spec.sampai > 0 && spec.dari > spec.sampai) spec.dari = spec.sampai;
       commit();
