@@ -74,6 +74,8 @@
 
   /* ---------- elemen ---------- */
   const $ = (s, r = document) => r.querySelector(s);
+  /* Modul pratinjau bersama: cache dokumen, cache thumbnail, penjadwal. */
+  const PV = window.PDFPreview;
   const dropzone = $("#dropzone");
   const fileInput = $("#fileInput");
   const workspace = $("#workspace");
@@ -402,30 +404,41 @@
     dropzone.style.display = has || activeTab !== "split" ? "none" : "";
     const quick = $("#quickTools");
     if (quick) quick.hidden = has || activeTab !== "split";
-    releaseThumbs(filesEl);
-    filesEl.innerHTML = "";
-    state.files.forEach((f) => filesEl.appendChild(fileBlock(f)));
+    /* Blok file dipakai ulang: memindahkan node yang sudah ada supaya
+       thumbnail yang sudah ter-render TIDAK hilang saat urutan berubah. */
+    window.PDFPreview.reconcile(filesEl, state.files, {
+      keyOf: (f) => f.id,
+      create: (f) => fileBlock(f),
+      onRemove: (node) => {
+        node.querySelectorAll(".thumb").forEach((t) => splitLazy.forget(t));
+      },
+      update: (node, f) => {
+        /* nama & ukuran bisa berubah -> perbarui teksnya */
+        const nm = node.querySelector(".fb-name");
+        if (nm && nm.textContent !== f.name) {
+          nm.textContent = f.name;
+          nm.title = f.name;
+        }
+        const sub = node.querySelector(".fb-sub");
+        if (sub) {
+          const t = `${nf(f.pageCount)} halaman · ${fmtSize(f.size)}`;
+          if (sub.textContent !== t) sub.textContent = t;
+        }
+      },
+    });
     updateSelectionUI();
     updateRunState();
     zipAllBtn.hidden = state.results.length < 2;
   }
 
-  /* lepaskan thumbnail lama (observer + object URL) supaya tidak bocor */
+  /* Lepaskan node thumbnail dari pemuat malas.
+     Object URL-nya milik cache modul pratinjau (dilepas saat dokumen
+     dibuang atau keluar dari LRU), jadi di sini cukup berhenti
+    chnginx-mengamati saja. */
   function releaseThumbs(root) {
     if (!root) return;
-    root.querySelectorAll("img[data-object-url]").forEach((img) => {
-      try {
-        URL.revokeObjectURL(img.src);
-      } catch (_) {
-        /* abaikan */
-      }
-    });
     root.querySelectorAll(".thumb").forEach((t) => {
-      try {
-        thumbObserver.unobserve(t);
-      } catch (_) {
-        /* abaikan */
-      }
+      splitLazy.forget(t);
     });
   }
 
@@ -493,7 +506,7 @@
 
       btn.append(num, chk, close, ph);
       pages.appendChild(btn);
-      observeThumb(btn, f, p);
+      splitLazy.observe(btn, { f, p });
     }
 
     wrap.append(head, pages);
@@ -521,9 +534,10 @@
       state.selected.delete(key(fid, p));
       state.deleted.delete(key(fid, p));
     }
-    dropPdfjsDoc(fid);
     if (!state.files.length) clearWorkspace();
     else render();
+    /* dilepas setelah DOM dibuang, supaya thumbnail bisa dicabut dari cache */
+    dropPdfjsDoc(fid);
   }
 
   function moveFile(fid, dir) {
@@ -536,13 +550,14 @@
 
   function clearWorkspace() {
     releaseThumbs(filesEl);
-    state.files.forEach((f) => dropPdfjsDoc(f.id));
+    const lama = state.files.slice();
+    filesEl.innerHTML = "";
+    lama.forEach((f) => dropPdfjsDoc(f.id));
     revokeResults(state.results);
     state.files = [];
     state.selected.clear();
     state.results = [];
     lastClicked = null;
-    filesEl.innerHTML = "";
     workspace.hidden = true;
     dropzone.style.display = activeTab === "split" ? "" : "none";
     const quick = $("#quickTools");
@@ -563,97 +578,48 @@
     });
   }
 
-  /* ---------- thumbnail lazy render ---------- */
-  const thumbQueue = [];
-  let thumbRunning = false;
-  const thumbObserver = new IntersectionObserver(
-    (entries) => {
-      for (const en of entries) {
-        if (!en.isIntersecting) continue;
-        const btn = en.target;
-        thumbObserver.unobserve(btn);
-        thumbQueue.push(btn);
-        pumpThumbs();
-      }
+  /* ---------- thumbnail lazy render ----------
+     Memakai modul pratinjau bersama (window.PDFPreview):
+     cache thumbnail + penjadwal dengan batas konkurensi. */
+  const THUMB_W = 240; // lebar thumbnail baku (dipakai bersama semua pratinjau)
+
+  const splitLazy = PV.lazy(document, {
+    root: null, // viewport
+    rootMargin: "320px",
+    onEnter: (btn, meta) => {
+      mountSplitThumb(btn, meta.f, meta.p);
     },
-    { rootMargin: "320px" }
-  );
+  });
 
-  function observeThumb(btn, f, p) {
-    btn._f = f;
-    btn._p = p;
-    thumbObserver.observe(btn);
-  }
-
-  async function pumpThumbs() {
-    if (thumbRunning) return;
-    thumbRunning = true;
-    while (thumbQueue.length) {
-      const btn = thumbQueue.shift();
-      try {
-        await renderThumb(btn);
-      } catch (err) {
-        console.warn("Thumbnail halaman gagal dirender:", err);
-      }
-      await tick();
+  async function mountSplitThumb(btn, f, p) {
+    if (!btn || !btn.isConnected || !f) return;
+    const key = PV.thumbKey(f.id, p, THUMB_W);
+    const img = btn.querySelector("img[data-object-url]");
+    if (img) return; // sudah ada
+    const ph = btn.querySelector(".ph");
+    if (!ph) return;
+    try {
+      const url = await PV.thumb(f.id, f.bytes, p, THUMB_W, PV.distance(btn));
+      if (!url || !btn.isConnected) return;
+      const el = document.createElement("img");
+      el.alt = "";
+      el.loading = "lazy";
+      el.decoding = "async";
+      PV.mount(el, url, key);
+      ph.replaceWith(el);
+    } catch (err) {
+      console.warn("Thumbnail halaman gagal dirender:", err);
     }
-    thumbRunning = false;
   }
 
   const pdfCache = new Map();
   async function getPdfjsDoc(f) {
-    if (pdfCache.has(f.id)) return pdfCache.get(f.id);
-    const p = pdfjsLib.getDocument({ data: f.bytes.slice(0), isEvalSupported: false }).promise;
-    pdfCache.set(f.id, p);
-    return p;
+    return PV.doc(f.id, f.bytes);
   }
 
   async function dropPdfjsDoc(fid) {
-    const entry = pdfCache.get(fid);
+    await PV.dropDoc(fid);
     pdfCache.delete(fid);
-    if (!entry) return;
-    try {
-      const doc = await entry;
-      if (doc && typeof doc.destroy === "function") await doc.destroy();
-    } catch (_) {
-      /* abaikan */
-    }
-  }
-
-  async function renderThumb(btn) {
-    const f = btn._f;
-    const p = btn._p;
-    if (!f || !window.pdfjsLib) return;
-    const pdf = await getPdfjsDoc(f);
-    const page = await pdf.getPage(p + 1);
-    const base = page.getViewport({ scale: 1 });
-    const targetW = 190;
-    const scale = Math.min(3, Math.max(0.2, targetW / base.width));
-    const vp = page.getViewport({ scale: scale * (window.devicePixelRatio > 1 ? 1.6 : 1) });
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.ceil(vp.width);
-    canvas.height = Math.ceil(vp.height);
-    await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
-    if (!btn.isConnected) {
-      canvas.width = canvas.height = 0;
-      return;
-    }
-    const ph = btn.querySelector(".ph");
-    if (!ph) {
-      canvas.width = canvas.height = 0;
-      return;
-    }
-    // blob URL lebih hemat memori daripada data-URL base64
-    const blob = await new Promise((res) => canvas.toBlob(res, "image/jpeg", 0.72));
-    canvas.width = canvas.height = 0;
-    if (!blob || !btn.isConnected) return;
-    const img = document.createElement("img");
-    img.src = URL.createObjectURL(blob);
-    img.alt = "";
-    img.loading = "lazy";
-    img.decoding = "async";
-    img.dataset.objectUrl = "1";
-    ph.replaceWith(img);
   }
 
   /* ============================================================
@@ -1444,9 +1410,20 @@
      (seret / tombol panah).
      ============================================================ */
   const mergePreview = {
-    observer: null,
     dragIndex: -1,
   };
+
+  /* Pemuat malas untuk kartu halaman pratinjau gabung.
+     Root = grid pratinjau (wadah yang bisa di-scroll), jadi hanya
+     kartu yang benar-benar terlihat yang dirender. */
+  const mergeLazy = PV.lazy($("#mergePreviewGrid"), {
+    root: $("#mergePreviewGrid"),
+    rootMargin: "220px",
+    onEnter: (cell, meta) => {
+      const slot = cell.querySelector(".mp-thumb");
+      if (slot) mergePageThumb(slot, meta.f, meta.page);
+    },
+  });
 
   /* Urutan dasar: file berurutan, halaman berurutan di dalamnya. */
   function mergeBaseOrder() {
@@ -1558,6 +1535,122 @@
     }
   }
 
+  /* Thumbnail halaman pada pratinjau gabung. */
+  async function mergePageThumb(el, f, pageNo) {
+    if (!el || el.dataset.done === "1") return;
+    el.dataset.done = "1";
+    try {
+      const key = PV.thumbKey("merge:" + f.uid, pageNo, THUMB_W);
+      const url = await PV.thumb("merge:" + f.uid, f.bytes, pageNo, THUMB_W, PV.distance(el));
+      if (!url || !el.isConnected) return;
+      const img = document.createElement("img");
+      img.alt = "";
+      img.className = "mp-thumb-img";
+      PV.mount(img, url, key);
+      /* gambar masuk ke dalam kotak (bukan menggantikannya) supaya
+         ukurannya tetap mengikuti aspect-ratio 3/4 */
+      el.replaceChildren(img);
+    } catch (err) {
+      /* halaman tidak bisa dirender -> biarkan kotak kosong */
+    }
+  }
+
+  /* Index halaman tertentu di urutan saat ini (dipakai event handler
+     agar tetap benar walau kartu sudah dipindahkan). */
+  function mergeIndexOf(uid, page) {
+    for (let i = 0; i < merge.order.length; i++) {
+      const o = merge.order[i];
+      if (o.uid === uid && o.page === page) return i;
+    }
+    return -1;
+  }
+
+  /* Buat satu kartu halaman. Identitas kartu = berkas + nomor halaman,
+     sehingga kartu yang sama SELALU menampilkan halaman yang sama.
+     Yang berubah hanya posisinya -> node cukup dipindah, thumbnail
+     tidak perlu dirender ulang. */
+  function mergeCard(o) {
+    const cell = document.createElement("div");
+    cell.className = "mp-cell";
+    cell.setAttribute("role", "listitem");
+    cell.draggable = true;
+    cell.dataset.uid = o.uid;
+    cell.dataset.page = String(o.page);
+
+    const thumbWrap = document.createElement("div");
+    thumbWrap.className = "mp-thumb";
+    const ph = document.createElement("span");
+    ph.className = "mthumb-empty";
+    ph.textContent = "…";
+    thumbWrap.appendChild(ph);
+    cell.appendChild(thumbWrap);
+
+    const pos = document.createElement("span");
+    pos.className = "mp-pos";
+    cell.appendChild(pos);
+
+    const meta = document.createElement("div");
+    meta.className = "mp-meta";
+    const src = document.createElement("span");
+    src.className = "mp-src";
+    meta.appendChild(src);
+    cell.appendChild(meta);
+
+    const acts = document.createElement("div");
+    acts.className = "mp-acts";
+    const mk = (label2, title, delta) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "mp-btn";
+      b.textContent = label2;
+      b.title = title;
+      b.setAttribute("aria-label", title);
+      b.dataset.delta = String(delta);
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const i = mergeIndexOf(cell.dataset.uid, Number(cell.dataset.page));
+        if (i >= 0) mergeMovePage(i, delta);
+      });
+      return b;
+    };
+    acts.appendChild(mk("\u2190", "Geser halaman ini ke depan", -1));
+    acts.appendChild(mk("\u2192", "Geser halaman ini ke belakang", 1));
+    cell.appendChild(acts);
+
+    /* seret untuk mengubah urutan */
+    cell.addEventListener("dragstart", (e) => {
+      mergePreview.dragIndex = mergeIndexOf(cell.dataset.uid, Number(cell.dataset.page));
+      cell.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+      try { e.dataTransfer.setData("text/plain", String(mergePreview.dragIndex)); } catch (_) {}
+    });
+    cell.addEventListener("dragend", () => {
+      mergePreview.dragIndex = -1;
+      cell.classList.remove("dragging");
+      const g = $("#mergePreviewGrid");
+      if (g) g.querySelectorAll(".mp-cell.drop-target").forEach((c) => c.classList.remove("drop-target"));
+    });
+    cell.addEventListener("dragover", (e) => {
+      if (mergePreview.dragIndex < 0) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      cell.classList.add("drop-target");
+    });
+    cell.addEventListener("dragleave", () => cell.classList.remove("drop-target"));
+    cell.addEventListener("drop", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const from = mergePreview.dragIndex;
+      mergePreview.dragIndex = -1;
+      cell.classList.remove("drop-target");
+      if (from < 0) return;
+      const to = mergeIndexOf(cell.dataset.uid, Number(cell.dataset.page));
+      if (to >= 0) mergeMovePageTo(from, to);
+    });
+
+    return cell;
+  }
+
   function mergeRenderPreview() {
     const card = $("#mergePreviewCard");
     const grid = $("#mergePreviewGrid");
@@ -1575,10 +1668,6 @@
     }
     card.hidden = false;
 
-    /* lepaskan thumbnail lama */
-    releaseThumbs(grid);
-    grid.innerHTML = "";
-
     /* chip mode */
     for (const chip of grid.parentElement.querySelectorAll(".mchip[data-order]")) {
       const on = chip.dataset.order === merge.orderMode;
@@ -1594,123 +1683,71 @@
     }[merge.orderMode] || "kustom";
     if (info) {
       info.textContent = nHal
-        ? `${nf(nHal)} halaman · urutan ${label}`
+        ? `${nf(nHal)} halaman \u00b7 urutan ${label}`
         : "Belum ada halaman untuk disusun.";
     }
 
-    /* kartu halaman */
-    merge.order.forEach((o, idx) => {
-      const f = mergeFileByUid(o.uid);
-      const cell = document.createElement("div");
-      cell.className = "mp-cell";
-      cell.setAttribute("role", "listitem");
-      cell.draggable = true;
-      cell.dataset.index = String(idx);
-      cell.dataset.uid = o.uid;
-      cell.dataset.page = String(o.page);
-
-      const thumbWrap = document.createElement("div");
-      thumbWrap.className = "mp-thumb";
-      const ph = document.createElement("span");
-      ph.className = "mp-thumb-empty";
-      ph.textContent = "…";
-      thumbWrap.appendChild(ph);
-      cell.appendChild(thumbWrap);
-
-      const pos = document.createElement("span");
-      pos.className = "mp-pos";
-      pos.textContent = String(idx + 1);
-      cell.appendChild(pos);
-
-      const meta = document.createElement("div");
-      meta.className = "mp-meta";
-      const src = document.createElement("span");
-      src.className = "mp-src";
-      src.textContent = f ? `${f.name} · hal. ${o.page + 1}` : `hal. ${o.page + 1}`;
-      src.title = src.textContent;
-      meta.appendChild(src);
-      cell.appendChild(meta);
-
-      const acts = document.createElement("div");
-      acts.className = "mp-acts";
-      const mk = (label2, title, disabled, fn) => {
-        const b = document.createElement("button");
-        b.type = "button";
-        b.className = "mp-btn";
-        b.textContent = label2;
-        b.title = title;
-        b.setAttribute("aria-label", title);
-        if (disabled) b.disabled = true;
-        b.addEventListener("click", (e) => { e.stopPropagation(); fn(); });
-        return b;
-      };
-      acts.appendChild(mk("←", "Geser halaman ini ke depan", idx === 0, () => mergeMovePage(idx, -1)));
-      acts.appendChild(mk("→", "Geser halaman ini ke belakang", idx === nHal - 1, () => mergeMovePage(idx, 1)));
-      cell.appendChild(acts);
-
-      /* seret untuk mengubah urutan */
-      cell.addEventListener("dragstart", (e) => {
-        mergePreview.dragIndex = idx;
-        cell.classList.add("dragging");
-        e.dataTransfer.effectAllowed = "move";
-        try { e.dataTransfer.setData("text/plain", String(idx)); } catch (_) {}
-      });
-      cell.addEventListener("dragend", () => {
-        mergePreview.dragIndex = -1;
-        cell.classList.remove("dragging");
-        grid.querySelectorAll(".mp-cell.drop-target").forEach((c) => c.classList.remove("drop-target"));
-      });
-      cell.addEventListener("dragover", (e) => {
-        if (mergePreview.dragIndex < 0) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-        cell.classList.add("drop-target");
-      });
-      cell.addEventListener("dragleave", () => cell.classList.remove("drop-target"));
-      cell.addEventListener("drop", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const from = mergePreview.dragIndex;
-        mergePreview.dragIndex = -1;
-        cell.classList.remove("drop-target");
-        if (from < 0) return;
-        mergeMovePageTo(from, idx);
-      });
-
-      grid.appendChild(cell);
-
-      /* thumbnail dimuat saat kartu terlihat (hemat memori) */
-      if (f) {
-        const load = () => mergePageThumb(thumbWrap, f, o.page);
-        if (window.IntersectionObserver) {
-          if (!mergePreview.observer) {
-            mergePreview.observer = new IntersectionObserver((entries) => {
-              for (const en of entries) {
-                if (!en.isIntersecting) continue;
-                const target = en.target;
-                mergePreview.observer.unobserve(target);
-                const uid = target.dataset.uid;
-                const page = Number(target.dataset.page);
-                const ff = mergeFileByUid(uid);
-                if (!ff) continue;
-                const slot = target.querySelector(".mp-thumb");
-                if (slot) mergePageThumb(slot, ff, page);
-              }
-            }, { root: grid.closest(".merge-view") || null, rootMargin: "200px" });
-          }
-          mergePreview.observer.observe(cell);
-        } else {
-          void load();
+    /* Kartu halaman: node yang sudah ada DIPINDAH, bukan dibuat ulang.
+      thumbnail di dalamnya tetap hidup -> tidak ada render ulang,
+       tidak berkedip, dan interaksi terasa instan. */
+    PV.reconcile(grid, merge.order, {
+      keyOf: (o) => `${o.uid}:${o.page}`,
+      onRemove: (node) => mergeLazy.forget(node),
+      create: (o) => {
+        const cell = mergeCard(o);
+        const f = mergeFileByUid(o.uid);
+        if (f) {
+          /* thumbnail dimuat saat kartu benar-benar terlihat */
+          mergeLazy.observe(cell, { f, page: o.page });
         }
-      }
+        return cell;
+      },
+      update: (cell, o) => {
+        const idx = mergeIndexOf(o.uid, o.page);
+        cell.dataset.index = String(idx);
+        const pos = cell.querySelector(".mp-pos");
+        if (pos) pos.textContent = String(idx + 1);
+        const f = mergeFileByUid(o.uid);
+        const src = cell.querySelector(".mp-src");
+        if (src) {
+          const t = f ? `${f.name} \u00b7 hal. ${o.page + 1}` : `hal. ${o.page + 1}`;
+          if (src.textContent !== t) {
+            src.textContent = t;
+            src.title = t;
+          }
+        }
+        const btns = cell.querySelectorAll(".mp-btn");
+        if (btns.length === 2) {
+          btns[0].disabled = idx <= 0;
+          btns[1].disabled = idx < 0 || idx >= nHal - 1;
+        }
+      },
     });
   }
 
   function mergeRender() {
     const listEl = $("#mlist");
-    releaseThumbs(listEl);
-    listEl.innerHTML = "";
-    merge.files.forEach((f, i) => listEl.appendChild(mergeRow(f, i)));
+    /* Baris file dipakai ulang: mengurutkan file tidak membuang
+       thumbnail halaman pertama yang sudah ter-render. */
+    PV.reconcile(listEl, merge.files, {
+      keyOf: (f) => String(f.uid),
+      create: (f) => mergeRow(f, 0),
+      update: (row, f) => {
+        const i = merge.files.indexOf(f);
+        const ord = row.querySelector(".morder");
+        if (ord) ord.textContent = String(i + 1);
+        const nm = row.querySelector(".mname");
+        if (nm && nm.textContent !== f.name) {
+          nm.textContent = f.name;
+          nm.title = f.name;
+        }
+        const sub = row.querySelector(".msub");
+        if (sub) {
+          const t = `${nf(f.pageCount)} halaman \u00b7 ${fmtSize(f.size)}`;
+          if (sub.textContent !== t) sub.textContent = t;
+        }
+      },
+    });
     setMergeDropVisible();
 
     const n = merge.files.length;
@@ -1764,14 +1801,14 @@
     // thumbnail halaman pertama
     const th = row.querySelector(".mthumb");
     th.innerHTML = '<span class="mthumb-empty">PDF</span>';
-    renderMergeThumb(th, f);
+    renderMergeThumb(th, f, NS_MERGE);
 
     row.querySelector(".mrow-actions").addEventListener("click", (e) => {
       const act = e.target.closest("[data-act]")?.dataset.act;
       if (!act) return;
       if (act === "remove") {
         merge.files = merge.files.filter((x) => x.uid !== f.uid);
-        dropThumbDoc(f.uid);
+        dropThumbDoc(NS_MERGE, f.uid);
         mergeRender();
       } else {
         const idx = merge.files.findIndex((x) => x.uid === f.uid);
@@ -1821,48 +1858,31 @@
     $("#mlist").querySelectorAll(".mrow").forEach((r) => r.classList.remove("drop-target", "dragging"));
   }
 
-  /* cache dokumen pdf.js untuk thumbnail (dibuka satu kali per file) */
+  /* Cache dokumen pdf.js untuk thumbnail (dibuka satu kali per file,
+     dipakai bersama oleh daftar file dan pratinjau urutan halaman). */
   const thumbCache = new Map();
-  function getThumbDoc(f) {
-    if (thumbCache.has(f.uid)) return thumbCache.get(f.uid);
-    const p = pdfjsLib.getDocument({ data: f.bytes.slice(0), isEvalSupported: false }).promise;
-    thumbCache.set(f.uid, p);
-    return p;
+  /* Namespace per tab supaya dokumen & thumbnail tidak tertukar. */
+  const NS_MERGE = "merge:";
+  const NS_COMPRESS = "compress:";
+  function getThumbDoc(f, ns) {
+    return PV.doc(ns + f.uid, f.bytes);
   }
-  async function dropThumbDoc(uid) {
-    const p = thumbCache.get(uid);
+  async function dropThumbDoc(ns, uid) {
     thumbCache.delete(uid);
-    if (!p) return;
-    try {
-      const d = await p;
-      if (d && typeof d.destroy === "function") await d.destroy();
-    } catch (_) {
-      /* abaikan */
-    }
+    await PV.dropDoc(ns + uid);
   }
 
-  async function renderMergeThumb(el, f) {
+  async function renderMergeThumb(el, f, ns) {
+    if (!el || !el.isConnected || !f) return;
+    const prefix = ns || NS_MERGE;
     try {
-      const pdf = await getThumbDoc(f);
-      const page = await pdf.getPage(1);
-      const base = page.getViewport({ scale: 1 });
-      const vp = page.getViewport({ scale: Math.min(1.4, 52 / base.height) * 2 });
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.ceil(vp.width);
-      canvas.height = Math.ceil(vp.height);
-      await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
-      if (!el.isConnected) {
-        canvas.width = canvas.height = 0;
-        return;
-      }
-      const blob = await new Promise((r) => canvas.toBlob(r, "image/jpeg", 0.7));
-      canvas.width = canvas.height = 0;
-      if (!blob) return;
+      const key = PV.thumbKey(prefix + f.uid, 0, THUMB_W);
+      const url = await PV.thumb(prefix + f.uid, f.bytes, 0, THUMB_W, PV.distance(el));
+      if (!url || !el.isConnected) return;
       const img = document.createElement("img");
-      img.src = URL.createObjectURL(blob);
       img.alt = "";
       img.className = "mthumb";
-      img.dataset.objectUrl = "1";
+      PV.mount(img, url, key);
       el.replaceWith(img);
     } catch (err) {
       console.error("Thumbnail gagal:", err);
@@ -1958,7 +1978,7 @@
   $("#mergeClearBtn").addEventListener("click", () => {
     if (!merge.files.length) return;
     if (!confirm("Kosongkan daftar file yang akan digabung?")) return;
-    merge.files.forEach((f) => dropThumbDoc(f.uid));
+    merge.files.forEach((f) => dropThumbDoc(NS_MERGE, f.uid));
     revokeResults(merge.results);
     merge.files = [];
     merge.results = [];
@@ -2758,7 +2778,7 @@
         </button>
       </span>`;
     row.querySelector(".mname").textContent = f.name;
-    renderMergeThumb(row.querySelector(".mthumb"), f);
+    renderMergeThumb(row.querySelector(".mthumb"), f, NS_COMPRESS);
 
     row.querySelector(".mrow-actions").addEventListener("click", (e) => {
       const act = e.target.closest("[data-act]")?.dataset.act;
@@ -2766,7 +2786,7 @@
       if (act === "remove") {
         compress.files = compress.files.filter((x) => x.uid !== f.uid);
         compress.results = compress.results.filter((r) => r.uid !== f.uid);
-        dropThumbDoc(f.uid);
+        dropThumbDoc(NS_COMPRESS, f.uid);
         // buang analisis berkas ini supaya cache tidak menumpuk
         if (window.PDFCompressor && typeof window.PDFCompressor.releaseAnalysis === "function") {
           try { window.PDFCompressor.releaseAnalysis(f.uid); } catch (_) {}
@@ -2858,7 +2878,7 @@
   $("#compressClearBtn").addEventListener("click", () => {
     if (!compress.files.length) return;
     if (!confirm("Kosongkan daftar file?")) return;
-    compress.files.forEach((f) => dropThumbDoc(f.uid));
+    compress.files.forEach((f) => dropThumbDoc(NS_COMPRESS, f.uid));
     revokeResults(compress.results);
     compress.files = [];
     compress.results = [];

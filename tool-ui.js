@@ -80,6 +80,9 @@
      batas slider ketika jumlah halaman berkas sudah diketahui). */
   let pageWidgets = [];
 
+  /* Penomoran berkas alat — dipakai sebagai kunci dokumen pratinjau. */
+  let toolFileSeq = 0;
+
   /* Alat yang paling sering dibuka — ditampilkan di beranda dan
      di atas daftar alat agar cepat dijangkau. */
   const POPULER = ["split", "merge", "compress", "edit", "watermark", "numbers"];
@@ -937,17 +940,41 @@
     }
   }
 
-  /* --- Susun PDF --- */
+  /* --- Susun PDF ---
+     Pratinjau dimuat secara malas: kartu halaman dibuat lebih dulu,
+     thumbnail-nya baru dirender saat kartu terlihat. Kartu yang sudah
+     ada DIPAKAI ULANG (dipindah), jadi memutar/menghapus/menduplikasi
+     halaman tidak mengulang render dan tidak berkedip. */
   async function renderOrganize(host) {
+    const PV = window.PDFPreview;
     const wrap = el("div", "organize-wrap");
     wrap.innerHTML = '<p class="muted small">Pilih satu PDF untuk menyusun ulang halamannya.</p>';
     host.appendChild(wrap);
+
+    const THUMB_W = 240;
+    let lazy = null;
+    let docKey = "";
+    let docPrev = "";
+    let seq = 0;
+
     const refresh = async () => {
       const f = state.files[0];
-      if (!f) { wrap.innerHTML = '<p class="muted small">Pilih satu PDF untuk menyusun ulang halamannya.</p>'; state.custom.organize = null; return; }
+      if (!f) {
+        wrap.innerHTML = '<p class="muted small">Pilih satu PDF untuk menyusun ulang halamannya.</p>';
+        state.custom.organize = null;
+        return;
+      }
       wrap.innerHTML = '<p class="muted small">Membaca halaman…</p>';
       const data = await state.tool.open(f.bytes);
       state.custom.organize = data;
+      docKey = "organize:" + (f.id || f.name);
+      /* dokumen pdf.js untuk pratinjau diganti -> yang lama dilepas
+         supaya worker pdf.js tidak menumpuk */
+      if (docPrev && docPrev !== docKey) {
+        PV.dropDoc(docPrev);
+        PV.dropDocThumbs(docPrev);
+      }
+      docPrev = docKey;
       wrap.innerHTML = "";
       const bar = el("div", "organize-bar");
       const info = el("span", "muted small", `${data.pageCount} halaman`);
@@ -963,46 +990,111 @@
       const grid = el("div", "organize-grid");
       wrap.appendChild(grid);
 
-      function drawOrganize() {
-        grid.innerHTML = "";
-        data.items.forEach((it, idx) => {
-          const cell = el("div", "org-cell" + (it.del ? " deleted" : ""));
-          const th = data.thumbs[it.n - 1];
+      lazy = PV.lazy(grid, {
+        root: null,
+        rootMargin: "300px",
+        onEnter: (cell, meta) => {
+          mountOrgThumb(cell, meta.it);
+        },
+      });
+
+      async function mountOrgThumb(cell, it) {
+        if (!cell || !cell.isConnected || !it) return;
+        const slot = cell.querySelector(".org-thumb");
+        if (!slot || slot.querySelector("img")) return;
+        try {
+          const key = PV.thumbKey(docKey, it.n - 1, THUMB_W);
+          const url = await PV.thumb(docKey, f.bytes, it.n - 1, THUMB_W, PV.distance(cell));
+          if (!url || !slot.isConnected) return;
           const img = document.createElement("img");
-          img.src = th ? th.data : "";
           img.alt = "Halaman " + it.n;
-          img.style.transform = "rotate(" + it.rot + "deg)";
-          cell.appendChild(img);
-          const num = el("span", "org-num", String(idx + 1));
-          cell.appendChild(num);
-          const acts = el("div", "org-acts");
-          const mk = (label, title, fn) => {
-            const b = el("button", "org-btn", label);
-            b.type = "button";
-            b.title = title;
-            b.addEventListener("click", (e) => { e.stopPropagation(); fn(); });
-            return b;
-          };
-          acts.appendChild(mk("↺", "Putar kiri", () => { it.rot = (it.rot + 270) % 360; drawOrganize(); }));
-          acts.appendChild(mk("↻", "Putar kanan", () => { it.rot = (it.rot + 90) % 360; drawOrganize(); }));
-          acts.appendChild(mk("⧉", "Duplikat", () => { data.items.splice(idx + 1, 0, { n: it.n, rot: it.rot, del: false }); drawOrganize(); }));
-          acts.appendChild(mk("🗑", "Hapus", () => { it.del = true; drawOrganize(); }));
-          cell.appendChild(acts);
-          cell.addEventListener("click", () => {
-            /* klik pada thumbnail: kirim satu halaman ke depan */
-            if (idx + 1 < data.items.length) {
-              const tmp = data.items[idx];
-              data.items[idx] = data.items[idx + 1];
-              data.items[idx + 1] = tmp;
-              drawOrganize();
-            }
+          img.loading = "lazy";
+          img.decoding = "async";
+          PV.mount(img, url, key);
+          slot.replaceChildren(img);
+        } catch (_) {
+          /* biarkan kosong */
+        }
+      }
+
+      function makeCell(it) {
+        const cell = el("div", "org-cell");
+        const slot = el("div", "org-thumb");
+        cell.appendChild(slot);
+        const num = el("span", "org-num");
+        cell.appendChild(num);
+        const acts = el("div", "org-acts");
+        /* Ikon memakai SVG (bukan emoji) supaya selalu tampil utuh,
+           termasuk di sistem tanpa font emoji. */
+        const mk = (svg, title, fn) => {
+          const b = el("button", "org-btn");
+          b.type = "button";
+          b.title = title;
+          b.setAttribute("aria-label", title);
+          b.innerHTML = svg;
+          b.addEventListener("click", (e) => { e.stopPropagation(); fn(); });
+          return b;
+        };
+        const ICON_ROT_L = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V5a1 1 0 0 1 1-1h3"/><path d="M20 16v3a1 1 0 0 1-1 1h-3"/><path d="M20 8a8 8 0 0 0-13.7-2.3L4 8"/><path d="M4 16a8 8 0 0 0 13.7 2.3L20 16"/></svg>';
+        const ICON_ROT_R = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 8V5a1 1 0 0 0-1-1h-3"/><path d="M4 16v3a1 1 0 0 0 1 1h3"/><path d="M4 8a8 8 0 0 1 13.7-2.3L20 8"/><path d="M20 16a8 8 0 0 1-13.7 2.3L4 16"/></svg>';
+        const ICON_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>';
+        const ICON_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14"/><path d="M9.5 7V5.4A1.4 1.4 0 0 1 10.9 4h2.2a1.4 1.4 0 0 1 1.4 1.4V7"/><path d="M7 7l.8 11.2A1.6 1.6 0 0 0 9.4 19.8h5.2a1.6 1.6 0 0 0 1.6-1.6L17 7"/></svg>';
+        acts.appendChild(mk(ICON_ROT_L, "Putar kiri", () => { it.rot = (it.rot + 270) % 360; drawOrganize(); }));
+        acts.appendChild(mk(ICON_ROT_R, "Putar kanan", () => { it.rot = (it.rot + 90) % 360; drawOrganize(); }));
+        acts.appendChild(mk(ICON_COPY, "Duplikat", () => {
+          data.items.splice(data.items.indexOf(it) + 1, 0, {
+            id: "d" + (++seq), n: it.n, rot: it.rot, del: false,
           });
-          grid.appendChild(cell);
+          drawOrganize();
+        }));
+        acts.appendChild(mk(ICON_TRASH, "Hapus", () => { it.del = true; drawOrganize(); }));
+        cell.appendChild(acts);
+        cell.addEventListener("click", () => {
+          /* klik pada thumbnail: kirim satu halaman ke depan */
+          const i = data.items.indexOf(it);
+          if (i >= 0 && i + 1 < data.items.length) {
+            const tmp = data.items[i];
+            data.items[i] = data.items[i + 1];
+            data.items[i + 1] = tmp;
+            drawOrganize();
+          }
+        });
+        return cell;
+      }
+
+      function drawOrganize() {
+        PV.reconcile(grid, data.items, {
+          keyOf: (it) => it.id || ("p" + it.n),
+          onRemove: (node) => lazy.forget(node),
+          create: (it) => {
+            const cell = makeCell(it);
+            lazy.observe(cell, { it });
+            return cell;
+          },
+          update: (cell, it) => {
+            const idx = data.items.indexOf(it);
+            cell.classList.toggle("deleted", !!it.del);
+            const num = cell.querySelector(".org-num");
+            if (num) num.textContent = String(idx + 1);
+            const img = cell.querySelector("img");
+            if (img) img.style.transform = "rotate(" + (it.rot || 0) + "deg)";
+            cell.setAttribute("aria-label", "Halaman " + it.n + ", posisi " + (idx + 1));
+          },
         });
       }
       drawOrganize();
     };
     state.custom.refreshOrganize = refresh;
+    /* lepaskan dokumen pratinjau saat alat ditutup */
+    state.custom.dispose = () => {
+      if (docPrev) {
+        PV.dropDoc(docPrev);
+        PV.dropDocThumbs(docPrev);
+        docPrev = "";
+      }
+      docKey = "";
+      state.custom.organize = null;
+    };
     refresh();
   }
 
@@ -1690,7 +1782,7 @@
         const tool = state.tool;
         for (const file of list) {
           const bytes = new Uint8Array(await file.arrayBuffer());
-          state.files.push({ name: file.name, bytes, type: file.type, size: file.size });
+          state.files.push({ id: "tf" + (++toolFileSeq), name: file.name, bytes, type: file.type, size: file.size });
         }
         renderFiles();
         if (state.custom.refreshOrganize) state.custom.refreshOrganize();
@@ -1718,7 +1810,7 @@
         const list = Array.from(e.dataTransfer.files || []);
         for (const file of list) {
           const bytes = new Uint8Array(await file.arrayBuffer());
-          state.files.push({ name: file.name, bytes, type: file.type, size: file.size });
+          state.files.push({ id: "tf" + (++toolFileSeq), name: file.name, bytes, type: file.type, size: file.size });
         }
         renderFiles();
         if (state.custom.refreshOrganize) state.custom.refreshOrganize();

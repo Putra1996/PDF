@@ -1,0 +1,128 @@
+{
+  "tanggal": "2026-11-24",
+  "catatan": "Benchmark before/after fitur pratinjau. Baseline = commit b462d6a (main sebelum fitur), diukur dengan harness yang sama.",
+  "baseline": {
+    "pisahPdf": {
+      "tFirst": 1868,
+      "tAll": 121876,
+      "thumbs": 90,
+      "rendered": 42,
+      "render": 0,
+      "toBlob": 42,
+      "nodes": 1615
+    },
+    "pisahPdfUrutkanUlang": {
+      "ms": 220,
+      "blob": 0,
+      "dataUrl": 0,
+      "rendered": 42
+    },
+    "gabungMuat": {
+      "tCards": 49,
+      "tThumb": 2258,
+      "kartu": 93,
+      "terRender": 27,
+      "render": 0,
+      "toBlob": 29
+    },
+    "gabungGantiMode": {
+      "ms": 885,
+      "blob": 27,
+      "dataUrl": 0,
+      "terRender": 27
+    },
+    "gabungGeserHalaman": {
+      "ms": 1589,
+      "blob": 27,
+      "dataUrl": 0
+    },
+    "gabungKembaliMode": {
+      "ms": 1136,
+      "blob": 27,
+      "dataUrl": 0
+    },
+    "gabungScroll": {
+      "ms": 1143,
+      "blob": 21,
+      "dataUrl": 0,
+      "terRender": 48,
+      "total": 93
+    },
+    "susunPdf": {
+      "ok": true,
+      "tCells": 3471,
+      "cells": 90,
+      "imgs": 90,
+      "render": 0,
+      "toBlob": 0,
+      "dataUrl": 90
+    },
+    "susunPutar": {
+      "ms": 236,
+      "blob": 0,
+      "dataUrl": 0
+    }
+  },
+  "sesudah": {
+    "pisahPdf": {
+      "tFirst": 2049,
+      "tAll": 122056,
+      "thumbs": 90,
+      "rendered": 42,
+      "render": 0,
+      "toBlob": 42,
+      "nodes": 1616
+    },
+    "pisahPdfUrutkanUlang": {
+      "ms": 240,
+      "blob": 0,
+      "dataUrl": 0,
+      "rendered": 42
+    },
+    "gabungMuat": {
+      "tCards": 77,
+      "tThumb": 1869,
+      "kartu": 93,
+      "terRender": 36,
+      "render": 0,
+      "toBlob": 36
+    },
+    "gabungGantiMode": {
+      "ms": 1957,
+      "blob": 36,
+      "dataUrl": 0,
+      "terRender": 72
+    },
+    "gabungGeserHalaman": {
+      "ms": 398,
+      "blob": 0,
+      "dataUrl": 0
+    },
+    "gabungKembaliMode": {
+      "ms": 384,
+      "blob": 0,
+      "dataUrl": 0
+    },
+    "gabungScroll": {
+      "ms": 213,
+      "blob": 0,
+      "dataUrl": 0,
+      "terRender": 72,
+      "total": 93
+    },
+    "susunPdf": {
+      "ok": true,
+      "tCells": 253,
+      "cells": 90,
+      "imgs": 30,
+      "render": 0,
+      "toBlob": 30,
+      "dataUrl": 0
+    },
+    "susunPutar": {
+      "ms": 246,
+      "blob": 0,
+      "dataUrl": 0
+    }
+  }
+}

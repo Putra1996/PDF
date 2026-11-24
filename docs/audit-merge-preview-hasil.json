@@ -1,5 +1,5 @@
 {
-  "tanggal": "2026-11-24T08:49:47.304Z",
+  "tanggal": "2026-11-24T09:50:40.480Z",
   "mode": "lokal",
   "pass": 44,
   "fail": 0,
@@ -32,12 +32,12 @@
     {
       "name": "Thumbnail halaman benar-benar dirender",
       "ok": true,
-      "detail": "gambar=7"
+      "detail": "gambar=3"
     },
     {
       "name": "Ukuran thumbnail thumbnail nyata (bukan kotak kosong)",
       "ok": true,
-      "detail": "297x420 tampil 94x132"
+      "detail": "240x340 tampil 94x133"
     },
     {
       "name": "Kartu bisa diseret (draggable)",
@@ -177,7 +177,7 @@
     {
       "name": "Performa: ganti mode < 3 detik",
       "ok": true,
-      "detail": "304 ms"
+      "detail": "1217 ms"
     },
     {
       "name": "Performa: semua kartu tetap tampil setelah mode dibalik",

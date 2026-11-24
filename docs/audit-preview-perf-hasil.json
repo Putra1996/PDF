@@ -1,0 +1,202 @@
+{
+  "tanggal": "2026-11-24T09:49:29.238Z",
+  "pass": 39,
+  "fail": 0,
+  "results": [
+    {
+      "name": "Pisah: thumbnail pertama tampil cepat",
+      "ok": true,
+      "detail": "2511 ms"
+    },
+    {
+      "name": "Pisah: thumbnail benar-benar ter-render (bukan placeholder)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Pisah: pemuatan malas — tidak semua 90 halaman dirender",
+      "ok": true,
+      "detail": "ter-render 42 dari 90"
+    },
+    {
+      "name": "Pisah: sisanya masih berupa placeholder",
+      "ok": true,
+      "detail": "placeholder=48"
+    },
+    {
+      "name": "Pisah: reorder file TIDAK membangun ulang blok file (node sama)",
+      "ok": true,
+      "detail": "node dipakai ulang=1/1"
+    },
+    {
+      "name": "Pisah: reorder file tidak mengulang render thumbnail",
+      "ok": true,
+      "detail": "blob=0 dataUrl=0"
+    },
+    {
+      "name": "Pisah: thumbnail tetap tampil setelah reorder",
+      "ok": true,
+      "detail": "img=42"
+    },
+    {
+      "name": "Pisah: reorder file cepat",
+      "ok": true,
+      "detail": "1211 ms"
+    },
+    {
+      "name": "Gabung: kartu pratinjau muncul cepat",
+      "ok": true,
+      "detail": "296 ms"
+    },
+    {
+      "name": "Gabung: thumbnail pratinjau benar-benar ter-render",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Gabung: pemuatan malas — hanya kartu di area terlihat yang dirender",
+      "ok": true,
+      "detail": "img=36 area={terlihat+margin}=36 total=90"
+    },
+    {
+      "name": "Gabung: semua kartu terlihat punya thumbnail",
+      "ok": true,
+      "detail": "27/27"
+    },
+    {
+      "name": "Gabung: ganti mode memakai ulang node kartu (tidak dibangun ulang)",
+      "ok": true,
+      "detail": "node hidup=90/90"
+    },
+    {
+      "name": "Gabung: thumbnail lama tetap memakai object URL yang sama",
+      "ok": true,
+      "detail": "sama=36/36"
+    },
+    {
+      "name": "Gabung: hanya halaman BARU yang dirender saat mode dibalik",
+      "ok": true,
+      "detail": "render=31 total=90"
+    },
+    {
+      "name": "Gabung: ganti mode cepat",
+      "ok": true,
+      "detail": "1208 ms"
+    },
+    {
+      "name": "Gabung: kembali ke mode awal TIDAK render ulang (cache bekerja)",
+      "ok": true,
+      "detail": "blob=0 dataUrl=0"
+    },
+    {
+      "name": "Gabung: menggeser satu halaman tidak render ulang",
+      "ok": true,
+      "detail": "blob=0"
+    },
+    {
+      "name": "Gabung: thumbnail tetap utuh setelah digeser",
+      "ok": true,
+      "detail": "img=72"
+    },
+    {
+      "name": "Gabung: geser halaman cepat",
+      "ok": true,
+      "detail": "1210 ms"
+    },
+    {
+      "name": "Gabung: setelah scroll, kartu yang terlihat punya thumbnail",
+      "ok": true,
+      "detail": "27/27"
+    },
+    {
+      "name": "Gabung: scroll tidak merender SELURUH dokumen sekaligus",
+      "ok": true,
+      "detail": "img=72 total=90"
+    },
+    {
+      "name": "Gabung: interaksi berulang memakai cache (tanpa render baru)",
+      "ok": true,
+      "detail": "render=0"
+    },
+    {
+      "name": "Susun: tool bisa dibuka",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Susun: grid halaman muncul cepat",
+      "ok": true,
+      "detail": "340 ms"
+    },
+    {
+      "name": "Susun: thumbnail yang terlihat benar-benar ter-render",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Susun: TIDAK lagi merender semua halaman sekaligus",
+      "ok": true,
+      "detail": "img=30 cells=90"
+    },
+    {
+      "name": "Susun: tidak ada data-URL (bukan lagi canvas.toDataURL)",
+      "ok": true,
+      "detail": "dataUrl=0"
+    },
+    {
+      "name": "Susun: kartu di area terlihat semuanya punya thumbnail",
+      "ok": true,
+      "detail": "25/25"
+    },
+    {
+      "name": "Susun: kartu jauh dari layar BELUM dirender (pemuatan malas)",
+      "ok": true,
+      "detail": "jauh ter-render=0/55"
+    },
+    {
+      "name": "Susun: memutar halaman memakai ulang node (tidak dibangun ulang)",
+      "ok": true,
+      "detail": "node hidup=90/90"
+    },
+    {
+      "name": "Susun: memutar halaman tidak render ulang thumbnail",
+      "ok": true,
+      "detail": "blob=0"
+    },
+    {
+      "name": "Susun: memutar halaman cepat",
+      "ok": true,
+      "detail": "1511 ms"
+    },
+    {
+      "name": "Susun: nomor posisi kartu tetap urut",
+      "ok": true,
+      "detail": "1,2,3,4,5"
+    },
+    {
+      "name": "Umum: jumlah object URL terkendali (tidak membengkak)",
+      "ok": true,
+      "detail": "object URL=144"
+    },
+    {
+      "name": "Umum: tidak ada error JavaScript",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Bukti: screenshot pratinjau Pisah PDF",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Bukti: screenshot pratinjau Gabung PDF",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Bukti: screenshot pratinjau Susun PDF",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

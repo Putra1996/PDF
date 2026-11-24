@@ -1147,17 +1147,16 @@
       const doc = await loadDoc(bytes);
       const pdfjs = await openPdfjs(bytes);
       const n = pdfjs.numPages;
-      const thumbs = [];
-      for (let i = 1; i <= n; i++) {
-        const { canvas, viewport } = await renderPage(pdfjs, i, 0.35);
-        thumbs.push({ data: canvas.toDataURL("image/jpeg", 0.6), w: viewport.width, h: viewport.height });
-        canvas.width = canvas.height = 0;
-      }
+      /* Thumbnail TIDAK lagi dibuat di sini. Sebelumnya semua halaman
+         dirender jadi data-URL saat membuka (berat untuk dokumen
+         panjang). Sekarang pratinjau memuat thumbnail secara malas
+         lewat modul pratinjau bersama (window.PDFPreview). */
       try { await pdfjs.destroy(); } catch (_) {}
       return {
         pageCount: n,
-        thumbs,
-        items: Array.from({ length: n }, (_, i) => ({ n: i + 1, rot: 0, del: false })),
+        items: Array.from({ length: n }, (_, i) => ({
+          id: "p" + (i + 1), n: i + 1, rot: 0, del: false,
+        })),
       };
     },
     async run(ctx) {
