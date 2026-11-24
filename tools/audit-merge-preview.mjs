@@ -85,15 +85,19 @@ async function main() {
     console.error(`Fixture tidak ada: ${FIX}\nJalankan: node tools/mkfixtures-merge.mjs`);
     process.exit(2);
   }
-  const srv = await server();
+  /* MODE_PRODUKSI=1 -> menguji situs yang sudah ter-deploy, bukan server lokal. */
+  const PRODUKSI = process.env.MODE_PRODUKSI === "1";
+  const BASE = PRODUKSI ? process.env.SITE_URL : `http://127.0.0.1:${PORT}`;
+  const srv = PRODUKSI ? { close() {} } : await server();
   const browser = await chromium();
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
   page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
 
-  await page.goto(`http://127.0.0.1:${PORT}/index.html`, { waitUntil: "load" });
+  await page.goto(`${BASE}/index.html`, { waitUntil: "load" });
   await page.waitForTimeout(1500);
+  console.log("mode:", PRODUKSI ? `PRODUKSI ${BASE}` : `lokal ${BASE}`);
 
   const alpha = path.join(FIX, "alpha.pdf");
   const beta = path.join(FIX, "beta.pdf");
@@ -409,7 +413,7 @@ async function main() {
 
   /* ============ 11. Screenshot bukti ============ */
   {
-    const shotDir = path.join(ROOT, "docs", "audit-merge-preview-2026-11-24");
+    const shotDir = path.join(ROOT, "docs", "audit-merge-preview-2026-11-24" + (PRODUKSI ? "-produksi" : ""));
     fs.mkdirSync(shotDir, { recursive: true });
     const potret = async (nama) => {
       const el = await page.$("#mergePreviewCard");
@@ -480,8 +484,8 @@ async function main() {
   const outDir = path.join(ROOT, "docs");
   fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(
-    path.join(outDir, "audit-merge-preview-hasil.json"),
-    JSON.stringify({ tanggal: new Date().toISOString(), pass, fail, results }, null, 2)
+    path.join(outDir, "audit-merge-preview-hasil.json" + (PRODUKSI ? "-produksi" : "")),
+    JSON.stringify({ tanggal: new Date().toISOString(), mode: PRODUKSI ? "produksi" : "lokal", pass, fail, results }, null, 2)
   );
   await browser.close();
   srv.close();

@@ -138,7 +138,27 @@ Semua audit regresi dijalankan ulang pada build yang sama:
 | `tools/audit-ocr.mjs` | **44 / 0** | OCR PDF aman. |
 | `tools/verify-produksi.mjs` | **73 / 1** | Satu-satunya kegagalan `Toolbar editor ≤ 3 baris di 360px baris=4` **sudah ada pada baseline** sebelum fitur ini, bukan regresi baru. |
 
-## 5. Catatan implementasi
+## 5. Verifikasi produksi (deploy)
+
+PR #21 sudah merged ke `main` (merge commit `94af1b3`) dan GitHub Pages deployment
+berstatus `success`.
+
+- `https://putra1996.github.io/PDF/style.css` → `--css-build:20261124d` (build aset baru).
+- `https://putra1996.github.io/PDF/index.html` → panel **"Pratinjau urutan halaman"** dengan
+  chip *Sesuai file / Dibalik / Kustom* sudah tampil di markup produksi.
+- Hash sha256 berkas ter-deploy (`app.js`, `style.css`, `index.html`) **identik byte-per-byte**
+  dengan commit yang diaudit, jadi hasil audit lokal berlaku untuk produksi.
+
+Harness `tools/audit-merge-preview.mjs` juga mendukung mode produksi:
+
+```bash
+MODE_PRODUKSI=1 SITE_URL="https://putra1996.github.io/PDF" node tools/audit-merge-preview.mjs
+```
+
+Hasil produksi ditulis ke `docs/audit-merge-preview-hasil-produksi.json` dan screenshot ke
+`docs/audit-merge-preview-2026-11-24-produksi/`.
+
+## 6. Catatan implementasi
 
 - **Tombol "Balik urutan"** pada daftar file telah diberi nama **"Balik urutan file"**
   (dengan `title` penjelasan) supaya tidak tertukar dengan mode "Dibalik" di pratinjau.
