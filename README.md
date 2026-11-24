@@ -127,7 +127,7 @@ diduplikasi** — semuanya memakai tautan ke alur yang sudah ada:
 | Kategori | Alat |
 |---|---|
 | **Susun PDF** | Merge PDF · Split PDF · Remove pages · Extract pages · Organize PDF · Scan to PDF |
-| **Optimalkan PDF** | Compress PDF · Repair PDF · OCR PDF |
+| **Optimalkan PDF** | Compress PDF · Rapi PDF · OCR PDF |
 | **Konversi ke PDF** | JPG to PDF · WORD to PDF · POWERPOINT to PDF · EXCEL to PDF · HTML to PDF |
 | **Konversi dari PDF** | PDF to JPG · PDF to WORD · PDF to POWERPOINT · PDF to EXCEL · PDF to PDF/A |
 | **Edit PDF** | Rotate PDF · Add page numbers · Add watermark · Crop PDF · Edit PDF · PDF Forms |
@@ -136,6 +136,13 @@ diduplikasi** — semuanya memakai tautan ke alur yang sudah ada:
 
 Catatan:
 
+- **Rapi PDF** (Repair PDF) sekarang bisa **meluruskan halaman hasil
+  pindai yang miring** (sampai 20°, putar 90° otomatis, pangkas margin
+  putih). Kemiringan dideteksi dari piksel tinta halaman, lalu diperbaiki
+  dengan membungkus *content stream* — teks, vektor, dan gambar **tidak
+  pernah ditulis ulang**, jadi kualitas dokumen tidak berkurang. Anotasi,
+  tautan, dan field formulir ikut diputar agar tetap menempel pada isinya.
+  Rincian audit: `docs/audit-deskew-2026-11-24.md`.
 - **Protect PDF** memakai Standard Security Handler (V=4 / R=4, AES-128),
   termasuk nilai `/O` dan `/U` sesuai ISO 32000-1 §7.6.3, plus bit izin
   (cetak / ubah / salin / anotasi). Hasilnya **dapat dibuka reader lain**

@@ -90,6 +90,9 @@ async function resolveBrowser(pwChromium) {
   const mod = await import("@sparticuz/chromium").catch(() => null);
   if (mod) {
     const chromium = mod.default;
+    /* pustaka sistem (libnss3 dll) mungkin perlu diekstrak dulu */
+    const { siapkanPustaka } = await import("./browser.mjs");
+    await siapkanPustaka();
     return { exe: await chromium.executablePath(), args: [...chromium.args, "--no-sandbox", "--disable-dev-shm-usage"] };
   }
   throw new Error("Binary Chromium tidak ditemukan (pasang playwright chromium atau set CHROME_PATH).");
@@ -520,6 +523,116 @@ async function main() {
         check("OCR: halaman tetap 1 & ukuran halaman dipertahankan",
           info.halaman === 1 && info.w === 595 && info.h === 842, `${info.halaman} hal ${info.w}x${info.h}`);
         check("OCR: berkas tidak membengkak tak wajar", info.ukuran > 5000, `${info.ukuran} byte`);
+      }
+      await page.click("#toolBackBtn").catch(() => {});
+      await page.waitForTimeout(400);
+    }
+
+    /* ============ 10c. Alat Rapi PDF / pelurusan (regresi) ============ */
+    {
+      /* PDF pindai miring 3 derajat dibuat langsung di peramban:
+         teks dirender ke canvas lalu diputar miring. */
+      const bytesMiring = await page.evaluate(async () => {
+        const W = 1190, H = 1684;
+        const base = document.createElement("canvas");
+        base.width = W; base.height = H;
+        const bc = base.getContext("2d");
+        bc.fillStyle = "#fff";
+        bc.fillRect(0, 0, W, H);
+        bc.fillStyle = "#111";
+        bc.font = "26px Helvetica, Arial, sans-serif";
+        const baris = [
+          "DOKUMEN PEMERIKSAAN KUALITAS",
+          "Laporan ini disusun sebagai ringkasan kegiatan",
+          "yang telah dilaksanakan selama periode berjalan.",
+          "Capaian berada pada angka 87,4 persen dengan",
+          "catatan tiga kegiatan ditunda karena cuaca buruk.",
+          "Rincian expenditures dapat dilihat pada lampiran.",
+          "Demikian laporan ini disusun sebagai bahan bacaan",
+          "semoga dapat bermanfaat bagi semua pihak yang ada.",
+        ];
+        let y = 160;
+        for (const b of baris) { bc.fillText(b, 120, y); y += 52; }
+        const c = document.createElement("canvas");
+        c.width = W; c.height = H;
+        const ctx = c.getContext("2d");
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, W, H);
+        ctx.save();
+        ctx.translate(W / 2, H / 2);
+        ctx.rotate((-3 * Math.PI) / 180);
+        ctx.translate(-W / 2, -H / 2);
+        ctx.drawImage(base, 0, 0);
+        ctx.restore();
+        const jpg = c.toDataURL("image/jpeg", 0.92);
+        const bin = atob(jpg.split(",")[1]);
+        const u8 = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+        const out = await PDFLib.PDFDocument.create();
+        const img = await out.embedJpg(u8);
+        const pg = out.addPage([595.28, 841.89]);
+        pg.drawImage(img, { x: 0, y: 0, width: 595.28, height: 841.89 });
+        const res = await out.save({ useObjectStreams: false });
+        return Array.from(new Uint8Array(res));
+      });
+      const fileMiring = path.join(SHOT_DIR, "rapi-miring.pdf");
+      fs.mkdirSync(SHOT_DIR, { recursive: true });
+      fs.writeFileSync(fileMiring, Buffer.from(bytesMiring));
+
+      await page.click("#tab-tools");
+      await page.waitForTimeout(400);
+      await page.evaluate(() => {
+        const btn = document.querySelector('#toolCategories .tool-card[data-tool="repair"]')
+          || [...document.querySelectorAll("#toolCategories .tool-card")].find((n) => n.textContent.includes("Rapi PDF"));
+        btn?.click();
+      });
+      await page.waitForTimeout(700);
+      await page.evaluate(() => {
+        const el = document.getElementById("f_trim");
+        if (el) { el.checked = false; el.dispatchEvent(new Event("change", { bubbles: true })); }
+      });
+      await page.setInputFiles("#toolInput", fileMiring);
+      await page.waitForTimeout(600);
+      await page.click("#toolRunBtn");
+      let hrefRapi = null;
+      for (let i = 0; i < 90; i++) {
+        await page.waitForTimeout(1000);
+        hrefRapi = await page.evaluate(() => {
+          const a = document.querySelector("#toolResults a");
+          return a ? a.href : null;
+        });
+        if (hrefRapi) break;
+      }
+      check("Rapi PDF menghasilkan berkas", !!hrefRapi, hrefRapi ? "selesai" : "timeout");
+      if (hrefRapi) {
+        const info = await page.evaluate(async (u) => {
+          const r = await fetch(u);
+          const buf = new Uint8Array(await r.arrayBuffer());
+          const ukuran = buf.length;
+          const doc = await pdfjsLib.getDocument({ data: buf }).promise;
+          const a = await window.PDFToolsCore.analisisHalaman(doc, 1, { maksDeg: 8, autoRotate: true });
+          const p = await doc.getPage(1);
+          const vp = p.getViewport({ scale: 1 });
+          return {
+            ukuran,
+            halaman: doc.numPages,
+            sudut: a.sudut,
+            kepastian: a.kepastian,
+            w: Math.round(vp.width),
+            h: Math.round(vp.height),
+          };
+        }, hrefRapi);
+        check("Rapi PDF: halaman miring jadi lurus", Math.abs(info.sudut) < 0.6, `sisa=${Number(info.sudut).toFixed(2)}°`);
+        check("Rapi PDF: halaman tetap 1", info.halaman === 1, `halaman=${info.halaman}`);
+        check("Rapi PDF: berkas tidak diraster ulang", info.ukuran > 20000, `${info.ukuran} byte`);
+        const sebelum = await page.evaluate(async (u) => {
+          const r = await fetch(u);
+          const buf = new Uint8Array(await r.arrayBuffer());
+          const doc = await pdfjsLib.getDocument({ data: buf }).promise;
+          const a = await window.PDFToolsCore.analisisHalaman(doc, 1, { maksDeg: 8, autoRotate: true });
+          return a.sudut;
+        }, "data:application/pdf;base64," + Buffer.from(bytesMiring).toString("base64"));
+        check("Rapi PDF: sumber memang miring", Math.abs(Number(sebelum)) > 2, `sumber=${Number(sebelum).toFixed(2)}°`);
       }
       await page.click("#toolBackBtn").catch(() => {});
       await page.waitForTimeout(400);

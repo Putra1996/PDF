@@ -1009,6 +1009,368 @@ ${Array.from({ length: n }, (_, i) => `<Override PartName="/ppt/slides/slide${i 
     return zip.generateAsync({ type: "blob", compression: "DEFLATE" });
   }
 
+  /* ============================================================
+     Analisis kemiringan halaman (dipakai fitur "Rapi PDF").
+
+     Prinsip kerja:
+     1. Halaman dirender, piksel tinta (gelap) diambil.
+     2. Setiap kandidat sudut diuji dengan "profil proyeksi":
+        titik tinta diputar kandidat sudut itu, lalu y' setiap titik
+        dihitung. Baris teks yang rata akan menumpuk pada satu
+        nilai y' -> profilnya tajam (jumlah kuadrat isi bin besar).
+        Sudut dengan skor tertinggi = kemiringan dokumen.
+     3. Penyesuaian 180 derajat (teks terbalik) ditentukan dari
+        posisi titik berat tinta di dalam tiap baris teks.
+
+     Semua tahap ini HANYA MEMBACA berkas, jadi kualitas dokumen
+     tidak tersentuh. Koreksi nanti dilakukan di tool-pdf.js dengan
+     membungkus content stream (tanpa menulis ulang isi halaman).
+     ============================================================ */
+
+  /* Ambang gelap: piksel jauh lebih gelap dari latar dianggap tinta.
+     Diambil dari persentil histogram supaya tahan foto gelap /
+     kertas berwarna. */
+  function ambangTinta(gray, n) {
+    const hist = new Uint32Array(256);
+    for (let i = 0; i < n; i++) hist[gray[i]]++;
+    const total = n;
+    const bawah = total * 0.02;
+    const atas = total - total * 0.98;
+    let c = 0, lo = 0, hi = 255;
+    for (let v = 0; v < 256; v++) { c += hist[v]; if (c >= bawah) { lo = v; break; } }
+    c = 0;
+    for (let v = 255; v >= 0; v--) { c += hist[v]; if (c >= atas) { hi = v; break; } }
+    const ambang = (lo + hi) / 2;
+    return Math.max(18, Math.min(238, ambang));
+  }
+
+  /* Titik tinta (piksel gelap) dalam koordinat PDF user space.
+     Canvas -> PDF memakai kebalikan transform viewport, jadi
+     rotasi halaman (/Rotate) ikut diperhitungkan. */
+  function titikTinta(canvas, viewport, maksTitik) {
+    const kosong = { titik: new Float64Array(0), minX: 0, minY: 0, maxX: 0, maxY: 0, jumlah: 0 };
+    let data;
+    try {
+      data = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height);
+    } catch (_) {
+      return kosong;
+    }
+    const w = canvas.width, h = canvas.height;
+    const n = w * h;
+    const d = data.data;
+    const gray = new Uint8Array(n);
+    for (let i = 0, p = 0; i < d.length; i += 4, p++) {
+      gray[p] = ((d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000) | 0;
+    }
+    const ambang = ambangTinta(gray, n);
+    /* langkah 1: hitung jumlah piksel tinta */
+    let jumlah = 0;
+    for (let p = 0; p < n; p++) if (gray[p] <= ambang) jumlah++;
+    if (!jumlah) return kosong;
+    /* langkah 2: subsample supaya biaya pencarian sudut kecil */
+    const batas = Math.max(2000, maksTitik || 60000);
+    const langkah = Math.max(1, Math.ceil(jumlah / batas));
+    const t = viewport.transform;
+    const det = t[0] * t[3] - t[1] * t[2];
+    if (!det) return kosong;
+    const out = new Float64Array(Math.ceil(jumlah / langkah) * 2);
+    let o = 0;
+    let seen = 0;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (let y = 0; y < h; y++) {
+      const baris = y * w;
+      for (let x = 0; x < w; x++) {
+        const p = baris + x;
+        if (gray[p] > ambang) continue;
+        if (seen++ % langkah) continue;
+        const cx = x + 0.5, cy = y + 0.5;
+        const dx = cx - t[4], dy = cy - t[5];
+        const X = (t[3] * dx - t[2] * dy) / det;
+        const Y = (-t[1] * dx + t[0] * dy) / det;
+        out[o++] = X;
+        out[o++] = Y;
+        if (X < minX) minX = X;
+        if (X > maxX) maxX = X;
+        if (Y < minY) minY = Y;
+        if (Y > maxY) maxY = Y;
+      }
+    }
+    return { titik: out.subarray(0, o), minX, minY, maxX, maxY, jumlah: o / 2 };
+  }
+
+  /* Skor profil proyeksi untuk satu sudut (derajat).
+     y' = x*sin(a) + y*cos(a)  ->  koordinat tegak lurus garis teks.
+     Makin tajam profilnya (isi bin menumpuk), makin rata baris teksnya. */
+  function skorProyeksi(titik, rad, bins) {
+    const sin = Math.sin(rad), cos = Math.cos(rad);
+    bins.fill(0);
+    const n = bins.length - 1;
+    let min = Infinity, max = -Infinity;
+    for (let i = 0; i < titik.length; i += 2) {
+      const v = titik[i] * sin + titik[i + 1] * cos;
+      if (v < min) min = v;
+      else if (v > max) max = v;
+    }
+    if (!isFinite(min) || max - min < 1e-9) return 0;
+    const k = n / (max - min);
+    for (let i = 0; i < titik.length; i += 2) {
+      const v = titik[i] * sin + titik[i + 1] * cos;
+      let b = ((v - min) * k) | 0;
+      if (b < 0) b = 0; else if (b > n) b = n;
+      bins[b]++;
+    }
+    let s = 0;
+    for (let i = 0; i < bins.length; i++) s += bins[i] * bins[i];
+    return s;
+  }
+
+  /* Cari sudut terbaik (pencarian kasar lalu diperhalus). */
+  function cariSudut(titik, minDeg, maxDeg, bins, langkah) {
+    const kasar = langkah || Math.max(0.1, (maxDeg - minDeg) / 36);
+    let terbaik = { sudut: minDeg, skor: -1 };
+    for (let a = minDeg; a <= maxDeg + 1e-9; a += kasar) {
+      const s = skorProyeksi(titik, (a * Math.PI) / 180, bins);
+      if (s > terbaik.skor) terbaik = { sudut: a, skor: s };
+    }
+    const halus = kasar / 10;
+    const lo = Math.max(minDeg, terbaik.sudut - kasar);
+    const hi = Math.min(maxDeg, terbaik.sudut + kasar);
+    for (let a = lo; a <= hi + 1e-9; a += halus) {
+      const s = skorProyeksi(titik, (a * Math.PI) / 180, bins);
+      if (s > terbaik.skor) terbaik = { sudut: a, skor: s };
+    }
+    return terbaik;
+  }
+
+  /* ---------- Baris teks & orientasi ----------
+
+     Untuk menentukan arah teks (normal atau terbalik 180 derajat)
+     dipakai "sisi rata" baris: pada teks normal semua baris mulai
+     dari margin kiri yang sama, sedangkan ujung kanan rapi-rapi
+     (ragged). Kalau teksnya terbalik, sisi ratanya pindah ke kanan.
+     Sinyal ini jauh lebih kuat daripada menebak dari bentuk huruf
+     dan tidak terpengaruh jenis huruf. */
+  function garisTeks(titik, bins) {
+    const n = bins.length;
+    bins.fill(0);
+    let min = Infinity, max = -Infinity;
+    for (let i = 0; i < titik.length; i += 2) {
+      const v = titik[i + 1];
+      if (v < min) min = v;
+      else if (v > max) max = v;
+    }
+    if (!isFinite(min) || max <= min) return [];
+    const k = (n - 1) / (max - min);
+    for (let i = 0; i < titik.length; i += 2) {
+      let b = ((titik[i + 1] - min) * k) | 0;
+      if (b < 0) b = 0; else if (b > n - 1) b = n - 1;
+      bins[b]++;
+    }
+    /* Satu baris teks = wilayah bin yang berdekatan. Celah kecil
+       (jeda antar huruf) disatukan, jeda antar baris tidak. */
+    const CELAH = 2;
+    const wilayah = [];
+    let awal = -1;
+    let jeda = 0;
+    for (let i = 0; i < n; i++) {
+      if (bins[i] > 0) {
+        if (awal < 0) awal = i;
+        jeda = 0;
+      } else if (awal >= 0) {
+        jeda++;
+        if (jeda > CELAH) {
+          wilayah.push([awal, i - jeda]);
+          awal = -1;
+          jeda = 0;
+        }
+      }
+    }
+    if (awal >= 0) wilayah.push([awal, n - 1]);
+    if (!wilayah.length) return [];
+    /* Titik tiap baris = titik yang bin-nya masuk wilayah itu. */
+    const garis = wilayah.map(() => ({ x0: Infinity, x1: -Infinity, n: 0 }));
+    for (let i = 0; i < titik.length; i += 2) {
+      let b = ((titik[i + 1] - min) * k) | 0;
+      if (b < 0) b = 0; else if (b > n - 1) b = n - 1;
+      let g = 0;
+      while (g + 1 < wilayah.length && b > wilayah[g][1]) g++;
+      const row = garis[g];
+      const x = titik[i];
+      if (x < row.x0) row.x0 = x;
+      if (x > row.x1) row.x1 = x;
+      row.n++;
+    }
+    return garis.filter((g) => g.n >= 8 && g.x1 > g.x0);
+  }
+
+  /* Median absolute deviation: ukuran "kepastian" yang tahan terhadap
+     beberapa baris menyimpang (mis. baris berindet). */
+  function mad(nilai) {
+    if (!nilai.length) return 0;
+    const s = nilai.slice().sort((a, b) => a - b);
+    const t = s[s.length >> 1];
+    const d = s.map((v) => Math.abs(v - t)).sort((a, b) => a - b);
+    return d[d.length >> 1];
+  }
+
+  /* Arah teks: true berarti teks terbalik 180 derajat (sisi rata
+     berada di kanan). "yakin" menyatakan seberapa jelas sinyalnya. */
+  function arahTeks(titik) {
+    const bins = new Float64Array(512);
+    const garis = garisTeks(titik, bins);
+    if (garis.length < 3) return { terbalik: false, yakin: 0, kiri: 0, kanan: 0, baris: garis.length };
+    const kiri = garis.map((g) => g.x0);
+    const kanan = garis.map((g) => g.x1);
+    const m0 = mad(kiri), m1 = mad(kanan);
+    const xs0 = kiri.slice().sort((a, b) => a - b);
+    const xs1 = kanan.slice().sort((a, b) => a - b);
+    const lebar = Math.max(1, xs1[xs1.length >> 1] - xs0[xs0.length >> 1]);
+    const yakin = Math.abs(m0 - m1) / lebar;
+    return { terbalik: m1 < m0, yakin, kiri: m0, kanan: m1, baris: garis.length };
+  }
+
+  /* Skor rata-rata seluruh sudut yang diuji (dasar keyakinan). */
+  function rerataSkor(titik, minDeg, maxDeg, bins, langkah) {
+    const kasar = langkah || Math.max(0.1, (maxDeg - minDeg) / 18);
+    let s = 0, c = 0;
+    for (let a = minDeg; a <= maxDeg + 1e-9; a += kasar) {
+      s += skorProyeksi(titik, (a * Math.PI) / 180, bins);
+      c++;
+    }
+    return c ? s / c : 0;
+  }
+
+  /* Putar titik sebesar sudut (derajat) -> array baru. */
+  function putarTitik(titik, deg) {
+    const rad = (deg * Math.PI) / 180;
+    const cos = Math.cos(rad), sin = Math.sin(rad);
+    const out = new Float64Array(titik.length);
+    for (let i = 0; i < titik.length; i += 2) {
+      const x = titik[i], y = titik[i + 1];
+      out[i] = x * cos - y * sin;
+      out[i + 1] = x * sin + y * cos;
+    }
+    return out;
+  }
+
+  /* Analisis kemiringan dari kumpulan titik tinta.
+     Opsi: maksDeg (batas koreksi kecil), autoRotate (boleh putar 90). */
+  function analisisKemiringan(titikInfo, opsi) {
+    const o = opsi || {};
+    const maksDeg = Math.min(20, Math.max(1, o.maksDeg || 8));
+    const autoRotate = o.autoRotate !== false;
+    /*Ambang keyakinan "sisi rata" baris teks: di bawah nilai ini
+      arah teks tidak boleh diasumsikan. */
+    const AMBANG_YAKIN = 0.02;
+    const hasil = {
+      sudut: 0, kepastian: 0, orientasi: 0, terbalik: false,
+      sideways: false, tegas: false, kotak: null, jumlah: 0, skor: 0, skor0: 0,
+    };
+    if (!titikInfo || !titikInfo.jumlah || titikInfo.jumlah < 40) return hasil;
+    const titik = titikInfo.titik;
+    hasil.jumlah = titikInfo.jumlah;
+    /* normalisasi: pindahkan ke pusat, skala radius = 1 */
+    let cx = 0, cy = 0;
+    const jml = titik.length / 2;
+    for (let i = 0; i < titik.length; i += 2) { cx += titik[i]; cy += titik[i + 1]; }
+    cx /= jml; cy /= jml;
+    let R = 0;
+    for (let i = 0; i < titik.length; i += 2) {
+      const dx = titik[i] - cx, dy = titik[i + 1] - cy;
+      const r = Math.sqrt(dx * dx + dy * dy);
+      if (r > R) R = r;
+    }
+    if (!R) return hasil;
+    const norm = new Float64Array(titik.length);
+    for (let i = 0, p = 0; i < titik.length; i += 2, p += 2) {
+      norm[p] = (titik[i] - cx) / R;
+      norm[p + 1] = (titik[i + 1] - cy) / R;
+    }
+    const bins = new Float64Array(512);
+    const bins2 = new Float64Array(512);
+
+    /* -- 1. koreksi kecil (batas maksDeg) -- */
+    const kecil = cariSudut(norm, -maksDeg, maksDeg, bins, Math.max(0.1, maksDeg / 18));
+    const skorKecil = kecil.skor;
+
+    /* -- 2. sideways? bandingkan ketajaman profil horizontal vs vertikal -- */
+    const skorY = skorProyeksi(norm, 0, bins);
+    const skorX = skorProyeksi(norm, Math.PI / 2, bins2);
+    const sideways = skorX > skorY * 1.25;
+
+    let sudut = kecil.sudut;
+    let orientasi = 0;
+    let terbalik = false;
+    let frame = norm;
+    let halus = kecil;
+
+    /* ---- 2b. tentukan orientasi (terbalik 180 derajat atau tidak) ----
+       Baris teks harus lebih dulu diluruskan (miring kecil sudah
+       dihitung), baru sisi ratanya bisa dibaca dengan benar. */
+    const putar = (dasar) => {
+      const f = dasar === 0 ? norm : putarTitik(norm, dasar);
+      const h = cariSudut(f, -maksDeg, maksDeg, bins, Math.max(0.1, maksDeg / 18));
+      const lurus = putarTitik(f, -h.sudut);
+      const a = arahTeks(lurus);
+      return { dasar, f, h, lurus, arah: a };
+    };
+    if (sideways && autoRotate) {
+      /* Teks tegak: putar -90; kalau hasilnya terbalik, pakai +90. */
+      let o = putar(-90);
+      if (o.arah.terbalik && o.arah.yakin > AMBANG_YAKIN) {
+        const o2 = putar(90);
+        if (o2.arah.yakin >= o.arah.yakin) { o = o2; terbalik = true; }
+      }
+      frame = o.f;
+      halus = o.h;
+      sudut = o.dasar + o.h.sudut;
+      orientasi = o.dasar;
+    } else {
+      const o = putar(0);
+      frame = o.f;
+      halus = o.h;
+      sudut = o.h.sudut;
+      if (o.arah.terbalik && o.arah.yakin > AMBANG_YAKIN) { terbalik = true; sudut += 180; }
+    }
+
+    /* -- 3. keyakinan: seberapa jauh skor terbaik di atas rerata,
+          dihitung pada frame yang benar-benar dipakai -- */
+    const rerata = rerataSkor(frame, -maksDeg, maksDeg, bins, Math.max(0.1, maksDeg / 18));
+    hasil.sudut = sudut;
+    hasil.orientasi = orientasi;
+    hasil.sideways = sideways;
+    hasil.terbalik = terbalik;
+    hasil.kepastian = (halus.skor - rerata) / Math.max(1, halus.skor);
+    hasil.skor = halus.skor;
+    hasil.skor0 = skorY;
+    /* tegas = baris teksnya sudah horizontal (halaman mendatar) */
+    hasil.tegas = skorY > skorX * 1.25;
+    hasil.kotak = {
+      x: titikInfo.minX, y: titikInfo.minY,
+      w: titikInfo.maxX - titikInfo.minX,
+      h: titikInfo.maxY - titikInfo.minY,
+    };
+    return hasil;
+  }
+
+  /* Analisis satu halaman: render -> ambil tinta -> hitung sudut. */
+  async function analisisHalaman(pdfDoc, nomor, opsi) {
+    const o = opsi || {};
+    const hal = await pdfDoc.getPage(nomor);
+    const v1 = hal.getViewport({ scale: 1 });
+    /* Resolusi analisis: minimal ~140 DPI (A4 -> 1100 px). Di bawah
+       itu profil proyeksi jadi terlalu kasar sehingga kemiringan
+       kecil tidak terbaca. Batas atas menjaga agar halaman besar
+       tidak boros memori. */
+    const lebar = Math.min(o.lebarMaks || 1600, Math.max(1100, v1.width));
+    const skala = Math.min(4, Math.max(0.5, lebar / Math.max(1, v1.width)));
+    const { canvas, viewport } = await renderPage(pdfDoc, nomor, skala);
+    const tinta = titikTinta(canvas, viewport, o.maksTitik || 60000);
+    canvas.width = 0;
+    canvas.height = 0;
+    return analisisKemiringan(tinta, o);
+  }
+
   window.PDFToolsCore = {
     L, PDFDocument, PDFName, PDFNumber, PDFArray, PDFString, PDFHexString, PDFRef,
     PDFRawStream, PDFBool, PDFDict, PDFInvalidObject,
@@ -1023,6 +1385,9 @@ ${Array.from({ length: n }, (_, i) => `<Override PartName="/ppt/slides/slide${i 
     pageTextBoxes, pageImageBoxes, pdfPointToCanvas, pdfRectToCanvas,
     sampleBackground, loadImageEl, applyEdits,
     fontFor, drawTextSafe, getFont,
+    ambangTinta, titikTinta, skorProyeksi, cariSudut,
+    putarTitik, rerataSkor, garisTeks, arahTeks, mad,
+    analisisKemiringan, analisisHalaman,
     MM, A4, LETTER, pageSizeName, compactBytes, parseColor,
   };
 })();
