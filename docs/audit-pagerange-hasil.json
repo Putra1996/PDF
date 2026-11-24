@@ -1,0 +1,367 @@
+{
+  "tanggal": "2026-11-24T05:49:16.477Z",
+  "pass": 72,
+  "fail": 0,
+  "results": [
+    {
+      "name": "Alat \"Rapi PDF\" punya slider rentang halaman",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Alat \"Putar PDF\" punya slider rentang halaman",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Alat \"Potong PDF\" punya slider rentang halaman",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Alat \"Tambah watermark\" punya slider rentang halaman",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Alat \"Tambah nomor halaman\" punya slider rentang halaman",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Alat \"OCR PDF\" punya slider rentang halaman",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Alat \"Redaksi PDF\" punya slider rentang halaman",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Alat \"PDF ke JPG\" punya slider rentang halaman",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Alat \"Bandingkan PDF\" TIDAK punya slider (tidak relevan)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Alat \"Lindungi PDF\" TIDAK punya slider (tidak relevan)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Alat \"PDF ke WORD\" TIDAK punya slider (tidak relevan)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Alat \"PDF ke PDF/A\" TIDAK punya slider (tidak relevan)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Slider batas atas = jumlah halaman dokumen (7)",
+      "ok": true,
+      "detail": "max=7"
+    },
+    {
+      "name": "Ringkasan menampilkan jumlah halaman",
+      "ok": true,
+      "detail": "Semua halaman (7 halaman)"
+    },
+    {
+      "name": "Slider aktif setelah PDF dimuat",
+      "ok": true,
+      "detail": "disabled=false"
+    },
+    {
+      "name": "Chip mode 'Ganjil' tersedia",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Putar PDF mode ganjil berhasil",
+      "ok": true,
+      "detail": "3179 byte"
+    },
+    {
+      "name": "Halaman ganjil diputar 90°",
+      "ok": true,
+      "detail": "rot=90,0,90,0,90,0,90"
+    },
+    {
+      "name": "Halaman genap TIDAK diputar",
+      "ok": true,
+      "detail": "rot=90,0,90,0,90,0,90"
+    },
+    {
+      "name": "Putar PDF rentang 2-4 berhasil",
+      "ok": true,
+      "detail": "3181 byte"
+    },
+    {
+      "name": "Halaman 2-4 diputar",
+      "ok": true,
+      "detail": "rot=0,90,90,90,0,0,0"
+    },
+    {
+      "name": "Halaman di luar rentang TIDAK diputar",
+      "ok": true,
+      "detail": "rot=0,90,90,90,0,0,0"
+    },
+    {
+      "name": "Catatan menyebut jumlah halaman diproses",
+      "ok": true,
+      "detail": "3 KB · 3 dari 7 halaman diputar"
+    },
+    {
+      "name": "Rapi PDF rentang 2-3 berhasil",
+      "ok": true,
+      "detail": "5510 byte"
+    },
+    {
+      "name": "Jumlah halaman tetap 7",
+      "ok": true,
+      "detail": "halaman=7"
+    },
+    {
+      "name": "Halaman 2-3 berubah (diproses)",
+      "ok": true,
+      "detail": "berubah"
+    },
+    {
+      "name": "Halaman di luar rentang TIDAK berubah",
+      "ok": true,
+      "detail": "identik"
+    },
+    {
+      "name": "Catatan Rapi PDF menyebut cakupan",
+      "ok": true,
+      "detail": "5 KB · struktur dibenahi, isi dokumen dipertahankan — 2 dari 7 halaman dirapikan, 2 halaman marginnya dipangkas"
+    },
+    {
+      "name": "Nomor halaman rentang 2-3 berhasil",
+      "ok": true,
+      "detail": "2644 byte"
+    },
+    {
+      "name": "Halaman 2 diberi nomor 2",
+      "ok": true,
+      "detail": "kaki=\"2\""
+    },
+    {
+      "name": "Halaman 3 diberi nomor 3",
+      "ok": true,
+      "detail": "kaki=\"3\""
+    },
+    {
+      "name": "Halaman 1 TIDAK diberi nomor",
+      "ok": true,
+      "detail": "kaki=\"\""
+    },
+    {
+      "name": "Halaman 4 TIDAK diberi nomor",
+      "ok": true,
+      "detail": "kaki=\"\""
+    },
+    {
+      "name": "Watermark rentang 2-2 berhasil",
+      "ok": true,
+      "detail": "2520 byte"
+    },
+    {
+      "name": "Halaman 2 berubah (ada watermark)",
+      "ok": true,
+      "detail": "10378 -> 13641"
+    },
+    {
+      "name": "Halaman 1,3,4 TIDAK berubah",
+      "ok": true,
+      "detail": "identik"
+    },
+    {
+      "name": "PDF ke JPG rentang 2-3 berhasil",
+      "ok": true,
+      "detail": "28253 byte"
+    },
+    {
+      "name": "ZIP berisi 2 gambar (halaman 2 & 3)",
+      "ok": true,
+      "detail": "empat-halaman-002.png,empat-halaman-003.png"
+    },
+    {
+      "name": "Rentang di luar jangkauan tidak menghasilkan file",
+      "ok": true,
+      "detail": "Rentang halaman 8–12 tidak ada di \"empat-halaman.pdf\" — dokumen ini hanya punya 4 halaman."
+    },
+    {
+      "name": "Rentang di luar jangkauan (Rapi PDF) menampilkan pesan jelas",
+      "ok": true,
+      "detail": "Rentang halaman 8–12 tidak ada di \"empat-halaman.pdf\" — dokumen ini hanya punya 4 halaman."
+    },
+    {
+      "name": "Potong PDF rentang 2-2 berhasil",
+      "ok": true,
+      "detail": "2146 byte"
+    },
+    {
+      "name": "Potong: hanya halaman 2 yang dipotong",
+      "ok": true,
+      "detail": "lebar=595,595,595,595 -> 595,538.31,595,595"
+    },
+    {
+      "name": "Potong: catatan menyebut cakupan",
+      "ok": true,
+      "detail": "2 KB · 1 dari 4 halaman dipotong"
+    },
+    {
+      "name": "Putar PDF mode genap berhasil",
+      "ok": true,
+      "detail": "2118 byte"
+    },
+    {
+      "name": "Halaman genap diputar 90°",
+      "ok": true,
+      "detail": "0,90,0,90"
+    },
+    {
+      "name": "Halaman ganjil TIDAK diputar",
+      "ok": true,
+      "detail": "0,90,0,90"
+    },
+    {
+      "name": "Mode semua: semua halaman diputar",
+      "ok": true,
+      "detail": "2115 byte"
+    },
+    {
+      "name": "Keempat halaman diputar 90°",
+      "ok": true,
+      "detail": "90,90,90,90"
+    },
+    {
+      "name": "Multi-berkas: dua berkas menghasilkan dua hasil",
+      "ok": true,
+      "detail": "hasil=2 galat="
+    },
+    {
+      "name": "Multi-berkas: rentang sama berlaku per berkas (bukan dokumen gabungan)",
+      "ok": true,
+      "detail": "rot4=0,90,90,90 rot7=0,90,90,90,0,0,0"
+    },
+    {
+      "name": "Multi-berkas: halaman luar rentang tidak diputar",
+      "ok": true,
+      "detail": "rot4=0,90,90,90 rot7=0,90,90,90,0,0,0"
+    },
+    {
+      "name": "Rentang di luar jangkauan tidak menghasilkan berkas",
+      "ok": true,
+      "detail": "Rentang halaman 8–12 tidak ada di \"empat-halaman.pdf\" — dokumen ini hanya punya 4 halaman."
+    },
+    {
+      "name": "Rentang di luar jangkauan menampilkan pesan yang jelas",
+      "ok": true,
+      "detail": "Rentang halaman 8–12 tidak ada di \"empat-halaman.pdf\" — dokumen ini hanya punya 4 halaman."
+    },
+    {
+      "name": "Berkas rusak tidak menghasilkan berkas diam-diam",
+      "ok": true,
+      "detail": "Berkas ini bukan PDF yang utuh (kemungkinan rusak atau bukan berkas PDF). Detail: Failed to parse PDF document (line:2 col:0 offset=27): No PDF header found"
+    },
+    {
+      "name": "Berkas rusak menampilkan pesan galat",
+      "ok": true,
+      "detail": "Berkas ini bukan PDF yang utuh (kemungkinan rusak atau bukan berkas PDF). Detail: Failed to parse PDF document (line:2 col:0 offset=27): No PDF header found"
+    },
+    {
+      "name": "OCR rentang 2-3 berhasil",
+      "ok": true,
+      "detail": "102934 byte"
+    },
+    {
+      "name": "OCR: jumlah halaman tetap 4",
+      "ok": true,
+      "detail": "halaman=4"
+    },
+    {
+      "name": "OCR: halaman luar rentang (1 & 4) dipertahankan",
+      "ok": true,
+      "detail": "identik"
+    },
+    {
+      "name": "OCR: catatan menyebut cakupan",
+      "ok": true,
+      "detail": "101 KB · 2 dari 4 halaman di-OCR"
+    },
+    {
+      "name": "Redaksi rentang 2-2 berhasil",
+      "ok": true,
+      "detail": "28792 byte"
+    },
+    {
+      "name": "Redaksi: jumlah halaman tetap 4",
+      "ok": true,
+      "detail": "halaman=4"
+    },
+    {
+      "name": "Redaksi: halaman luar rentang (1,3,4) tidak berubah",
+      "ok": true,
+      "detail": "identik"
+    },
+    {
+      "name": "Redaksi: hanya halaman 2 yang dirender ulang",
+      "ok": true,
+      "detail": "nonPutih 10378 -> 13732"
+    },
+    {
+      "name": "Panel Redaksi punya tombol 'Cari kata'",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Panel Redaksi menampilkan ringkasan cakupan",
+      "ok": true,
+      "detail": "2 dari 8 kemunculan akan ditutup (Halaman 2). 6 kemunculan di luar rentang dibiarkan utuh.Hal. 2HALAMAN 2Hal. 2Isi unik halaman 2 untuk uji "
+    },
+    {
+      "name": "Panel Redaksi hanya menampilkan hit di halaman terpilih",
+      "ok": true,
+      "detail": "2 dari 8 kemunculan akan ditutup (Halaman 2). 6 kemunculan di luar rentang dibiarkan utuh.Hal. 2HALAMAN 2Hal. 2Isi unik halaman 2 untuk uji rentang."
+    },
+    {
+      "name": "Performa: rentang 2-6 pada 7 halaman < 20 detik",
+      "ok": true,
+      "detail": "0.5 detik"
+    },
+    {
+      "name": "Input angka menampilkan nilai yang diminta (2 & 4)",
+      "ok": true,
+      "detail": "dari=2 sampai=4"
+    },
+    {
+      "name": "Ringkasan menyebut rentang 2-4",
+      "ok": true,
+      "detail": "Halaman 2–4 (3 halaman dari 7)"
+    },
+    {
+      "name": "Rentang di luar jangkauan TIDAK dijepit di kotak angka",
+      "ok": true,
+      "detail": "dari=8 sampai=12"
+    },
+    {
+      "name": "Ringkasan menandai rentang di luar jangkauan",
+      "ok": true,
+      "detail": "Halaman 8–12 di luar jangkauan (dokumen 7 halaman)"
+    },
+    {
+      "name": "Tidak ada error JavaScript",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

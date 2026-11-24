@@ -134,15 +134,27 @@
       { type: "select", id: "format", label: "Format", value: "jpeg", options: [["jpeg", "JPG"], ["png", "PNG"]] },
       { type: "range", id: "quality", label: "Kualitas", value: 90, min: 40, max: 100, step: 5, unit: "%" },
       { type: "check", id: "zip", label: "Kumpulkan jadi satu ZIP", value: true },
+      { type: "pagerange", id: "halaman", label: "Halaman yang dikonversi", value: { mode: "all", dari: 1, sampai: 0 } },
     ],
     async run(ctx) {
       const { files, opts } = ctx;
       const out = [];
       const scale = (Number(opts.dpi) || 150) / 72;
+      const masalah = [];
       for (const f of files) {
         const pdfjs = await openPdfjs(f.bytes);
+        const totalHal = pdfjs.numPages;
         const items = [];
-        for (let i = 1; i <= pdfjs.numPages; i++) {
+        const spec = C.normSpesifikasiHalaman(opts.halaman, totalHal);
+        const halaman = C.halamanTerpilih(spec, totalHal);
+        if (!halaman.length) {
+          /* Rentang di luar jangkauan berkas ini -> catat pesannya,
+             jangan dipaksa jadi rentang lain. */
+          masalah.push(C.pesanRentangKosong(spec, totalHal, f.name));
+          try { await pdfjs.destroy(); } catch (_) {}
+          continue;
+        }
+        for (const i of halaman) {
           ctx.progress(null, `${f.name}: merender halaman ${i}/${pdfjs.numPages}…`);
           const { canvas } = await renderPage(pdfjs, i, scale);
           const type = opts.format === "png" ? "image/png" : "image/jpeg";
@@ -153,13 +165,18 @@
           await tick();
         }
         try { await pdfjs.destroy(); } catch (_) {}
+        if (!items.length) continue;
+        const catatan = C.catatanCakupan(halaman.length, totalHal, "halaman dikonversi");
         if (items.length === 1 && !opts.zip) {
-          out.push({ name: items[0].name, bytes: items[0].bytes });
+          out.push({ name: items[0].name, bytes: items[0].bytes, note: catatan });
         } else {
           const blob = await makeZip(items.map((it) => ({ name: it.name, bytes: it.bytes })));
-          out.push({ name: C.safeName(C.baseName(f.name)) + "-gambar.zip", blob });
+          out.push({ name: C.safeName(C.baseName(f.name)) + "-gambar.zip", blob, note: catatan });
         }
       }
+      /* Kalau tidak ada satu pun berkas yang berhasil karena rentang
+         di luar jangkauan, laporkan pesan yang jelas. */
+      if (!out.length && masalah.length) throw new Error(masalah.join(" "));
       return out;
     },
   });

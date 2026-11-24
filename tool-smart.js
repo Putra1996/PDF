@@ -607,6 +607,7 @@
     fields: [
       { type: "text", id: "term", label: "Kata/kalimat yang diredaksi", value: "" },
       { type: "number", id: "scale", label: "Resolusi render (DPI)", value: 200, min: 96, max: 400 },
+      { type: "pagerange", id: "halaman", label: "Halaman yang direduksi", value: { mode: "all", dari: 1, sampai: 0 } },
     ],
     async search(ctx) {
       const f = ctx.files[0];
@@ -620,12 +621,23 @@
       const term = String(ctx.opts.term || "").trim();
       if (!term) throw new Error("Kata yang diredaksi belum diisi.");
       const pdfjs = await openPdfjs(f.bytes);
-      const hits = Array.isArray(ctx.opts.hits) && ctx.opts.hits.length
+      /* Batasi halaman yang direduksi sesuai rentang yang dipilih. */
+      const totalHal = pdfjs.numPages;
+      const spec = C.normSpesifikasiHalaman(ctx.opts.halaman, totalHal);
+      /* Rentang di luar jangkauan -> pesan jelas, jangan dipaksa. */
+      C.pastikanHalamanTerpilih(spec, totalHal, f.name);
+      const terpilih = new Set(C.halamanTerpilih(spec, totalHal));
+      let hits = Array.isArray(ctx.opts.hits) && ctx.opts.hits.length
         ? ctx.opts.hits
         : await findMatches(pdfjs, term);
+      hits = hits.filter((h) => terpilih.has(h.page));
       if (!hits.length) {
         try { await pdfjs.destroy(); } catch (_) {}
-        throw new Error(`"${term}" tidak ditemukan di PDF ini.`);
+        throw new Error(
+          terpilih.size < totalHal
+            ? `"${term}" tidak ditemukan di halaman yang dipilih (${C.ringkasHalaman(spec, totalHal)}).`
+            : `"${term}" tidak ditemukan di PDF ini.`
+        );
       }
       const scale = (Number(ctx.opts.scale) || 200) / 72;
       const dst = await PDFDocument.create();
@@ -634,26 +646,69 @@
         if (!byPage.has(h.page)) byPage.set(h.page, []);
         byPage.get(h.page).push(h);
       }
+      /* Halaman yang TIDAK diberi hit disalin apa adanya dari berkas
+         asli (lossless). Dengan begitu halaman di luar rentang pilihan
+         tidak dirender ulang dan isinya tetap utuh — halaman luar
+         rentang tidak boleh berubah sama sekali. */
+      let src = null;
+      try { src = await loadDoc(f.bytes); } catch (_) { src = null; }
+      const halamanAdaHit = new Set(byPage.keys());
       for (let i = 1; i <= pdfjs.numPages; i++) {
+        const list = byPage.get(i) || [];
+        if (!list.length) {
+          /* Salin halaman asli tanpa perubahan. */
+          let tersalin = false;
+          if (src) {
+            try {
+              const [cp] = await dst.copyPages(src, [i - 1]);
+              dst.addPage(cp);
+              tersalin = true;
+            } catch (_) { tersalin = false; }
+          }
+          if (!tersalin) {
+            /* cadangan: render (hanya untuk berkas yang tidak bisa
+               disalin apa adanya) */
+            ctx.progress(null, `Menyalin halaman ${i}/${pdfjs.numPages}…`);
+            const { canvas, viewport } = await renderPage(pdfjs, i, scale);
+            const jpg = await canvasToBytes(canvas, "image/jpeg", 0.92);
+            canvas.width = canvas.height = 0;
+            const img = await dst.embedJpg(jpg);
+            const p = dst.addPage([viewport.width / scale, viewport.height / scale]);
+            p.drawImage(img, { x: 0, y: 0, width: viewport.width / scale, height: viewport.height / scale });
+          }
+          await tick();
+          continue;
+        }
         ctx.progress(null, `Menutup teks halaman ${i}/${pdfjs.numPages}…`);
         const { canvas, ctx: c2, viewport } = await renderPage(pdfjs, i, scale);
-        const list = byPage.get(i) || [];
+        /* ukuran halaman dalam POIN (viewport diskalakan -> balik ke
+           satuan PDF asli supaya halaman hasil tidak ikut membesar) */
+        const lebarPt = viewport.width / scale;
+        const tinggiPt = viewport.height / scale;
         c2.fillStyle = "#000000";
         for (const h of list) {
           const x = h.x * scale;
-          const yTop = (viewport.height - h.y - h.h) * scale;
+          /* y di koordinat hit itu titik PDF (dari bawah), jadi
+             dibalik ke koordinat kanvas (dari atas). */
+          const yTop = (tinggiPt - h.y - h.h) * scale;
           c2.fillRect(x - 1, yTop - 1, h.w * scale + 2, h.h * scale + 2);
         }
         const jpg = await canvasToBytes(canvas, "image/jpeg", 0.92);
         canvas.width = canvas.height = 0;
         const img = await dst.embedJpg(jpg);
-        const p = dst.addPage([viewport.width, viewport.height]);
-        p.drawImage(img, { x: 0, y: 0, width: viewport.width, height: viewport.height });
+        const p = dst.addPage([lebarPt, tinggiPt]);
+        p.drawImage(img, { x: 0, y: 0, width: lebarPt, height: tinggiPt });
         await tick();
       }
+      void halamanAdaHit;
       try { await pdfjs.destroy(); } catch (_) {}
       const bytes = await saveDoc(dst);
-      return [{ name: C.safeName(C.baseName(f.name)) + "-redaksi.pdf", bytes, note: `${hits.length} bagian ditutup` }];
+      const nHalaman = new Set(hits.map((h) => h.page)).size;
+      return [{
+        name: C.safeName(C.baseName(f.name)) + "-redaksi.pdf",
+        bytes,
+        note: `${hits.length} bagian ditutup di ${C.catatanCakupan(nHalaman, totalHal, "halaman")}`,
+      }];
     },
   });
 
@@ -1339,6 +1394,7 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
       },
       { type: "check", id: "contrast", label: "Perbaiki kontras hasil pindai (lebih akurat)", value: true },
       { type: "number", id: "workers", label: "Jumlah mesin OCR (paralel)", value: 2, min: 1, max: 4 },
+      { type: "pagerange", id: "halaman", label: "Halaman yang di-OCR", value: { mode: "all", dari: 1, sampai: 0 } },
     ],
     async run(ctx) {
       const dpi = Math.min(400, Math.max(100, Number(ctx.opts.scale) || 200));
@@ -1374,6 +1430,14 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
           const pdfjs = await openPdfjs(f.bytes);
           const jumlah = pdfjs.numPages;
 
+          /* Halaman yang diproses = pilihan rentang halaman. Halaman
+             di luar rentang TIDAK diubah sama sekali (teks & gambar
+             aslinya tetap utuh). */
+          const spec = C.normSpesifikasiHalaman(ctx.opts.halaman, jumlah);
+          /* Rentang di luar jangkauan -> pesan jelas, jangan dipaksa. */
+          C.pastikanHalamanTerpilih(spec, jumlah, f.name);
+          const terpilih = new Set(C.halamanTerpilih(spec, jumlah));
+
           /* 1. Petakan halaman: punya teks atau tidak. */
           const rencana = [];
           for (let i = 1; i <= jumlah; i++) {
@@ -1385,7 +1449,8 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
               for (const it of tc.items) n += (it.str || "").trim().length;
               adaTeks = n >= 30;
             } catch (_) { /* abaikan */ }
-            rencana.push({ nomor: i, adaTeks, lewati: adaTeks && !paksa });
+            const diLuar = !terpilih.has(i);
+            rencana.push({ nomor: i, adaTeks, lewati: diLuar || (adaTeks && !paksa) });
             ctx.progress(Math.round((i / jumlah) * 5), `Memeriksa halaman ${i}/${jumlah}…`);
             await tick();
           }
@@ -1470,7 +1535,11 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
 
           try { await pdfjs.destroy(); } catch (_) { /* abaikan */ }
           const bytes = await saveDoc(doc);
-          out.push({ name: C.safeName(C.baseName(f.name)) + "-ocr.pdf", bytes });
+          out.push({
+            name: C.safeName(C.baseName(f.name)) + "-ocr.pdf",
+            bytes,
+            note: terpilih.size === jumlah ? "" : `${terpilih.size} dari ${jumlah} halaman di-OCR`,
+          });
           ctx.progress(100, `${f.name} selesai.`);
         }
         return out;

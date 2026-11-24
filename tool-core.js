@@ -48,10 +48,25 @@
 
   /* ---------- PDF (pdf-lib) ---------- */
   async function loadDoc(bytes, opts) {
-    return PDFDocument.load(bytes, Object.assign({
-      updateMetadata: false,
-      throwOnInvalidObject: false,
-    }, opts || {}));
+    try {
+      return await PDFDocument.load(bytes, Object.assign({
+        updateMetadata: false,
+        throwOnInvalidObject: false,
+      }, opts || {}));
+    } catch (err) {
+      /* Pesan galat yang jelas untuk pengguna (bukan error internal
+         pustaka): berkas rusak / bukan PDF. */
+      const msg = (err && err.message) || String(err);
+      if (/header|parse|invalid|not a pdf|EOF/i.test(msg)) {
+        const e = new Error(
+          "Berkas ini bukan PDF yang utuh (kemungkinan rusak atau bukan berkas PDF). " +
+          "Detail: " + msg
+        );
+        e.cause = err;
+        throw e;
+      }
+      throw err;
+    }
   }
 
   async function saveDoc(doc, opts) {
@@ -1353,6 +1368,134 @@ ${Array.from({ length: n }, (_, i) => `<Override PartName="/ppt/slides/slide${i 
     return hasil;
   }
 
+  /* ============================================================
+     Pemilihan halaman (slider rentang halaman)
+     ------------------------------------------------------------
+     dipakai bersama oleh banyak alat: pengguna menggeser slider
+     untuk menentukan halaman mana yang boleh diproses.
+
+     Bentuk spesifikasi (disimpan di opts[id]):
+       { mode, dari, sampai }
+       mode   : "all"  -> semua halaman
+                "odd"  -> halaman ganjil
+                "even" -> halaman genap
+                "range"-> dari "dari" sampai "sampai"
+       dari   : nomor halaman awal (1-based)
+       sampai : nomor halaman akhir (1-based); 0 berarti "sampai
+                halaman terakhir" (dipakai sebelum jumlah halaman
+                diketahui).
+
+     Nomor halaman bersifat RELATIF terhadap tiap berkas: berkas
+     kedua pada rentang 3-5 berarti halaman 3-5 di berkas kedua,
+     bukan halaman 3-5 dokumen gabungan.
+     ============================================================ */
+  const MODE_HALAMAN = ["all", "odd", "even", "range"];
+
+  /* Normalkan spesifikasi terhadap jumlah halaman dokumen.
+
+     Nomor halaman bersifat RELATIF terhadap tiap berkas: rentang
+     3-5 berarti halaman 3-5 di setiap berkas, bukan 3-5 dokumen
+     gabungan.
+
+     Nilai yang diminta TIDAK dijepit ke jumlah halaman berkas, jadi
+     permintaan di luar jangkauan tetap terlihat sebagai permintaan
+     (dan bisa ditolak dengan pesan yang jelas) — bukan diam-diam
+     berubah jadi halaman lain.
+
+     "sampai = 0" berarti "sampai halaman terakhir" berkas itu. */
+  function normSpesifikasiHalaman(spec, total) {
+    const t = Math.max(0, Math.floor(Number(total) || 0));
+    const s = spec && typeof spec === "object" ? spec : {};
+    const mode = MODE_HALAMAN.indexOf(s.mode) >= 0 ? s.mode : "all";
+    let dari = Math.max(1, Math.round(Number(s.dari) || 1));
+    let sampai = Math.round(Number(s.sampai) || 0); /* 0 = sampai halaman terakhir */
+    if (sampai > 0 && sampai < dari) { const tmp = dari; dari = sampai; sampai = tmp; }
+    return { mode, dari, sampai, total: t };
+  }
+
+  /* Apakah nomor halaman (1-based) termasuk pilihan? */
+  function halamanDipilih(spec, nomor, total) {
+    const n = normSpesifikasiHalaman(spec, total);
+    if (n.mode === "odd") return nomor % 2 === 1;
+    if (n.mode === "even") return nomor % 2 === 0;
+    if (n.mode === "range") {
+      const atas = n.sampai > 0 ? n.sampai : (n.total || Infinity);
+      return nomor >= n.dari && nomor <= atas;
+    }
+    return true;
+  }
+
+  /* Daftar nomor halaman terpilih (1-based, urut). */
+  function halamanTerpilih(spec, total) {
+    const t = Math.max(0, Math.floor(Number(total) || 0));
+    const n = normSpesifikasiHalaman(spec, t);
+    const atas = n.sampai > 0 ? n.sampai : t;
+    const out = [];
+    for (let i = 1; i <= t; i++) {
+      if (n.mode === "odd") { if (i % 2 === 1) out.push(i); }
+      else if (n.mode === "even") { if (i % 2 === 0) out.push(i); }
+      else if (n.mode === "range") { if (i >= n.dari && i <= atas) out.push(i); }
+      else out.push(i);
+    }
+    return out;
+  }
+
+  /* Ringkasan singkat untuk ditampilkan di antarmuka.
+
+     Untuk mode rentang, batas atas ditampilkan sesuai jumlah halaman
+     dokumen (jadi "Halaman 2–4" untuk dokumen 4 halaman walau
+     pengguna mengetik sampai 12). Batas bawah TIDAK dijepit: kalau
+     pengguna meminta halaman 8 pada dokumen 4 halaman, ringkasannya
+     menandai bahwa rentang itu di luar jangkauan. */
+  function ringkasHalaman(spec, total) {
+    const n = normSpesifikasiHalaman(spec, total);
+    if (n.mode === "odd") return "Halaman ganjil";
+    if (n.mode === "even") return "Halaman genap";
+    if (n.mode === "range") {
+      const t = n.total;
+      const diminta = n.sampai > 0 ? n.sampai : (t || 0);
+      if (!diminta) return `Halaman ${n.dari}–…`;
+      const batas = t > 0 ? Math.min(diminta, t) : diminta;
+      if (n.dari > batas) return `Halaman ${n.dari}–${diminta} (di luar jangkauan)`;
+      return n.dari === batas ? `Halaman ${n.dari}` : `Halaman ${n.dari}–${batas}`;
+    }
+    return "Semua halaman";
+  }
+
+  /* Pesan galat yang jelas ketika rentang halaman tidak menghasilkan
+     satu pun halaman pada sebuah berkas. */
+  function pesanRentangKosong(spec, total, namaBerkas) {
+    const n = normSpesifikasiHalaman(spec, total);
+    const t = Math.max(0, Math.floor(Number(total) || 0));
+    const rentang = n.mode === "range"
+      ? `halaman ${n.dari}${n.sampai > 0 ? "–" + n.sampai : ""}`
+      : "pilihan halaman";
+    return `Rentang ${rentang} tidak ada di "${namaBerkas || "berkas ini"}" — dokumen ini hanya punya ${t} halaman.`;
+  }
+
+  /* Pastikan rentang halaman menghasilkan minimal satu halaman.
+
+     Kalau tidak (mis. rentang 8-12 pada dokumen 4 halaman), lempar
+     galat yang jelas supaya pengguna tahu penyebabnya — bukan
+     diam-diam memproses dokumen lain. */
+  function pastikanHalamanTerpilih(spec, total, namaBerkas) {
+    const daftar = halamanTerpilih(spec, total);
+    if (!daftar.length) throw new Error(pesanRentangKosong(spec, total, namaBerkas));
+    return daftar;
+  }
+
+  /* Catatan cakupan halaman untuk ditampilkan di antarmuka.
+
+     "3 dari 7 halaman diputar" — supaya pengguna langsung tahu
+     berapa halaman yang benar-benar tersentuh. */
+  function catatanCakupan(n, total, kata) {
+    const t = Math.max(0, Math.floor(Number(total) || 0));
+    const j = Math.max(0, Math.floor(Number(n) || 0));
+    const k = kata || "halaman";
+    if (!t) return `${j} ${k}`;
+    return `${j} dari ${t} ${k}`;
+  }
+
   /* Analisis satu halaman: render -> ambil tinta -> hitung sudut. */
   async function analisisHalaman(pdfDoc, nomor, opsi) {
     const o = opsi || {};
@@ -1388,6 +1531,8 @@ ${Array.from({ length: n }, (_, i) => `<Override PartName="/ppt/slides/slide${i 
     ambangTinta, titikTinta, skorProyeksi, cariSudut,
     putarTitik, rerataSkor, garisTeks, arahTeks, mad,
     analisisKemiringan, analisisHalaman,
+    MODE_HALAMAN, normSpesifikasiHalaman, halamanDipilih, halamanTerpilih, ringkasHalaman,
+    pastikanHalamanTerpilih, pesanRentangKosong, catatanCakupan,
     MM, A4, LETTER, pageSizeName, compactBytes, parseColor,
   };
 })();
