@@ -1,5 +1,5 @@
 {
-  "tanggal": "2026-11-24T06:14:51.694Z",
+  "tanggal": "2026-11-24T08:44:25.229Z",
   "pass": 106,
   "fail": 0,
   "results": [
@@ -301,7 +301,7 @@
     {
       "name": "Nomor halaman rentang 2-3 berhasil",
       "ok": true,
-      "detail": "2645 byte"
+      "detail": "2646 byte"
     },
     {
       "name": "Halaman 2 diberi nomor 2",
@@ -361,7 +361,7 @@
     {
       "name": "Potong PDF rentang 2-2 berhasil",
       "ok": true,
-      "detail": "2146 byte"
+      "detail": "2145 byte"
     },
     {
       "name": "Potong: hanya halaman 2 yang dipotong",
@@ -376,7 +376,7 @@
     {
       "name": "Putar PDF mode genap berhasil",
       "ok": true,
-      "detail": "2118 byte"
+      "detail": "2119 byte"
     },
     {
       "name": "Halaman genap diputar 90°",
@@ -436,7 +436,7 @@
     {
       "name": "OCR rentang 2-3 berhasil",
       "ok": true,
-      "detail": "102934 byte"
+      "detail": "102936 byte"
     },
     {
       "name": "OCR: jumlah halaman tetap 4",
