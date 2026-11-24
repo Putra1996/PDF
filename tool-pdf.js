@@ -26,7 +26,7 @@
     fields: [
       { type: "select", id: "angle", label: "Sudut putar", value: "90", options: [["90", "90°"], ["180", "180°"], ["270", "270°"]] },
       { type: "select", id: "dir", label: "Arah", value: "cw", options: [["cw", "Searah jarum jam"], ["ccw", "Berlawanan jarum jam"]] },
-      { type: "select", id: "scope", label: "Halaman", value: "all", options: [["all", "Semua halaman"], ["odd", "Halaman ganjil"], ["even", "Halaman genap"]] },
+      { type: "pagerange", id: "halaman", label: "Halaman yang diputar", value: { mode: "all", dari: 1, sampai: 0 } },
     ],
     async run(ctx) {
       const { files, opts } = ctx;
@@ -34,19 +34,22 @@
       for (const f of files) {
         const doc = await loadDoc(f.bytes);
         const pages = doc.getPages();
+        const spec = C.normSpesifikasiHalaman(opts.halaman, pages.length);
+        /* Rentang di luar jangkauan -> berhenti dengan pesan jelas,
+           jangan dipaksa menjadi rentang lain. */
+        C.pastikanHalamanTerpilih(spec, pages.length, f.name);
         let n = 0;
         for (let i = 0; i < pages.length; i++) {
-          const odd = (i + 1) % 2 === 1;
-          if (opts.scope === "odd" && !odd) continue;
-          if (opts.scope === "even" && odd) continue;
+          if (!C.halamanDipilih(spec, i + 1, pages.length)) continue;
           const cur = pages[i].getRotation().angle || 0;
           const delta = opts.dir === "ccw" ? -(Number(opts.angle) || 90) : Number(opts.angle) || 90;
           pages[i].setRotation(degrees((((cur + delta) % 360) + 360) % 360));
           n++;
         }
         const bytes = await saveDoc(doc);
-        out.push({ name: C.safeName(C.baseName(f.name)) + "-putar.pdf", bytes });
-        ctx.progress(null, `${f.name}: ${n} halaman diputar`);
+        const catatan = C.catatanCakupan(n, pages.length, "halaman diputar");
+        out.push({ name: C.safeName(C.baseName(f.name)) + "-putar.pdf", bytes, note: catatan });
+        ctx.progress(null, `${f.name}: ${catatan}`);
         await tick();
       }
       return out;
@@ -80,6 +83,7 @@
       { type: "check", id: "skipFirst", label: "Lewati halaman pertama", value: false },
       { type: "number", id: "size", label: "Ukuran font (pt)", value: 11, min: 6, max: 48 },
       { type: "color", id: "color", label: "Warna", value: "#333333" },
+      { type: "pagerange", id: "halaman", label: "Halaman yang diberi nomor", value: { mode: "all", dari: 1, sampai: 0 } },
     ],
     async run(ctx) {
       const { files, opts } = ctx;
@@ -90,14 +94,21 @@
         const pages = doc.getPages();
         const total = pages.length;
         const start = Number(opts.start) || 1;
+        /* Nomor halaman tetap mengikuti nomor halaman ASLI dokumen,
+           jadi halaman yang dipilih saja yang diberi label. */
+        const spec = C.normSpesifikasiHalaman(opts.halaman, total);
+        /* Rentang di luar jangkauan -> pesan jelas, jangan dipaksa. */
+        C.pastikanHalamanTerpilih(spec, total, f.name);
+        let n = 0;
         for (let i = 0; i < total; i++) {
           if (opts.skipFirst && i === 0) continue;
-          const n = start + i;
+          if (!C.halamanDipilih(spec, i + 1, total)) continue;
+          const nomor = start + i;
           let label;
-          if (opts.fmt === "n-total") label = `${n} / ${total}`;
-          else if (opts.fmt === "page-n-total") label = `Halaman ${n} dari ${total}`;
-          else if (opts.fmt === "dash-n") label = `- ${n} -`;
-          else label = String(n);
+          if (opts.fmt === "n-total") label = `${nomor} / ${total}`;
+          else if (opts.fmt === "page-n-total") label = `Halaman ${nomor} dari ${total}`;
+          else if (opts.fmt === "dash-n") label = `- ${nomor} -`;
+          else label = String(nomor);
           const p = pages[i];
           const { width, height } = p.getSize();
           const pos = (NUM_POS[opts.pos] || NUM_POS["bottom-center"])(width, height);
@@ -106,9 +117,14 @@
             align: opts.pos.endsWith("center") ? "center" : opts.pos.endsWith("right") ? "right" : "left",
           });
           if (!ok) throw new Error("Nomor halaman tidak bisa ditulis (karakter di luar jangkauan font).");
+          n++;
         }
         const bytes = await saveDoc(doc);
-        out.push({ name: C.safeName(C.baseName(f.name)) + "-nomor.pdf", bytes });
+        out.push({
+          name: C.safeName(C.baseName(f.name)) + "-nomor.pdf",
+          bytes,
+          note: n === total ? "" : C.catatanCakupan(n, total, "halaman diberi nomor"),
+        });
         await tick();
       }
       return out;
@@ -135,6 +151,7 @@
       { type: "range", id: "size", label: "Ukuran teks (pt)", value: 48, min: 8, max: 160, step: 2 },
       { type: "color", id: "color", label: "Warna", value: "#ff0000" },
       { type: "range", id: "tile", label: "Jarak antar watermark (px)", value: 160, min: 40, max: 400, step: 10, visibleIf: { mode: "tiled" } },
+      { type: "pagerange", id: "halaman", label: "Halaman yang diberi watermark", value: { mode: "all", dari: 1, sampai: 0 } },
     ],
     async run(ctx) {
       const { files, opts } = ctx;
@@ -149,7 +166,14 @@
       for (const f of files) {
         const doc = await loadDoc(f.bytes);
         const pages = doc.getPages();
-        for (const p of pages) {
+        const spec = C.normSpesifikasiHalaman(opts.halaman, pages.length);
+        /* Rentang di luar jangkauan -> pesan jelas, jangan dipaksa. */
+        C.pastikanHalamanTerpilih(spec, pages.length, f.name);
+        let n = 0;
+        for (let pi = 0; pi < pages.length; pi++) {
+          if (!C.halamanDipilih(spec, pi + 1, pages.length)) continue;
+          const p = pages[pi];
+          n++;
           const { width, height } = p.getSize();
           const rot = opts.layout === "diagonal" ? degrees(45) : degrees(0);
           const draw = async (x, y, size, txt) => {
@@ -185,7 +209,11 @@
           }
         }
         const bytes = await saveDoc(doc);
-        out.push({ name: C.safeName(C.baseName(f.name)) + "-watermark.pdf", bytes });
+        out.push({
+          name: C.safeName(C.baseName(f.name)) + "-watermark.pdf",
+          bytes,
+          note: n === pages.length ? "" : C.catatanCakupan(n, pages.length, "halaman diberi watermark"),
+        });
         await tick();
       }
       return out;
@@ -209,7 +237,7 @@
       { type: "number", id: "bottom", label: "Margin bawah (mm)", value: 0, min: 0, max: 200 },
       { type: "number", id: "left", label: "Margin kiri (mm)", value: 0, min: 0, max: 200 },
       { type: "number", id: "right", label: "Margin kanan (mm)", value: 0, min: 0, max: 200 },
-      { type: "select", id: "scope", label: "Halaman", value: "all", options: [["all", "Semua halaman"]] },
+      { type: "pagerange", id: "halaman", label: "Halaman yang dipotong", value: { mode: "all", dari: 1, sampai: 0 } },
     ],
     async run(ctx) {
       const { files, opts } = ctx;
@@ -222,7 +250,14 @@
           throw new Error("PDF tidak bisa dibuka.");
         }
         const pages = doc.getPages();
-        for (const p of pages) {
+        const spec = C.normSpesifikasiHalaman(opts.halaman, pages.length);
+        /* Rentang di luar jangkauan -> pesan jelas, jangan dipaksa. */
+        C.pastikanHalamanTerpilih(spec, pages.length, f.name);
+        let n = 0;
+        for (let pi = 0; pi < pages.length; pi++) {
+          if (!C.halamanDipilih(spec, pi + 1, pages.length)) continue;
+          const p = pages[pi];
+          n++;
           const { width, height } = p.getSize();
           let x = 0, y = 0, w = width, h = height;
           if (opts.preset === "a4") {
@@ -236,7 +271,7 @@
             w = s; h = s;
             x = (width - w) / 2; y = (height - h) / 2;
           } else if (opts.preset === "content") {
-            const box = await trimBox(f.bytes, pages.indexOf(p) + 1, doc);
+            const box = await trimBox(f.bytes, pi + 1, doc);
             if (box) { x = box.x; y = box.y; w = box.w; h = box.h; }
           } else {
             x = (Number(opts.left) || 0) * MM;
@@ -248,7 +283,11 @@
           p.setCropBox(x, y, w, h);
         }
         const bytes = await saveDoc(doc);
-        out.push({ name: C.safeName(C.baseName(f.name)) + "-potong.pdf", bytes });
+        out.push({
+          name: C.safeName(C.baseName(f.name)) + "-potong.pdf",
+          bytes,
+          note: n === pages.length ? "" : C.catatanCakupan(n, pages.length, "halaman dipotong"),
+        });
         await tick();
       }
       return out;
@@ -698,6 +737,7 @@
     accept: ".pdf,application/pdf",
     multiple: true,
     fields: [
+      { type: "pagerange", id: "halaman", label: "Halaman yang dirapikan", value: { mode: "all", dari: 1, sampai: 0 } },
       { type: "check", id: "deskew", label: "Luruskan halaman miring otomatis", value: true },
       { type: "number", id: "maxAngle", label: "Sudut maksimum yang diluruskan (°)", value: 8, min: 1, max: 20 },
       { type: "check", id: "autoRotate", label: "Putar 90° otomatis bila teksnya tegak", value: true },
@@ -721,22 +761,36 @@
       const AMBANG_90 = 0.25;
 
       for (const f of files) {
-        /* 1. Analisis kemiringan per halaman (hanya membaca berkas). */
+        /* 1. Analisis kemiringan per halaman (hanya membaca berkas).
+              Halaman yang dianalisis dibatasi oleh pilihan pengguna
+              (slider rentang halaman) dan oleh batas maxPages. */
         const analisis = new Map();
         let pdfjs = null;
         let jumlahHalaman = 0;
+        let terpilih = [];
         try {
           pdfjs = await openPdfjs(f.bytes);
           jumlahHalaman = pdfjs.numPages;
-          const batasi = maksHal > 0 ? Math.min(jumlahHalaman, maksHal) : jumlahHalaman;
-          for (let i = 1; i <= batasi; i++) {
-            ctx.progress(null, `Menganalisis kemiringan halaman ${i}/${batasi}…`);
+          /* Halaman yang boleh dirapikan: sesuai slider rentang. */
+          const spec = C.normSpesifikasiHalaman(opts.halaman, jumlahHalaman);
+          /* Rentang di luar jangkauan -> pesan jelas, jangan dipaksa. */
+          C.pastikanHalamanTerpilih(spec, jumlahHalaman, f.name);
+          terpilih = C.halamanTerpilih(spec, jumlahHalaman);
+          /* Batas jumlah analisis (0 = semua) */
+          if (maksHal > 0 && terpilih.length > maksHal) terpilih = terpilih.slice(0, maksHal);
+          const total = terpilih.length;
+          for (let k = 0; k < total; k++) {
+            const i = terpilih[k];
+            ctx.progress(null, `Menganalisis kemiringan halaman ${i}/${jumlahHalaman}…`);
             const a = await C.analisisHalaman(pdfjs, i, { maksDeg, autoRotate });
             analisis.set(i, a);
             await tick();
           }
-        } catch (_) {
+        } catch (err) {
+          /* Galat rentang di luar jangkauan harus sampai ke pengguna. */
+          if (err && /di luar jangkauan|tidak ada di/.test(err.message || "")) throw err;
           analisis.clear();
+          terpilih = [];
         }
 
         /* 2. Terapkan koreksi + benahi struktur. */
@@ -832,7 +886,19 @@
             }
             const dst = await PDFDocument.create();
             let rendered = 0;
+            /* Halaman di luar rentang pilihan disalin apa adanya kalau
+               masih bisa — supaya isinya tidak berubah. */
+            let srcRusak = null;
+            try { srcRusak = await loadDoc(f.bytes); } catch (_) { srcRusak = null; }
             for (let i = 1; i <= pdfjs.numPages; i++) {
+              if (terpilih.indexOf(i) < 0 && srcRusak) {
+                try {
+                  const [cp] = await dst.copyPages(srcRusak, [i - 1]);
+                  dst.addPage(cp);
+                  await tick();
+                  continue;
+                } catch (_) { /* tidak bisa disalin -> render */ }
+              }
               ctx.progress(null, `Merender halaman ${i} dari ${pdfjs.numPages}…`);
               const { canvas, viewport } = await renderPage(pdfjs, i, 2);
               const jpg = await canvasToBytes(canvas, "image/jpeg", 0.92);
@@ -856,6 +922,13 @@
 
         if (pdfjs) { try { await pdfjs.destroy(); } catch (_) { /* abaikan */ } }
 
+        /* ringkasan cakupan halaman */
+        if (jumlahHalaman > 0) {
+          const nTerpilih = terpilih.length;
+          if (nTerpilih !== jumlahHalaman) {
+            catatan.push(`${nTerpilih} dari ${jumlahHalaman} halaman dirapikan`);
+          }
+        }
         if (diluruskan) {
           catatan.push(
             `${diluruskan} halaman diluruskan (rata-rata ${(totalSudut / diluruskan).toFixed(1).replace(".", ",")}°)`

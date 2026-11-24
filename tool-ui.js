@@ -71,7 +71,14 @@
     custom: {},
     links: [],
     query: "",
+    /* jumlah halaman terbesar di antara berkas yang dimuat — dipakai
+       sebagai batas slider rentang halaman */
+    pageCount: 0,
   };
+
+  /* Widget rentang halaman yang aktif (dipakai untuk memperbarui
+     batas slider ketika jumlah halaman berkas sudah diketahui). */
+  let pageWidgets = [];
 
   /* Alat yang paling sering dibuka — ditampilkan di beranda dan
      di atas daftar alat agar cepat dijangkau. */
@@ -303,6 +310,15 @@
     state.custom = {};
     /* nilai bawaan opsi */
     for (const f of tool.fields || []) {
+      if (f.type === "pagerange") {
+        const v = f.value && typeof f.value === "object" ? f.value : {};
+        state.opts[f.id] = {
+          mode: v.mode || "all",
+          dari: Math.max(1, Number(v.dari) || 1),
+          sampai: Math.max(0, Number(v.sampai) || 0),
+        };
+        continue;
+      }
       state.opts[f.id] = f.value !== undefined ? f.value : (f.type === "check" ? false : "");
     }
     $("#toolTitle").textContent = tool.name;
@@ -340,10 +356,253 @@
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  /* ============================================================
+     Widget rentang halaman (slider dua-thumb)
+     ------------------------------------------------------------
+     Bentuk field:
+       { type: "pagerange", id: "halaman", label: "Halaman",
+         value: { mode: "all", dari: 1, sampai: 0 } }
+
+     Nilai disimpan di state.opts[id] sebagai objek:
+       { mode, dari, sampai }
+     mode  : "all" | "odd" | "even" | "range"
+     dari  : halaman awal (1-based)
+     sampai: halaman akhir (1-based); 0 berarti "sampai akhir"
+
+     Slider memakai dua input range yang ditumpuk; thumb atas
+     (sampai) berada di atas thumb bawah (dari). Nilai minimum
+     dan maksimum keduanya mengikuti jumlah halaman dokumen.
+     ============================================================ */
+  /* Jumlah halaman terbesar di antara berkas yang dimuat (0 = belum
+     diketahui). Dipakai widget rentang halaman dan panel khusus. */
+  function totalDiketahui() {
+    return Math.max(0, Number(state.pageCount) || 0);
+  }
+  function totalHalamanEfektif() {
+    return Math.max(1, totalDiketahui());
+  }
+  function batasAtas() {
+    return totalHalamanEfektif();
+  }
+
+  function buatPagerange(f) {
+    const wrap = el("div", "tool-pagerange");
+    const awal = f.value && typeof f.value === "object" ? f.value : { mode: "all", dari: 1, sampai: 0 };
+    const spec = {
+      mode: awal.mode || "all",
+      dari: Math.max(1, Number(awal.dari) || 1),
+      sampai: Math.max(0, Number(awal.sampai) || 0),
+    };
+
+    /* --- baris mode (semua / ganjil / genap / rentang) --- */
+    const baris = el("div", "tool-pr-mode");
+    baris.setAttribute("role", "group");
+    baris.setAttribute("aria-label", "Pemilihan halaman");
+    const modeDefs = [
+      ["all", "Semua"],
+      ["odd", "Ganjil"],
+      ["even", "Genap"],
+      ["range", "Rentang"],
+    ];
+    const btnMode = {};
+    for (const [m, lbl] of modeDefs) {
+      const b = el("button", "tool-pr-chip", lbl);
+      b.type = "button";
+      b.dataset.mode = m;
+      b.setAttribute("aria-pressed", String(spec.mode === m));
+      b.addEventListener("click", () => {
+        spec.mode = m;
+        if (m === "range") {
+          /* saat memilih rentang, isi dengan seluruh dokumen.
+            .spec.sampai = 0 berarti "sampai halaman terakhir". */
+          if (spec.sampai <= 0 && totalDiketahui()) spec.sampai = totalHalamanEfektif();
+          if (spec.sampai > 0 && spec.dari > spec.sampai) spec.dari = spec.sampai;
+        }
+        perbarui();
+        commit();
+      });
+      btnMode[m] = b;
+      baris.appendChild(b);
+    }
+    wrap.appendChild(baris);
+
+    /* --- slider rentang --- */
+    const area = el("div", "tool-pr-area");
+    const rail = el("div", "tool-pr-rail");
+    const isi = el("div", "tool-pr-isi");
+    rail.appendChild(isi);
+    area.appendChild(rail);
+
+    const inDari = document.createElement("input");
+    inDari.type = "range";
+    inDari.className = "tool-pr-thumb tool-pr-thumb-bawah";
+    inDari.id = "f_" + f.id + "_dari";
+    inDari.setAttribute("aria-label", "Halaman awal");
+    const inSampai = document.createElement("input");
+    inSampai.type = "range";
+    inSampai.className = "tool-pr-thumb tool-pr-thumb-atas";
+    inSampai.id = "f_" + f.id + "_sampai";
+    inSampai.setAttribute("aria-label", "Halaman akhir");
+    area.appendChild(inDari);
+    area.appendChild(inSampai);
+    wrap.appendChild(area);
+
+    /* --- kotak angka (input presisi) --- */
+    const angka = el("div", "tool-pr-angka");
+    const lblDari = el("label", "tool-pr-angka-item");
+    lblDari.appendChild(el("span", "", "Dari"));
+    const numDari = document.createElement("input");
+    numDari.type = "number";
+    numDari.min = 1;
+    numDari.id = "f_" + f.id + "_dari_num";
+    lblDari.appendChild(numDari);
+    const lblSampai = el("label", "tool-pr-angka-item");
+    lblSampai.appendChild(el("span", "", "Sampai"));
+    const numSampai = document.createElement("input");
+    numSampai.type = "number";
+    numSampai.min = 1;
+    numSampai.id = "f_" + f.id + "_sampai_num";
+    lblSampai.appendChild(numSampai);
+    angka.appendChild(lblDari);
+    angka.appendChild(lblSampai);
+    wrap.appendChild(angka);
+
+    /* --- ringkasan --- */
+    const info = el("div", "tool-pr-info");
+    info.id = "f_" + f.id + "_info";
+    wrap.appendChild(info);
+
+    /* --- helper --- */
+    function perbarui() {
+      const diketahui = totalDiketahui();
+      const maks = batasAtas();
+      inDari.max = String(maks);
+      inSampai.max = String(maks);
+      /* Normalkan TANPA memaksa nilai pengguna ke dalam jangkauan
+         dokumen. Nilai di luar jangkauan sengaja dipertahankan supaya
+         tool bisa memberi pesan yang jelas ("rentang di luar
+         jangkauan") — bukan diam-diam memproses rentang lain.
+
+         Batas bawah minimal 1 dan batas atas minimal batas bawah
+         (kalau pengguna membalik urutan, keduanya ditukar supaya
+         tampilan dan perhitungan core selalu sama). */
+      spec.dari = Math.max(1, Math.round(Number(spec.dari) || 1));
+      spec.sampai = Math.round(Number(spec.sampai) || 0);
+      if (spec.sampai > 0 && spec.sampai < spec.dari) {
+        const tmp = spec.dari; spec.dari = spec.sampai; spec.sampai = tmp;
+      }
+      const a = spec.dari;
+      const b = spec.sampai > 0 ? spec.sampai : (diketahui ? maks : a);
+      /* Slider hanya bisa bergerak di dalam dokumen, jadi posisinya
+         dijepit secara visual; kotak angka tetap menampilkan nilai
+         yang benar-benar diminta pengguna. */
+      const sliderA = Math.min(Math.max(1, a), maks);
+      const sliderB = Math.min(Math.max(sliderA, b), maks);
+      inDari.value = String(sliderA);
+      inSampai.value = String(sliderB);
+      numDari.value = String(a);
+      numSampai.value = String(spec.sampai > 0 ? spec.sampai : b);
+      /* nonaktifkan sampai jumlah halaman diketahui */
+      const aktif = !!diketahui;
+      inDari.disabled = !aktif;
+      inSampai.disabled = !aktif;
+      numDari.disabled = !aktif;
+      numSampai.disabled = !aktif;
+      /* thumbs: thumb atas selalu di atas agar tidak tertutup */
+      inSampai.style.zIndex = "3";
+      inDari.style.zIndex = "2";
+      /* isi rail */
+      const lebar = 100 / Math.max(1, maks - 1 || 1);
+      const kiri = (sliderA - 1) * lebar;
+      const kanan = (sliderB - 1) * lebar;
+      isi.style.left = Math.max(0, Math.min(100, kiri)) + "%";
+      isi.style.width = Math.max(0, Math.min(100, kanan - kiri)) + "%";
+      /* chip mode */
+      for (const m of Object.keys(btnMode)) {
+        const on = spec.mode === m;
+        btnMode[m].classList.toggle("is-on", on);
+        btnMode[m].setAttribute("aria-pressed", String(on));
+      }
+      /* tampilkan slider hanya untuk mode rentang */
+      const rentang = spec.mode === "range";
+      area.hidden = !rentang;
+      angka.hidden = !rentang;
+      /* ringkasan */
+      let teks;
+      let peringatan = false;
+      if (!diketahui) {
+        teks = "Jumlah halaman diketahui setelah PDF dimuat";
+      } else if (rentang) {
+        const n = Math.max(0, Math.min(b, diketahui) - Math.max(1, a) + 1);
+        if (a > diketahui) {
+          teks = `Halaman ${a}–${b} di luar jangkauan (dokumen ${diketahui} halaman)`;
+          peringatan = true;
+        } else {
+          teks = `Halaman ${a}–${Math.min(b, diketahui)} (${n} halaman dari ${diketahui})`;
+        }
+      } else if (spec.mode === "odd") {
+        teks = `Halaman ganjil (dari ${diketahui} halaman)`;
+      } else if (spec.mode === "even") {
+        teks = `Halaman genap (dari ${diketahui} halaman)`;
+      } else {
+        teks = `Semua halaman (${diketahui} halaman)`;
+      }
+      info.textContent = teks;
+      info.classList.toggle("is-warn", peringatan);
+      /* simpan */
+      state.opts[f.id] = { mode: spec.mode, dari: spec.dari, sampai: spec.mode === "range" ? spec.sampai : 0 };
+    }
+    function commit() {
+      perbarui();
+      applyVisibility();
+      if (state.custom && typeof state.custom.onOptsChange === "function") {
+        try { state.custom.onOptsChange(f.id); } catch (_) { /* abaikan */ }
+      }
+    }
+
+    inDari.addEventListener("input", () => {
+      spec.dari = Number(inDari.value) || 1;
+      if (spec.sampai > 0 && spec.dari > spec.sampai) spec.sampai = spec.dari;
+      commit();
+    });
+    inSampai.addEventListener("input", () => {
+      spec.sampai = Number(inSampai.value) || 1;
+      if (spec.sampai < spec.dari) spec.dari = spec.sampai;
+      commit();
+    });
+    numDari.addEventListener("input", () => {
+      const v = Number(numDari.value);
+      if (!isFinite(v) || v < 1) return;
+      /* Nilai TIDAK dijepit ke jumlah halaman: rentang di luar
+         jangkauan harus tetap utuh supaya tool bisa memberi pesan
+         yang jelas, bukan dipaksa menjadi rentang lain. */
+      spec.dari = v;
+      if (spec.sampai > 0 && spec.dari > spec.sampai) spec.sampai = spec.dari;
+      commit();
+    });
+    numSampai.addEventListener("input", () => {
+      const v = Number(numSampai.value);
+      if (!isFinite(v) || v < 1) return;
+      spec.sampai = v;
+      if (spec.sampai > 0 && spec.dari > spec.sampai) spec.dari = spec.sampai;
+      commit();
+    });
+
+    perbarui();
+    return { wrap, perbarui, spec };
+  }
+
+  /* Perbarui semua widget rentang halaman (dipanggil ketika jumlah
+     halaman dokumen sudah diketahui). */
+  function perbaruiPagerange() {
+    for (const w of pageWidgets) w.perbarui();
+  }
+
   /* ---------- render opsi ---------- */
   function renderFields(fields) {
     const host = $("#toolOptions");
     host.innerHTML = "";
+    pageWidgets = [];
     for (const f of fields) {
       if (f.type === "check") {
         const l = el("label", "tool-check");
@@ -361,6 +620,18 @@
         l.appendChild(i);
         l.appendChild(el("span", "", f.label));
         host.appendChild(l);
+        continue;
+      }
+      if (f.type === "pagerange") {
+        const wrap = el("div", "tool-field tool-field-pagerange");
+        wrap.dataset.field = f.id;
+        const lab = el("label", "tool-label");
+        lab.textContent = f.label;
+        wrap.appendChild(lab);
+        const w = buatPagerange(f);
+        wrap.appendChild(w.wrap);
+        host.appendChild(wrap);
+        pageWidgets.push(w);
         continue;
       }
       const wrap = el("div", "tool-field");
@@ -434,10 +705,18 @@
       if (!wrap) continue;
       let ok = true;
       for (const k of Object.keys(f.visibleIf)) {
-        if (String(state.opts[k]) !== String(f.visibleIf[k])) { ok = false; break; }
+        if (String(nilaiOpsi(k)) !== String(f.visibleIf[k])) { ok = false; break; }
       }
       wrap.hidden = !ok;
     }
+  }
+
+  /* Nilai opsi yang bisa dibandingkan sebagai teks. Untuk opsi
+     rentang halaman (objek) yang dibandingkan adalah "mode"-nya. */
+  function nilaiOpsi(k) {
+    const v = state.opts[k];
+    if (v && typeof v === "object") return v.mode != null ? v.mode : "";
+    return v;
   }
 
   /* ---------- daftar file ---------- */
@@ -455,6 +734,7 @@
         state.files = state.files.filter((x) => x !== f);
         renderFiles();
         updateRunState();
+        void segarkanJumlahHalaman();
       });
       row.appendChild(rm);
       host.appendChild(row);
@@ -467,6 +747,39 @@
       try { state.custom.onOptsChange("files"); } catch (_) { /* abaikan */ }
     }
     renderPreview();
+    void segarkanJumlahHalaman();
+  }
+
+  /* Hitung jumlah halaman PDF yang dimuat supaya batas slider rentang
+     halaman akurat. Untuk beberapa berkas, yang dipakai adalah jumlah
+     halaman terbesar (supaya slider bisa menjangkau semua berkas). */
+  let pageCountToken = 0;
+  async function segarkanJumlahHalaman() {
+    const token = ++pageCountToken;
+    const perlu = (state.tool && (state.tool.fields || []).some((f) => f.type === "pagerange"));
+    if (!perlu) {
+      if (state.pageCount !== 0) { state.pageCount = 0; perbaruiPagerange(); }
+      return;
+    }
+    if (!state.files.length) {
+      if (state.pageCount !== 0) { state.pageCount = 0; perbaruiPagerange(); }
+      return;
+    }
+    let maks = 0;
+    for (const f of state.files) {
+      if (token !== pageCountToken) return;
+      try {
+        const doc = await C.openPdfjs(f.bytes);
+        if (token !== pageCountToken) { try { await doc.destroy(); } catch (_) { } return; }
+        if (doc.numPages > maks) maks = doc.numPages;
+        try { await doc.destroy(); } catch (_) { }
+      } catch (_) {
+        /* bukan PDF atau gagal dibuka -> abaikan */
+      }
+    }
+    if (token !== pageCountToken) return;
+    state.pageCount = maks;
+    perbaruiPagerange();
   }
 
   function escapeHtml(s) {
@@ -1148,12 +1461,23 @@
   /* --- Redaksi --- */
   async function renderRedact(host) {
     const wrap = el("div", "redact-wrap");
-    wrap.innerHTML = '<p class="muted small">Pilih PDF, ketik kata yang mau diredaksi di panel samping, lalu klik "Cari kata".</p>';
+    const judul = el("p", "muted small",
+      'Pilih PDF, ketik kata yang mau diredaksi di panel samping, lalu klik "Cari kata".');
+    const aksi = el("div", "redact-aksi");
+    const btnCari = el("button", "btn btn-ghost btn-sm", "Cari kata");
+    btnCari.type = "button";
+    btnCari.addEventListener("click", () => { void state.custom.findRedact(); });
+    aksi.appendChild(btnCari);
+    const hasil = el("div", "redact-hasil");
+    wrap.appendChild(judul);
+    wrap.appendChild(aksi);
+    wrap.appendChild(hasil);
     host.appendChild(wrap);
     state.custom.refreshRedact = async () => {
       const f = state.files[0];
+      btnCari.disabled = !f;
       if (!f) {
-        wrap.innerHTML = '<p class="muted small">Pilih PDF, ketik kata yang mau diredaksi di panel samping, lalu klik "Cari kata".</p>';
+        hasil.innerHTML = "";
         state.custom.opts.hits = null;
         return;
       }
@@ -1163,25 +1487,44 @@
       const term = String(state.opts.term || "").trim();
       if (!f) { if (sh().toast) sh().toast("Pilih PDF dulu.", "err"); return; }
       if (!term) { if (sh().toast) sh().toast("Isi kata yang mau diredaksi.", "err"); return; }
-      wrap.innerHTML = '<p class="muted small">Mencari…</p>';
+      hasil.innerHTML = '<p class="muted small">Mencari…</p>';
       try {
-        const hits = await state.tool.search({ files: state.files, opts: state.opts });
-        state.custom.opts.hits = hits;
-        wrap.innerHTML = "";
-        if (!hits.length) {
-          wrap.appendChild(el("p", "tool-warn", `"${term}" tidak ditemukan di PDF ini.`));
+        const semua = await state.tool.search({ files: state.files, opts: state.opts });
+        state.custom.opts.hits = semua;
+        hasil.innerHTML = "";
+        if (!semua.length) {
+          hasil.appendChild(el("p", "tool-warn", `"${term}" tidak ditemukan di PDF ini.`));
           return;
         }
-        wrap.appendChild(el("p", "muted small", `${hits.length} kemunculan ditemukan. Semua akan ditutup secara permanen.`));
+        /* Hanya kemunculan pada halaman yang DIPILIH yang akan
+           ditutup — halaman di luar rentang dibiarkan utuh. */
+        const core = window.PDFToolsCore;
+        let hits = semua;
+        let ringkasan = `${semua.length} kemunculan ditemukan. Semua akan ditutup secara permanen.`;
+        if (core && core.normSpesifikasiHalaman) {
+          const total = totalDiketahui();
+          const spec = core.normSpesifikasiHalaman(state.opts.halaman, total);
+          const pilih = new Set(core.halamanTerpilih(spec, total));
+          hits = semua.filter((h) => pilih.has(h.page));
+          const cakupan = core.ringkasHalaman(spec, total);
+          ringkasan = hits.length === semua.length
+            ? `${semua.length} kemunculan ditemukan (${cakupan}). Semua akan ditutup secara permanen.`
+            : `${hits.length} dari ${semua.length} kemunculan akan ditutup (${cakupan}). ${semua.length - hits.length} kemunculan di luar rentang dibiarkan utuh.`;
+        }
+        if (!hits.length) {
+          hasil.appendChild(el("p", "tool-warn", `"${term}" tidak ditemukan di halaman yang dipilih.`));
+          return;
+        }
+        hasil.appendChild(el("p", "muted small", ringkasan));
         const list = el("div", "redact-list");
         for (const h of hits) {
           const row = el("div", "redact-row");
           row.innerHTML = `<span class="rr-page">Hal. ${h.page}</span><span class="rr-text">${escapeHtml((h.text || "").slice(0, 90))}</span>`;
           list.appendChild(row);
         }
-        wrap.appendChild(list);
+        hasil.appendChild(list);
       } catch (err) {
-        wrap.innerHTML = `<p class="tool-warn">${escapeHtml(err.message || String(err))}</p>`;
+        hasil.innerHTML = `<p class="tool-warn">${escapeHtml(err.message || String(err))}</p>`;
       }
     };
   }
