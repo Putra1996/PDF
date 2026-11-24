@@ -5,7 +5,7 @@
 :root{
   /* Penanda build — naikkan setiap kali style.css berubah.
      Dipakai index.html untuk mendeteksi style.css basi di cache browser. */
-  --css-build:20261124d;
+  --css-build:20261124e;
   --bg:#f5f6fa;
   --bg-glow:#e6ebff;
   --surface:#ffffff;
@@ -1066,7 +1066,11 @@ code{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;
 }
 .org-cell.deleted{filter:grayscale(1)}
 .org-cell.deleted .oname{color:var(--ink-disabled)}
-.org-cell img{width:100%;display:block;border-radius:6px;background:#fff}
+.org-thumb{
+  width:100%;aspect-ratio:3/4;border-radius:6px;overflow:hidden;
+  background:#fff;display:grid;place-items:center;
+}
+.org-cell img{width:100%;height:100%;object-fit:contain;display:block;border-radius:6px;background:#fff}
 .org-num{
   position:absolute;top:10px;left:10px;background:rgba(15,23,42,.75);color:#fff;
   font-size:11px;font-weight:700;border-radius:6px;padding:1px 6px;
@@ -1077,7 +1081,9 @@ code{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;
 .org-btn{
   flex:1;min-width:0;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);
   border-radius:7px;padding:4px 0;font-size:12px;cursor:pointer;
+  display:grid;place-items:center;
 }
+.org-btn svg{width:15px;height:15px;display:block}
 .org-btn:hover{background:var(--surface-2);color:var(--ink)}
 
 /* ---------- formulir ---------- */
