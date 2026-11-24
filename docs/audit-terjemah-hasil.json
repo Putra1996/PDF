@@ -1,5 +1,5 @@
 {
-  "tanggal": "2026-11-24T11:20:34.502Z",
+  "tanggal": "2026-11-24T12:03:46.530Z",
   "pass": 31,
   "fail": 0,
   "results": [
@@ -41,7 +41,7 @@
     {
       "name": "Panggilan kedua jauh lebih cepat (cache internal mesin)",
       "ok": true,
-      "detail": "764 ms → 50 ms"
+      "detail": "1208 ms → 46 ms"
     },
     {
       "name": "Baris berulang hanya diterjemahkan satu kali",
@@ -106,7 +106,7 @@
     {
       "name": "Catatan hasil menyebut mesin yang dipakai",
       "ok": true,
-      "detail": "1 KB · mesin offline · 3 halaman · 24 baris · 1.2 dtk"
+      "detail": "1 KB · mesin offline · 3 halaman · 24 baris · 1.1 dtk"
     },
     {
       "name": "Dua berkas diproses dalam satu jalan",
