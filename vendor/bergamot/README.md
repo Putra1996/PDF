@@ -46,5 +46,7 @@ lisensi repo.
 - Pemuatan WASM: ±120 ms.
 - Pemuatan model (sekali per pasangan bahasa): ±2–4 detik di jaringan cepat.
 - Terjemahan: ±10–40 ms per baris kalimat (Bergamot WASM, *int8*).
-- Model tetap ada di memori peramban selama halaman terbuka; pasangan
-  bahasa yang paling lama tidak dipakai dilepas otomatis.
+- Model tetap ada di memori peramban selama halaman terbuka. Kalau pasangan
+  bahasa diganti, worker lama **diputus** (memori WASM dilepas sepenuhnya)
+  lalu worker baru dibuat — memuat dua model sekaligus bisa membuat tab
+  kehabisan memori.
