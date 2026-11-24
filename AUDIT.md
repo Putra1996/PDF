@@ -75,7 +75,7 @@ persis seperti susunan screenshot.
 |---|---|---|---|
 | Unlock PDF | **new** | `tool-smart.js` `unlock` + `tool-decrypt.js` (dekriptor mandiri: Standard Security Handler R2–R6, RC4/AES, object stream + xref stream → tulis ulang tanpa `/Encrypt`) | `exp-decrypt.mjs` (16/16) + `deep-unlock.mjs` (21/21) + `validate_outputs.py` (14/14 pypdf/pikepdf) |
 | Protect PDF | **new** | `tool-smart.js:251` `protect` + `tool-crypto.js` (MD5/RC4/AES-128-CBC + Standard Security Handler ISO 32000-1 §7.6.3: Algorithm 1/2/3/5) | `protect-test.mjs` (17 pemeriksaan, reader independen pypdf) + `crypto-test.mjs` (12 vektor, nilai `/O`/kunci/`/U` identik dengan pypdf 7.1.1) |
-| Sign PDF | **new** | `tool-smart.js:319` `sign` (tanda tangan tulisan tangan, posisi & ukuran, multi halaman, **sadar-rotasi `/Rotate` + jepit posisi**) | `tools2.mjs` → "tanda tangan menghasilkan PDF valid", "tanpa gambar ditolak"; `tools/audit-sign.mjs` → 28/0 |
+| Sign PDF | **new** | `tool-smart.js:319` `sign` (tanda tangan tulisan tangan, posisi & ukuran, multi halaman, **sadar-rotasi `/Rotate` + jepit posisi**) | `tools2.mjs` → "tanda tangan menghasilkan PDF valid", "tanpa gambar ditolak"; `tools/audit-sign.mjs` → 59/0 |
 | Redact PDF | **new** | `tool-smart.js:413` `redact` (cari teks → render ulang halaman → teks benar-benar hilang) | `tools.mjs` → "redaksi menghasilkan berkas"; panel menampilkan jumlah hit |
 | Compare PDF | **new** | `tool-smart.js:502` `compare` (laporan HTML: berubah / sama / baru) | `tools.mjs` → "bandingkan PDF menghasilkan laporan" |
 
@@ -465,11 +465,23 @@ akhir meleset sampai **245 mm** dan gambarnya ikut berputar.
 | Tidak ada jepit posisi — `x = 400 mm` diterima, tanda tangan keluar kertas | Posisi **dan** ukuran dijepit ke halaman terkecil di antara target; rasio gambar terjaga; kolom X/Y/Lebar dikoreksi |
 | Pratinjau dan PDF akhir memakai perhitungan berbeda | Keduanya memakai sumber ukuran & batas yang sama → pratinjau = hasil |
 
+#### Tambahan: posisi tanda tangan bisa digeser dengan jari
+
+| Aspek | Hasil |
+|---|---|
+| Pegangan geser di pratinjau | sejajar **0,0 px** dengan kotak tanda tangan (desktop & 375 px) |
+| Geser dengan jari (Pointer Events + `touch-action:none`) | ΔX 24,85 mm untuk 40 px; ΔY −15,52 mm (arah bawah benar) |
+| Geser dengan tetikus | ΔX −18,64 mm untuk 30 px |
+| Keyboard | panah = 1 mm, `Shift`+panah = 5 mm |
+| Performa | drag **tidak** memicu render ulang PDF — halaman disalin ke kanvas `snap`, hanya satu frame digambar ulang |
+| End-to-end | posisi setelah **drag** benar-benar masuk ke PDF akhir (Δ 0,5 / 0,4 mm dari pratinjau) |
+| Aksesibilitas | `role="button"`, `tabindex="0"`, `aria-label`, `aria-describedby`, `aria-keyshortcuts`, live region `role="status"` |
+
 #### Hasil suite
 
 | Harness | Pemeriksaan | Gagal |
 |---|---|---|
-| `tools/audit-sign.mjs` (audit khusus tanda tangan) | 28 | 0 |
+| `tools/audit-sign.mjs` (audit khusus tanda tangan) | 59 | 0 |
 | `tools/audit-translate.mjs` | 31 | 0 |
 | `tools/audit-pagerange.mjs` | 106 | 0 |
 | `tools/audit-merge-preview.mjs` | 44 | 0 |

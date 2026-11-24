@@ -165,6 +165,30 @@ async function ukurInkFinal(page, b64, skala, crop) {
   }, { b64, skala, src: SRC_UKUR, crop: crop || null });
 }
 
+/* Gulir elemen ke dalam layar lalu ambil kotaknya (koordinat layar). */
+async function posisiLayar(page, sel) {
+  await page.locator(sel).scrollIntoViewIfNeeded();
+  await page.waitForTimeout(150);
+  return page.locator(sel).boundingBox();
+}
+
+/* Geser dengan JARI: sentuh asli (CDP) -> Chrome membuat Pointer Events
+   dengan pointerType "touch". */
+async function geserJari(cdp, page, dari, ke, langkah = 6) {
+  const titik = (p) => [{ x: Math.round(p.x), y: Math.round(p.y), id: 1 }];
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: titik(dari) });
+  for (let i = 1; i <= langkah; i++) {
+    const t = i / langkah;
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: titik({ x: dari.x + (ke.x - dari.x) * t, y: dari.y + (ke.y - dari.y) * t }),
+    });
+    await page.waitForTimeout(16);
+  }
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await page.waitForTimeout(150);
+}
+
 /* Tulis tanda tangan di kanvas (mouse) lalu simpan. */
 async function buatTandaTangan(page) {
   await page.locator("#signPad").scrollIntoViewIfNeeded();
@@ -252,7 +276,183 @@ async function main() {
   page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
 
   /* ==========================================================
-     1. Halaman berotasi: pratinjau = PDF akhir
+     1. Pegangan geser: struktur & aksesibilitas
+     ========================================================== */
+  await bukaAlat(page, [fixture.kosong]);
+  await buatTandaTangan(page);
+  const struktur = await page.evaluate(() => {
+    const d = document.getElementById("signDrag");
+    const st = document.getElementById("signStage");
+    const cv = document.getElementById("signPreview");
+    if (!d || !st || !cv) return { ada: false };
+    const cs = getComputedStyle(d);
+    const cb = cv.getBoundingClientRect();
+    const db = d.getBoundingClientRect();
+    const pi = (window.PDFToolsUI.state.custom || {}).previewInfo || {};
+    return {
+      ada: true,
+      role: d.getAttribute("role"),
+      tabindex: d.getAttribute("tabindex"),
+      label: d.getAttribute("aria-label") || "",
+      describedby: d.getAttribute("aria-describedby") || "",
+      shortcuts: d.getAttribute("aria-keyshortcuts") || "",
+      touchAction: cs.touchAction,
+      cursor: cs.cursor,
+      stagePosition: getComputedStyle(st).position,
+      tersembunyi: d.hidden,
+      selisihX: Math.abs(db.left - (cb.left + (pi.xMm / pi.pageWmm) * cb.width)),
+      selisihY: Math.abs(db.top - (cb.top + ((pi.pageHmm - pi.yMm - pi.hMm) / pi.pageHmm) * cb.height)),
+      selisihW: Math.abs(db.width - (pi.wMm / pi.pageWmm) * cb.width),
+      lebarHandle: db.width, lebarCanvas: cb.width,
+      statusAda: !!document.getElementById("signDragStatus"),
+    };
+  });
+  check("Pegangan geser ada di pratinjau", struktur.ada);
+  check("Pegangan geser punya role button + tabindex", struktur.role === "button" && struktur.tabindex === "0",
+    struktur.role + "/" + struktur.tabindex);
+  check("Pegangan geser punya aria-label & aria-describedby", !!struktur.label && !!struktur.describedby, struktur.label);
+  check("Pegangan geser punya petunjuk tombol panah", /Arrow/.test(struktur.shortcuts), struktur.shortcuts);
+  check("Pegangan geser memakai touch-action:none (halaman tidak ikut geser)", struktur.touchAction === "none", struktur.touchAction);
+  check("Pegangan geser memakai kursor grab", /grab/.test(struktur.cursor), struktur.cursor);
+  check("Panggung pratinjau berposisi relatif", struktur.stagePosition === "relative", struktur.stagePosition);
+  check("Ada live region untuk pembaca layar", struktur.statusAda === true);
+  check("Pegangan geser terlihat setelah tanda tangan dibuat", struktur.tersembunyi === false);
+  check(
+    "Kotak pegangan tepat di atas kotak tanda tangan di pratinjau",
+    struktur.selisihX < 2 && struktur.selisihY < 2 && struktur.selisihW < 2,
+    "dx=" + struktur.selisihX.toFixed(1) + " dy=" + struktur.selisihY.toFixed(1) + " dw=" + struktur.selisihW.toFixed(1)
+  );
+  check(
+    "Luas pegangan mengikuti kotak tanda tangan (bukan layar penuh)",
+    struktur.lebarHandle > 4 && struktur.lebarHandle < struktur.lebarCanvas * 0.9,
+    Math.round(struktur.lebarHandle) + "px dari " + Math.round(struktur.lebarCanvas) + "px"
+  );
+
+  /* ==========================================================
+     2. Geser dengan JARI & dengan tetikus
+     ========================================================== */
+  const cdp = await context.newCDPSession(page);
+  const pxPerMm = await page.evaluate(() => {
+    const cv = document.getElementById("signPreview");
+    const pi = window.PDFToolsUI.state.custom.previewInfo;
+    return cv.getBoundingClientRect().width / pi.pageWmm;
+  });
+  const sebelum = await ambilState(page);
+  const k1 = await posisiLayar(page, "#signDrag");
+  await geserJari(cdp, page,
+    { x: k1.x + k1.width / 2, y: k1.y + k1.height / 2 },
+    { x: k1.x + k1.width / 2 + 40, y: k1.y + k1.height / 2 + 25 });
+  const sesudah = await ambilState(page);
+  check(
+    "Geser dengan JARI memindahkan posisi X",
+    Math.abs((sesudah.x - sebelum.x) - 40 / pxPerMm) < 1.5,
+    "\u0394X=" + (sesudah.x - sebelum.x).toFixed(2) + " mm (haraapan " + (40 / pxPerMm).toFixed(2) + ")"
+  );
+  check(
+    "Geser dengan JARI memindahkan posisi Y (arah bawah)",
+    Math.abs((sesudah.y - sebelum.y) + 25 / pxPerMm) < 1.5,
+    "\u0394Y=" + (sesudah.y - sebelum.y).toFixed(2) + " mm (haraapan -" + (25 / pxPerMm).toFixed(2) + ")"
+  );
+  check(
+    "Kolom X/Y ikut diperbarui setelah geser",
+    Math.abs(Number(sesudah.fieldX) - sesudah.x) < 0.05 && Math.abs(Number(sesudah.fieldY) - sesudah.y) < 0.05,
+    "kolom=" + sesudah.fieldX + "," + sesudah.fieldY + " state=" + sesudah.x + "," + sesudah.y
+  );
+
+  /* geser dengan tetikus */
+  const k2 = await posisiLayar(page, "#signDrag");
+  const sebelumMouse = await ambilState(page);
+  await page.mouse.move(k2.x + k2.width / 2, k2.y + k2.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(k2.x + k2.width / 2 - 30, k2.y + k2.height / 2 - 15, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(200);
+  const sesudahMouse = await ambilState(page);
+  check(
+    "Geser dengan TETIKUS memindahkan posisi",
+    Math.abs((sesudahMouse.x - sebelumMouse.x) + 30 / pxPerMm) < 1.5,
+    "\u0394X=" + (sesudahMouse.x - sebelumMouse.x).toFixed(2) + " mm"
+  );
+  check(
+    "Kelas seret (is-drag) dibersihkan setelah mouse up",
+    await page.evaluate(() => !document.getElementById("signDrag").classList.contains("is-drag"))
+  );
+
+  /* keyboard */
+  const sebelumKey = await ambilState(page);
+  await page.focus("#signDrag");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight");
+  await page.waitForTimeout(150);
+  const setelahKey = await ambilState(page);
+  check("Panah kanan memindahkan X 1 mm per tekan",
+    Math.abs((setelahKey.x - sebelumKey.x) - 2) < 0.05,
+    "\u0394X=" + (setelahKey.x - sebelumKey.x).toFixed(2));
+  await page.keyboard.press("Shift+ArrowUp");
+  await page.waitForTimeout(150);
+  const setelahShift = await ambilState(page);
+  check("Shift + panah atas memindahkan Y 5 mm",
+    Math.abs((setelahShift.y - setelahKey.y) - 5) < 0.05,
+    "\u0394Y=" + (setelahShift.y - setelahKey.y).toFixed(2));
+
+  /* geser keluar halaman harus tetap dijepit */
+  const k3 = await posisiLayar(page, "#signDrag");
+  await geserJari(cdp, page,
+    { x: k3.x + k3.width / 2, y: k3.y + k3.height / 2 },
+    { x: k3.x + k3.width / 2 + 4000, y: k3.y + k3.height / 2 + 4000 });
+  const jepitDrag = await ambilState(page);
+  check("Geser keluar halaman tetap dijepit",
+    jepitDrag.xMm + jepitDrag.wMm <= jepitDrag.pageWmm + 0.05
+      && jepitDrag.yMm + jepitDrag.hMm <= jepitDrag.pageHmm + 0.05,
+    "x=" + jepitDrag.xMm + " y=" + jepitDrag.yMm
+    + " (halaman " + jepitDrag.pageWmm + "\u00d7" + jepitDrag.pageHmm + ")");
+
+  /* ==========================================================
+     2b. End-to-end: posisi hasil DRAG benar-benar masuk PDF akhir
+     ========================================================== */
+  {
+    await bukaAlat(page, [fixture.kosong]);
+    await buatTandaTangan(page);
+    const cdpE = await context.newCDPSession(page);
+    const kE = await posisiLayar(page, "#signDrag");
+    const sE = await ambilState(page);
+    /* tinta tanda tangan SEBELUM digeser (area pensil pada kanvas) */
+    const inkA = await ukurInkPratinjau(page, areaTanda(sE));
+    /* geser 50 px ke kanan dan 30 px ke bawah */
+    await geserJari(cdpE, page,
+      { x: kE.x + kE.width / 2, y: kE.y + kE.height / 2 },
+      { x: kE.x + kE.width / 2 + 50, y: kE.y + kE.height / 2 + 30 });
+    const sE2 = await ambilState(page);
+    check(
+      "Posisi hasil drag benar-benar BERPINDAH dari posisi awal",
+      Math.abs(sE2.xMm - sE.xMm) > 5 || Math.abs(sE2.yMm - sE.yMm) > 5,
+      "\u0394x=" + (sE2.xMm - sE.xMm).toFixed(1) + " \u0394y=" + (sE2.yMm - sE.yMm).toFixed(1) + " mm"
+    );
+    /* tinta tanda tangan SESUDAH digeser (di pratinjau) */
+    const inkB = await ukurInkPratinjau(page, areaTanda(sE2));
+    check("Tinta tanda tangan di pratinjau ikut bergeser",
+      inkA.ada && inkB.ada && Math.abs((inkB.x0 - inkA.x0) - (sE2.xMm - sE.xMm)) < 2,
+      "pratinjau \u0394x=" + (inkB.x0 - inkA.x0).toFixed(1) + " mm");
+    /* buat PDF akhir dari posisi hasil drag */
+    const b64E = await jalankanAlat(page);
+    check("PDF hasil dibuat dari posisi hasil drag", !!b64E && b64E.length > 100);
+    const inkE = await ukurInkFinal(page, b64E, 2, areaTanda(sE2));
+    check("Tanda tangan hasil drag ada di PDF akhir", inkE.ada === true, inkE.ada ? "" : "tidak ada tinta");
+    if (inkE.ada && inkB.ada) {
+      const dx = Math.abs(inkE.x0 - inkB.x0);
+      const dy = Math.abs(inkE.y0 - inkB.y0);
+      check(
+        "POSISI HASIL DRAG SAMA DENGAN PDF AKHIR (bukan hanya pratinjau)",
+        dx < 2 && dy < 2,
+        "kafka x=" + inkE.x0.toFixed(1) + " y=" + inkE.y0.toFixed(1)
+        + " | pratinjau x=" + inkB.x0.toFixed(1) + " y=" + inkB.y0.toFixed(1)
+        + " | \u0394=" + dx.toFixed(1) + "/" + dy.toFixed(1) + " mm"
+      );
+    }
+  }
+
+  /* ==========================================================
+     3. Halaman berotasi: pratinjau = PDF akhir
      ========================================================== */
   const rotasi = [
     { nama: "kosong.pdf", rot: 0, w: 210, h: 297 },
@@ -301,7 +501,7 @@ async function main() {
   }
 
   /* ==========================================================
-     2. Jepit (clamp) — tanda tangan tidak boleh keluar halaman
+     4. Jepit (clamp) — tanda tangan tidak boleh keluar halaman
      ========================================================== */
   await bukaAlat(page, [fixture.kosong]);
   await buatTandaTangan(page);
@@ -334,7 +534,7 @@ async function main() {
     + " y=" + Math.abs(inkJepit.y0 - akhirJepit.y0).toFixed(2));
 
   /* ==========================================================
-     3. Halaman multi-ukuran (A4 + A5 + landscape)
+     5. Halaman multi-ukuran (A4 + A5 + landscape)
      ========================================================== */
   const pageMulti = await context.newPage();
   pageMulti.on("pageerror", (e) => errors.push("multi: " + String(e)));
@@ -362,7 +562,105 @@ async function main() {
   await pageMulti.close();
 
   /* ==========================================================
-     4. Error JavaScript
+     6. Layar sempit (ponsel 375px)
+     ========================================================== */
+  const ctxHp = await browser.newContext({
+    viewport: { width: 375, height: 667 },
+    hasTouch: true,
+    isMobile: true,
+    deviceScaleFactor: 2,
+  });
+  const pageHp = await ctxHp.newPage();
+  pageHp.on("pageerror", (e) => errors.push("ponsel: " + String(e)));
+  await pageHp.goto(`http://127.0.0.1:${PORT}/index.html`, { waitUntil: "load" });
+  await pageHp.waitForTimeout(700);
+  await pageHp.evaluate(() => window.PDFToolsUI.openTool("sign"));
+  await pageHp.waitForTimeout(300);
+  await pageHp.setInputFiles("#toolInput", [fixture.kosong]);
+  await pageHp.waitForTimeout(1300);
+  await buatTandaTangan(pageHp);
+  const alHp = await pageHp.evaluate(() => {
+    const d = document.getElementById("signDrag");
+    const cv = document.getElementById("signPreview");
+    const db = d.getBoundingClientRect();
+    const cb = cv.getBoundingClientRect();
+    const pi = (window.PDFToolsUI.state.custom || {}).previewInfo || {};
+    return {
+      tersembunyi: d.hidden,
+      lebarKanvas: cb.width,
+      dx: Math.abs(db.left - (cb.left + (pi.xMm / pi.pageWmm) * cb.width)),
+      dy: Math.abs(db.top - (cb.top + ((pi.pageHmm - pi.yMm - pi.hMm) / pi.pageHmm) * cb.height)),
+      dw: Math.abs(db.width - (pi.wMm / pi.pageWmm) * cb.width),
+      touchAction: getComputedStyle(d).touchAction,
+      overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+    };
+  });
+  check("Layar 375px: panggung pratinjau tidak meluber", alHp.overflow === false, "scrollWidth > viewport");
+  check(
+    "Layar 375px: pegangan tetap presisi di atas kotak tanda tangan",
+    alHp.tersembunyi === false && alHp.dx < 2 && alHp.dy < 2 && alHp.dw < 2,
+    "dx=" + alHp.dx.toFixed(1) + " dy=" + alHp.dy.toFixed(1) + " dw=" + alHp.dw.toFixed(1)
+  );
+  check("Layar 375px: touch-action tetap none", alHp.touchAction === "none", alHp.touchAction);
+  const cdpHp = await ctxHp.newCDPSession(pageHp);
+  const kHp = await posisiLayar(pageHp, "#signDrag");
+  const sHp = await ambilState(pageHp);
+  await geserJari(cdpHp, pageHp,
+    { x: kHp.x + kHp.width / 2, y: kHp.y + kHp.height / 2 },
+    { x: kHp.x + kHp.width / 2 + 30, y: kHp.y + kHp.height / 2 });
+  const sHp2 = await ambilState(pageHp);
+  check(
+    "Layar 375px: geser dengan jari tetap memindahkan posisi",
+    Math.abs((sHp2.x - sHp.x) - 30 / (alHp.lebarKanvas / sHp.pageWmm)) < 1.5,
+    "\u0394X=" + (sHp2.x - sHp.x).toFixed(2) + " mm"
+  );
+  await pageHp.screenshot({ path: path.join(SHOTS, "ttd-hp.png") });
+  await pageHp.close();
+
+  /* ==========================================================
+     7. PDF rusak & dua berkas
+     ========================================================== */
+  const pageRusak = await context.newPage();
+  pageRusak.on("pageerror", (e) => errors.push("rusak: " + String(e)));
+  await pageRusak.goto(`http://127.0.0.1:${PORT}/index.html`, { waitUntil: "load" });
+  await pageRusak.waitForTimeout(600);
+  await pageRusak.evaluate(() => window.PDFToolsUI.openTool("sign"));
+  await pageRusak.waitForTimeout(300);
+  await pageRusak.setInputFiles("#toolInput", [{
+    name: "rusak.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from("%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n"),
+  }]);
+  await pageRusak.waitForTimeout(1500);
+  const rusak = await pageRusak.evaluate(() => {
+    const d = document.getElementById("signDrag");
+    return {
+      ada: !!d,
+      tersembunyi: d ? d.hidden : true,
+      hint: (document.getElementById("signPreviewHint") || {}).textContent || "",
+    };
+  });
+  check("PDF rusak: pegangan geser disembunyikan", rusak.ada === true && rusak.tersembunyi === true);
+  check("PDF rusak: pesan error pratinjau ditampilkan", /tidak bisa|tidak ada|gagal/i.test(rusak.hint), rusak.hint.slice(0, 70));
+  await pageRusak.close();
+
+  const pageDua = await context.newPage();
+  pageDua.on("pageerror", (e) => errors.push("dua: " + String(e)));
+  await bukaAlat(pageDua, [fixture.kosong, fixture.multi]);
+  await pageDua.waitForTimeout(800);
+  const dua = await pageDua.evaluate(() => ({
+    hint: (document.getElementById("signPreviewHint") || {}).textContent || "",
+    jumlah: (window.PDFToolsUI.state.custom.previewInfo || {}).jumlah,
+  }));
+  check(
+    "Dua berkas: pratinjau memakai PDF pertama dan memberi tahu",
+    /PDF pertama/.test(dua.hint) && dua.jumlah === 1,
+    "jumlah=" + dua.jumlah
+  );
+  await pageDua.close();
+
+  /* ==========================================================
+     8. Error JavaScript
      ========================================================== */
   const nyata = errors.filter((e) => !/favicon|ERR_FAILED|net::/i.test(e));
   check("Tidak ada error JavaScript selama audit", nyata.length === 0, nyata.slice(0, 3).join(" | "));
