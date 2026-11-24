@@ -1,0 +1,36 @@
+{
+  "tanggal": "2026-11-24T11:20:00.972Z",
+  "catatan": "Mesin offline diukur dengan Bergamot WASM sungguhan. Mesin bawaan peramban disimulasikan (12 ms per terjemahan + 250 ms pemuatan model) supaya biaya sisi aplikasi bisa dibandingkan adil.",
+  "offline": {
+    "jumlahHalaman": 20,
+    "jumlahBaris": 220,
+    "barisUnik": 30,
+    "lamaMs": 4587,
+    "lamaPanggilan": 20,
+    "lamaTeks": 20,
+    "siapMs": 0,
+    "baruMs": 269,
+    "baruPanggilan": 20,
+    "baruTeks": 30,
+    "baruDiterjemahkan": 30,
+    "unikLamaMs": 4809,
+    "unikLamaTeks": 20,
+    "unikBaruMs": 4612,
+    "unikBaruTeks": 220
+  },
+  "bawaan": {
+    "jumlahHalaman": 20,
+    "jumlahBaris": 800,
+    "lamaMs": 30157,
+    "lamaCreates": 3,
+    "lamaCalls": 60,
+    "baruMs": 2895,
+    "baruCreates": 1,
+    "baruCalls": 800
+  },
+  "rangkuman": {
+    "offlinePemercepat": 17.1,
+    "offlineTanpaDuplikasiPemercepat": 1,
+    "bawaanPemercepat": 10.4
+  }
+}

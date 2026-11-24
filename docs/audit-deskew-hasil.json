@@ -2,7 +2,7 @@
   {
     "name": "Pindai miring 3° -> alat berhasil",
     "ok": true,
-    "detail": "173591 byte, 8.9s"
+    "detail": "173591 byte, 2.0s"
   },
   {
     "name": "Jumlah halaman tetap 1",
@@ -37,7 +37,7 @@
   {
     "name": "Vektor miring 3° -> alat berhasil",
     "ok": true,
-    "detail": "3163 byte, 6.4s"
+    "detail": "3163 byte, 1.3s"
   },
   {
     "name": "Sudut sisa vektor ~0°",
@@ -212,7 +212,7 @@
   {
     "name": "PDF 3 halaman -> alat berhasil",
     "ok": true,
-    "detail": "344856 byte, 3.6s"
+    "detail": "344856 byte, 1.4s"
   },
   {
     "name": "Jumlah halaman tetap 3",
@@ -262,7 +262,7 @@
   {
     "name": "Beban 12 halaman -> alat berhasil",
     "ok": true,
-    "detail": "2077671 byte, 4.0s"
+    "detail": "2077671 byte, 2.9s"
   },
   {
     "name": "Beban: semua 12 halaman lurus",
@@ -272,7 +272,7 @@
   {
     "name": "Beban 12 halaman selesai < 60 detik",
     "ok": true,
-    "detail": "4s"
+    "detail": "2.9s"
   },
   {
     "name": "Tidak ada error JavaScript selama audit",

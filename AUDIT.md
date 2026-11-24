@@ -84,7 +84,7 @@ persis seperti susunan screenshot.
 | Item screenshot | Status | Bukti kode | Bukti uji |
 |---|---|---|---|
 | AI Summarizer | **new** | `tool-smart.js:628` `summarize` (ringkasan ekstraktif, skoring kalimat, dihitung di perangkat) | `tools.mjs` → "ringkasan menghasilkan berkas" |
-| Translate PDF | **new** | `tool-smart.js:699` `translate` (mesin terjemahan bawaan browser `Translator`) | `tools2.mjs` → "gagal dengan pesan jelas bila mesin terjemahan tidak ada" |
+| Translate PDF | **new** → **meningkat** | `tool-smart.js` `translate` + modul baru `tool-translate.js`: **dua mesin** — mesin bawaan browser (`Translator`, dipakai kalau model bahasa sudah ada di perangkat) **dan** mesin Neural Machine Translation Bergamot WASM **offline** (`vendor/bergamot/`, model Indonesia ⇄ Inggris disertakan). Teks dipecah per baris, satu mesin dipakai untuk semua berkas, kalimat berulang memakai cache LRU | `tools/audit-translate.mjs` → **31 pemeriksaan lulus, 0 gagal** (terjemahan benar dua arah, model dimuat sekali, cache kalimat, `availability()`/`monitor`, galat DOM diterjemahkan jadi pesan tepat, alat lewat UI) — rinci di `docs/audit-terjemah-2026-11-24.md` |
 | PDF to Markdown | **new** | `tool-smart.js:560` `markdown` (judul, paragraf, tabel, blok kode) | `tools.mjs` → "PDF ke Markdown menghasilkan berkas" |
 
 ## Hasil pemeriksaan anti-duplikasi
@@ -305,10 +305,11 @@ dimensi baru dan menemukan tiga bug nyata.
 
 ## Catatan perilaku
 
-- **OCR** dan **Terjemah** memakai mesin bawaan browser (`TextDetector`,
-  `Translator`). Bila peramban tidak memilikinya, aplikasi menampilkan
-  penjelasan jelas — tidak ada unduhan model dari internet (aplikasi tetap
-  sepenuhnya offline).
+- **OCR** memakai `TextDetector` bawaan browser bila tersedia, dan mesin
+  Tesseract offline yang ikut disertakan sebagai cadangan.
+- **Terjemah** memakai mesin bawaan browser (`Translator`) bila model
+  bahasa sudah ada di perangkat, **dan** mesin Bergamot offline yang ikut
+  disertakan — jadi tetap jalan di peramban tanpa mesin bawaan.
 - **HTML to PDF** memakai dialog cetak browser; hasilnya disimpan manual dari
   dialog tersebut.
 - **Protect PDF** ditulis dengan `useObjectStreams:false` agar tabel xref
