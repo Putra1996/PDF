@@ -562,6 +562,103 @@ async function main() {
   await pageMulti.close();
 
   /* ==========================================================
+     5b. Balapan render: dua pratinjau tumpang tindih
+     ========================================================== */
+  {
+    await bukaAlat(page, [fixture.multi]);
+    /* Dua refresh beruntun = dua render yang tumpang tindih.
+       pdf.js melempar "Cannot use the same canvas during multiple
+       render() operations" kalau kanvas yang sama dipakai dua kali
+       sebelum render sebelumnya selesai. */
+    await page.evaluate(async () => {
+      const c = window.PDFToolsUI.state.custom;
+      c.refreshPreview();
+      await new Promise((r) => setTimeout(r, 5));
+      c.refreshPreview();
+    });
+    await page.waitForTimeout(2500);
+    const balapan = await page.evaluate(() => ({
+      hint: (document.getElementById("signPreviewHint") || {}).textContent || "",
+      adaPratinjau: !!(window.PDFToolsUI.state.custom.previewInfo || {}).pageWmm,
+    }));
+    check("Balapan render: tidak ada error 'same canvas'",
+      !/Cannot use the same canvas/i.test(balapan.hint) && !/tidak bisa dirender/i.test(balapan.hint),
+      balapan.hint.slice(0, 90));
+    check("Balapan render: pratinjau tetap tampil",
+      balapan.adaPratinjau === true);
+
+    /* Tiga refresh beruntun + ganti halaman di tengah jalan. */
+    await page.evaluate(async () => {
+      const c = window.PDFToolsUI.state.custom;
+      c.refreshPreview();
+      await new Promise((r) => setTimeout(r, 3));
+      c.refreshPreview();
+      await new Promise((r) => setTimeout(r, 3));
+      c.refreshPreview();
+    });
+    await page.waitForTimeout(2500);
+    const balapan2 = await page.evaluate(() => ({
+      hint: (document.getElementById("signPreviewHint") || {}).textContent || "",
+      adaPratinjau: !!(window.PDFToolsUI.state.custom.previewInfo || {}).pageWmm,
+    }));
+    check("Balapan render (3x): pratinjau tetap tampil & tanpa error",
+      !/Cannot use the same canvas/i.test(balapan2.hint)
+      && !/tidak bisa dirender/i.test(balapan2.hint)
+      && balapan2.adaPratinjau === true,
+      balapan2.hint.slice(0, 90));
+
+    /* Ganti halaman saat render berjalan. */
+    await page.evaluate(async () => {
+      const c = window.PDFToolsUI.state.custom;
+      const btn = document.getElementById("signNext");
+      c.refreshPreview();
+      await new Promise((r) => setTimeout(r, 3));
+      btn.click();
+      await new Promise((r) => setTimeout(r, 3));
+      c.refreshPreview();
+    });
+    await page.waitForTimeout(2500);
+    const balapan3 = await page.evaluate(() => ({
+      hint: (document.getElementById("signPreviewHint") || {}).textContent || "",
+      adaPratinjau: !!(window.PDFToolsUI.state.custom.previewInfo || {}).pageWmm,
+    }));
+    check("Balapan render + ganti halaman: tanpa error, pratinjau tetap tampil",
+      !/Cannot use the same canvas/i.test(balapan3.hint)
+      && !/tidak bisa dirender/i.test(balapan3.hint)
+      && balapan3.adaPratinjau === true,
+      balapan3.hint.slice(0, 90));
+
+    /* Pratinjau harus benar-benar berisi halaman (bukan kanvas kosong).
+       Pakai fixture BERTEKS supaya isinya bisa diukur. */
+    await bukaAlat(page, [fixture.teks]);
+    await page.evaluate(async () => {
+      const c = window.PDFToolsUI.state.custom;
+      c.refreshPreview();
+      await new Promise((r) => setTimeout(r, 5));
+      c.refreshPreview();
+    });
+    await page.waitForTimeout(2500);
+    const isi = await page.evaluate(() => {
+      const cv = document.getElementById("signPreview");
+      const ctx = cv.getContext("2d");
+      const d = ctx.getImageData(0, 0, cv.width, cv.height).data;
+      let beda = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        if (d[i] !== 255 || d[i + 1] !== 255 || d[i + 2] !== 255) beda++;
+      }
+      return { total: d.length / 4, beda: beda };
+    });
+    check("Pratinjau setelah balapan render benar-benar berisi gambar halaman",
+      isi.beda > 100, "piksel non-putih: " + isi.beda + " / " + isi.total);
+    const isiErr = await page.evaluate(() => ({
+      hint: (document.getElementById("signPreviewHint") || {}).textContent || "",
+    }));
+    check("Balapan render pada dokumen berteks: tanpa error",
+      !/Cannot use the same canvas/i.test(isiErr.hint) && !/tidak bisa dirender/i.test(isiErr.hint),
+      isiErr.hint.slice(0, 80));
+  }
+
+  /* ==========================================================
      6. Layar sempit (ponsel 375px)
      ========================================================== */
   const ctxHp = await browser.newContext({

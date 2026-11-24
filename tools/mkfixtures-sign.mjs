@@ -7,6 +7,8 @@
  *   putar180.pdf - satu halaman A4 dengan /Rotate 180
  *   putar270.pdf - satu halaman A4 dengan /Rotate 270
  *   multi.pdf    - tiga halaman berbeda ukuran (A4, A5, A4 landscape)
+ *   teks.pdf     - dua halaman A4 BERTEKS (untuk memastikan pratinjau
+ *                  benar-benar menampilkan isi halaman, bukan kanvas kosong)
  *
  * Jalankan: node tools/mkfixtures-sign.mjs
  */
@@ -19,7 +21,7 @@ const require = createRequire(import.meta.url);
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(path.join(HERE, ".."));
 
-const { PDFDocument, degrees } = require("pdf-lib");
+const { PDFDocument, degrees, rgb } = require("pdf-lib");
 
 const A4 = [595.28, 841.89];
 const A5 = [419.53, 595.28];
@@ -49,6 +51,24 @@ export async function buatFixture(dir) {
     putar["putar" + sudut] = f;
   }
 
+  /* Dua halaman A4 berisi teks — dipakai untuk memastikan pratinjau
+     benar-benar menampilkan isi halaman (bukan kanvas kosong). */
+  const d4 = await PDFDocument.create();
+  for (let i = 0; i < 2; i++) {
+    const p = d4.addPage([A4[0], A4[1]]);
+    p.drawText("Halaman uji render " + (i + 1), {
+      x: 60, y: A4[1] - 120, size: 28, color: rgb(0.05, 0.05, 0.05),
+    });
+    p.drawText("Baris isi dokumen untuk memastikan pratinjau bukan kanvas kosong.",
+      { x: 60, y: A4[1] - 170, size: 12, color: rgb(0.2, 0.2, 0.2) });
+    p.drawRectangle({
+      x: 60, y: 200, width: 260, height: 90,
+      borderColor: rgb(0.1, 0.3, 0.8), borderWidth: 2,
+    });
+  }
+  const teks = path.join(dir, "teks.pdf");
+  fs.writeFileSync(teks, await d4.save());
+
   /* Tiga halaman dengan ukuran berbeda */
   const d3 = await PDFDocument.create();
   d3.addPage([A4[0], A4[1]]);
@@ -57,7 +77,7 @@ export async function buatFixture(dir) {
   const multi = path.join(dir, "multi.pdf");
   fs.writeFileSync(multi, await d3.save());
 
-  return Object.assign({ kosong: kosong, multi: multi }, putar);
+  return Object.assign({ kosong: kosong, multi: multi, teks: teks }, putar);
 }
 
 if (import.meta.url === "file://" + process.argv[1]) {

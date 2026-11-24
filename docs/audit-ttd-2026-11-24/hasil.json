@@ -1,5 +1,5 @@
 {
-  "pass": 59,
+  "pass": 65,
   "fail": 0,
   "results": [
     {
@@ -256,6 +256,36 @@
       "name": "PDF multi-halaman tetap dibuat",
       "ok": true,
       "detail": ""
+    },
+    {
+      "name": "Balapan render: tidak ada error 'same canvas'",
+      "ok": true,
+      "detail": "Tanda tangan belum ada — tulis di kanvas atau impor foto/QR code. X 30 mm · Y 20 mm · Leba"
+    },
+    {
+      "name": "Balapan render: pratinjau tetap tampil",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Balapan render (3x): pratinjau tetap tampil & tanpa error",
+      "ok": true,
+      "detail": "Tanda tangan belum ada — tulis di kanvas atau impor foto/QR code. X 30 mm · Y 20 mm · Leba"
+    },
+    {
+      "name": "Balapan render + ganti halaman: tanpa error, pratinjau tetap tampil",
+      "ok": true,
+      "detail": "Tanda tangan belum ada — tulis di kanvas atau impor foto/QR code. X 30 mm · Y 20 mm · Leba"
+    },
+    {
+      "name": "Pratinjau setelah balapan render benar-benar berisi gambar halaman",
+      "ok": true,
+      "detail": "piksel non-putih: 2393 / 144960"
+    },
+    {
+      "name": "Balapan render pada dokumen berteks: tanpa error",
+      "ok": true,
+      "detail": "Tanda tangan belum ada — tulis di kanvas atau impor foto/QR code. X 30 mm · Y 20"
     },
     {
       "name": "Layar 375px: panggung pratinjau tidak meluber",

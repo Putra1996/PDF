@@ -248,10 +248,14 @@
      Pratinjau dokumen di kolom utama
      ============================================================ */
   let previewDoc = null;
+  /* Token render pratinjau umum — render yang lebih lama tidak boleh
+     menutupi hasil render yang lebih baru. */
+  let previewToken = 0;
 
   async function renderPreview() {
     const box = $("#toolPreview");
     if (!box) return;
+    const token = ++previewToken;
     const tool = state.tool;
     const f = state.files[0];
     /* alat dengan panel khusus (editor, susun, tanda tangan, ...)
@@ -260,6 +264,7 @@
       /pdf/i.test(tool.accept || "application/pdf");
     if (!bisa) {
       box.hidden = true;
+      previewToken++;
       if (previewDoc) { try { previewDoc.destroy(); } catch (_) { } previewDoc = null; }
       return;
     }
@@ -271,8 +276,10 @@
     try {
       if (previewDoc) { try { previewDoc.destroy(); } catch (_) { } previewDoc = null; }
       const data = f.bytes.slice();
-      previewDoc = await window.pdfjsLib.getDocument({ data }).promise;
-      const page = await previewDoc.getPage(1);
+      const doc = await window.pdfjsLib.getDocument({ data }).promise;
+      if (token !== previewToken) { try { doc.destroy(); } catch (_) { } return; }
+      previewDoc = doc;
+      const page = await doc.getPage(1);
       const base = page.getViewport({ scale: 1 });
       const skala = Math.min(1.4, 520 / base.width);
       const vp = page.getViewport({ scale: skala });
@@ -283,10 +290,15 @@
       ctx.fillStyle = "#fff";
       ctx.fillRect(0, 0, cv.width, cv.height);
       await page.render({ canvasContext: ctx, viewport: vp }).promise;
+      /* render yang lebih baru sudah tampil -> yang ini dibuang */
+      if (token !== previewToken) return;
       frame.appendChild(cv);
       cap.textContent = `Pratinjau halaman 1 — ${f.name}` +
-        (previewDoc.numPages > 1 ? ` (dari ${previewDoc.numPages} halaman)` : "");
+        (doc.numPages > 1 ? ` (dari ${doc.numPages} halaman)` : "");
     } catch (e) {
+      /* render yang lebih baru jangan sampai tersembunyi oleh
+         kegagalan render yang lama */
+      if (token !== previewToken) return;
       box.hidden = true;
       frame.innerHTML = "";
     }
@@ -1284,6 +1296,17 @@
     let geo = null;
     /* Seret yang sedang berjalan (id pointer + selisih jepitan). */
     let seret = null;
+    /* Render pdf.js yang sedang berjalan + antrean render.
+       pdf.js menyimpan kumpulan kanvas yang sedang dipakai dan melempar
+       "Cannot use the same canvas during multiple render() operations"
+       kalau render() dipanggil lagi pada kanvas yang sama sebelum render
+       sebelumnya selesai. Karena itu: tiap render memakai kanvas BARU,
+       render yang lebih lama dibatalkan, dan render waited bergantian. */
+    let renderTask = null;
+    let renderSelesai = Promise.resolve();
+    /* Kunci isi pratinjau yang sedang tampil — dipakai supaya refresh
+       yang isinya sama tidak perlu render ulang. */
+    let kunciTampil = "";
 
     const setHint = (t) => { hint.textContent = t || ""; };
     const bulat = (n) => Math.round(Number(n) * 100) / 100;
@@ -1467,6 +1490,58 @@
         }
       }
       return out;
+    }
+
+    /* Kunci isi pratinjau. Semua hal yang memengaruhi tampilan ikut
+       dihitung: berkas, halaman target, posisi, ukuran, dan gambar
+       tanda tangan. */
+    const kunciPreview = () => [
+      pdfBytesKey, targets.join(","), targetIdx,
+      bulat(Number(state.opts.x) || 0),
+      bulat(Number(state.opts.y) || 0),
+      bulat(Number(state.opts.w) || 50),
+      img || "",
+    ].join("|");
+
+    /* Batalkan render yang sedang berjalan (bila ada). */
+    const batalRender = () => {
+      if (renderTask) {
+        try { renderTask.cancel(); } catch (_) { /* abaikan */ }
+      }
+    };
+
+    /* Render satu halaman ke kanvas BARU.
+       - kanvas selalu baru, jadi tidak pernah bentrok dengan render lain
+       - render sebelumnya dibatalkan & ditunggu selesai (pdf.js lebih
+         aman kalau satu halaman tidak dirender dua kali sekaligus)
+       - balik null kalau render ini disusul render yang lebih baru
+         (bukan error — render yang lebih baru yang menang) */
+    async function renderHalaman(hal, vp, token) {
+      batalRender();
+      /* tunggu render sebelumnya benar-benar selesai */
+      await renderSelesai.catch(() => { /* abaikan */ });
+      if (token !== renderToken) return null;
+      const kanvas = document.createElement("canvas");
+      kanvas.width = Math.max(1, Math.round(vp.width));
+      kanvas.height = Math.max(1, Math.round(vp.height));
+      const kctx = kanvas.getContext("2d", { alpha: false });
+      kctx.fillStyle = "#ffffff";
+      kctx.fillRect(0, 0, kanvas.width, kanvas.height);
+      const tugas = hal.render({ canvasContext: kctx, viewport: vp });
+      renderTask = tugas;
+      renderSelesai = tugas.promise.then(() => { }, () => { });
+      try {
+        await tugas.promise;
+      } catch (err) {
+        const nama = (err && err.name) || "";
+        const pesan = (err && err.message) || "";
+        const dibatalkan = nama === "RenderingCancelledException"
+          || nama === "AbortException" || /cancel/i.test(pesan);
+        if (!dibatalkan) throw err;
+        return null;
+      }
+      if (token !== renderToken) return null;
+      return kanvas;
     }
 
     /* Gambar isi kanvas pratinjau: halaman + tanda tangan. Dipakai ulang
@@ -1684,22 +1759,31 @@
       pageLbl.textContent = no + " / " + targets.length;
       prevBtn.disabled = targetIdx <= 0;
       nextBtn.disabled = targetIdx >= targets.length - 1;
+      /* Isi pratinjau sama persis dengan yang sudah tampil? Kalau ya,
+         tidak perlu render ulang. (Berkas baru memicu dua refresh:
+         renderFiles() menjadwalkan, lalu berkas memicu langsung.) */
+      const kunci = kunciPreview();
+      if (kunci === kunciTampil && !renderTask) {
+        if (geo) {
+          posisiPegangan();
+          perbaruiInfo();
+        }
+        return;
+      }
 
-      /* render halaman lalu gambar tanda tangan di posisi yang diminta */
+      /* Render halaman lalu gambar tanda tangan di posisi yang diminta.
+         Render dilakukan pada kanvas KHUSUS (bukan kanvas yang terlihat)
+         supaya dua render yang tumpang tindih tidak pernah memakai kanvas
+         yang sama — pdf.js melempar "Cannot use the same canvas during
+         multiple render() operations" kalau begitu. */
       const maxW = 320;
       let vp = null;
+      let hal = null;
       try {
-        const pg = await pdfDoc.getPage(no);
-        const base = pg.getViewport({ scale: 1 });
+        hal = await pdfDoc.getPage(no);
+        const base = hal.getViewport({ scale: 1 });
         const scale = maxW / (base.width || 1);
-        vp = pg.getViewport({ scale });
-        if (token !== renderToken) return;
-        preview.width = Math.max(1, Math.round(vp.width));
-        preview.height = Math.max(1, Math.round(vp.height));
-        pctx.fillStyle = "#ffffff";
-        pctx.fillRect(0, 0, preview.width, preview.height);
-        await pg.render({ canvasContext: pctx, viewport: vp }).promise;
-        if (token !== renderToken) return;
+        vp = hal.getViewport({ scale });
       } catch (err) {
         setHint("Halaman tidak bisa dirender: " + ((err && err.message) || err));
         drag.hidden = true;
@@ -1707,6 +1791,26 @@
         state.custom.previewInfo = null;
         return;
       }
+      if (token !== renderToken) return;
+      let kanvas = null;
+      try {
+        kanvas = await renderHalaman(hal, vp, token);
+      } catch (err) {
+        setHint("Halaman tidak bisa dirender: " + ((err && err.message) || err));
+        drag.hidden = true;
+        geo = null;
+        state.custom.previewInfo = null;
+        return;
+      }
+      /* null = render ini disusul render yang lebih baru; yang baru saja
+         yang boleh tampil. */
+      if (!kanvas) return;
+      /* tampilkan hasil render di kanvas yang terlihat */
+      preview.width = kanvas.width;
+      preview.height = kanvas.height;
+      pctx.clearRect(0, 0, preview.width, preview.height);
+      pctx.drawImage(kanvas, 0, 0);
+      kunciTampil = kunci;
       /* salinan halaman (dasar gambar ulang yang cepat saat digeser) */
       snap.width = preview.width; snap.height = preview.height;
       sctx.clearRect(0, 0, snap.width, snap.height);
@@ -1827,6 +1931,9 @@
     state.custom.dispose = () => {
       renderToken++;
       if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = 0; }
+      /* batalkan render yang sedang jalan sebelum dokumen ditutup */
+      batalRender();
+      kunciTampil = "";
       if (pdfDoc) { try { pdfDoc.destroy(); } catch (_) { /* abaikan */ } pdfDoc = null; }
       pdfBytesKey = "";
       seret = null;

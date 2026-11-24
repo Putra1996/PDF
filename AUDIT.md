@@ -75,7 +75,7 @@ persis seperti susunan screenshot.
 |---|---|---|---|
 | Unlock PDF | **new** | `tool-smart.js` `unlock` + `tool-decrypt.js` (dekriptor mandiri: Standard Security Handler R2–R6, RC4/AES, object stream + xref stream → tulis ulang tanpa `/Encrypt`) | `exp-decrypt.mjs` (16/16) + `deep-unlock.mjs` (21/21) + `validate_outputs.py` (14/14 pypdf/pikepdf) |
 | Protect PDF | **new** | `tool-smart.js:251` `protect` + `tool-crypto.js` (MD5/RC4/AES-128-CBC + Standard Security Handler ISO 32000-1 §7.6.3: Algorithm 1/2/3/5) | `protect-test.mjs` (17 pemeriksaan, reader independen pypdf) + `crypto-test.mjs` (12 vektor, nilai `/O`/kunci/`/U` identik dengan pypdf 7.1.1) |
-| Sign PDF | **new** | `tool-smart.js:319` `sign` (tanda tangan tulisan tangan, posisi & ukuran, multi halaman, **sadar-rotasi `/Rotate` + jepit posisi**) | `tools2.mjs` → "tanda tangan menghasilkan PDF valid", "tanpa gambar ditolak"; `tools/audit-sign.mjs` → 59/0 |
+| Sign PDF | **new** | `tool-smart.js:319` `sign` (tanda tangan tulisan tangan, posisi & ukuran, multi halaman, **sadar-rotasi `/Rotate` + jepit posisi**) | `tools2.mjs` → "tanda tangan menghasilkan PDF valid", "tanpa gambar ditolak"; `tools/audit-sign.mjs` → 65/0 |
 | Redact PDF | **new** | `tool-smart.js:413` `redact` (cari teks → render ulang halaman → teks benar-benar hilang) | `tools.mjs` → "redaksi menghasilkan berkas"; panel menampilkan jumlah hit |
 | Compare PDF | **new** | `tool-smart.js:502` `compare` (laporan HTML: berubah / sama / baru) | `tools.mjs` → "bandingkan PDF menghasilkan laporan" |
 
@@ -477,12 +477,41 @@ akhir meleset sampai **245 mm** dan gambarnya ikut berputar.
 | End-to-end | posisi setelah **drag** benar-benar masuk ke PDF akhir (Δ 0,5 / 0,4 mm dari pratinjau) |
 | Aksesibilitas | `role="button"`, `tabindex="0"`, `aria-label`, `aria-describedby`, `aria-keyshortcuts`, live region `role="status"` |
 
+#### Bug kedua: "Cannot use the same canvas during multiple render() operations"
+
+Laporan: pratinjau gagal dirender dengan pesan
+
+```
+Halaman tidak bisa dirender: Cannot use the same canvas during multiple
+render() operations. Use different canvas or ensure previous operations
+were cancelled or completed.
+```
+
+**Akar masalah:** pdf.js menyimpan kumpulan kanvas yang sedang dipakai dan
+melempar error itu kalau dua `render()` memakai kanvas yang sama sebelum
+render sebelumnya selesai. Pratinjau tanda tangan menulis ke kanvas
+`preview` yang persisten, dan pemicu refresh bisa datang saat render itu
+masih jalan. Yang paling nyata: berkas baru masuk memicu **dua** refresh
+(`renderFiles()` → `onOptsChange` → jeda 160 ms, **dan** penangan berkas →
+`refreshPreview()` langsung) — sehingga error muncul tepat setelah
+memuat dokumen.
+
+| Temuan | Perbaikan |
+|---|---|
+| Render memakai kanvas yang sama → bentrok pdf.js | Tiap render memakai **kanvas baru**; hasilnya disalin ke kanvas terlihat setelah selesai |
+| Render lama masih jalan saat render baru mulai | Render lama **dibatalkan** dan ditunggu selesai; pembatalan tidak lagi dianggap error |
+| Dua render untuk isi yang sama | Dilewati lewat **kunci isi pratinjau** (berkas, halaman, posisi, ukuran, gambar tanda tangan) |
+| Render basi bisa menyembunyikan pratinjau baru (alat lain) | `renderPreview()` diberi token — hasil basi dibuang |
+
+Uji balapan render (2×, 3×, + ganti halaman) di harness: sebelum perbaikan
+**3 gagal**, sesudah **65 lulus / 0 gagal**.
+
 #### Hasil suite
 
 | Harness | Pemeriksaan | Gagal |
 |---|---|---|
-| `tools/audit-sign.mjs` (audit khusus tanda tangan) | 59 | 0 |
-| `tools/audit-translate.mjs` | 31 | 0 |
+| `tools/audit-sign.mjs` (audit khusus tanda tangan) | 65 | 0 |
+| `tools/audit-translate.mjs` | 30 | 1 — "Mesin bawaan peramban terdeteksi" (versi Chromium di lingkungan uji; bukan perubahan kode) |
 | `tools/audit-pagerange.mjs` | 106 | 0 |
 | `tools/audit-merge-preview.mjs` | 44 | 0 |
 | `tools/audit-deskew.mjs` | 56 | 0 |
