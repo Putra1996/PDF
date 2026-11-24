@@ -934,93 +934,144 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
     return scored.sort((a, b) => b.sc - a.sc).slice(0, want).sort((a, b) => a.i - b.i).map((x) => x.s);
   }
 
-  /* Batas waktu untuk API peramban yang bisa macet. */
-  function withTimeout(promise, ms, message) {
-    return new Promise((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error(message)), ms);
-      Promise.resolve(promise).then(
-        (v) => { clearTimeout(t); resolve(v); },
-        (e) => { clearTimeout(t); reject(e); }
-      );
-    });
-  }
-
   /* ============================================================
-     8. Terjemah PDF (memakai API Terjemahan bawaan peramban)
+     8. Terjemah PDF
+     ------------------------------------------------------------
+     Dua mesin bisa dipakai (lihat tool-translate.js):
+       - "bawaan" : Translator API bawaan Chrome 138+ (on-device)
+       - "offline" : mesin Bergamot yang ikut disertakan di vendor/
+                     -> jalan penuh tanpa internet
+     Terjemahan dipecah per baris supaya:
+       - bisa diproses paralel (mesin bawaan peramban)
+       - kalimat yang sama (header/footer) tidak diterjemahkan 2x
      ============================================================ */
+
+  const TERJEMAH_LANG = [
+    ["id", "Indonesia"], ["en", "Inggris"], ["ja", "Jepang"], ["de", "Jerman"],
+    ["fr", "Prancis"], ["es", "Spanyol"], ["zh", "Tionghoa"], ["ko", "Korea"],
+    ["it", "Italia"], ["pt", "Portugis"], ["nl", "Belanda"], ["ru", "Rusia"],
+    ["ar", "Arab"], ["hi", "Hindi"], ["th", "Thai"], ["vi", "Vietnam"],
+  ];
+
   register({
     id: "translate",
     cat: "ai",
     name: "Terjemah PDF",
-    desc: "Terjemahkan teks PDF memakai mesin terjemahan bawaan peramban (bila tersedia).",
+    desc: "Terjemahkan teks PDF dengan mesin bawaan peramban atau mesin offline bawaan aplikasi.",
     icon: "translate",
     accept: ".pdf,application/pdf",
     multiple: true,
     fields: [
-      { type: "select", id: "lang", label: "Bahasa tujuan", value: "en", options: [["en", "Inggris"], ["id", "Indonesia"], ["ja", "Jepang"], ["de", "Jerman"], ["fr", "Prancis"], ["es", "Spanyol"], ["zh", "Tionghoa"], ["ko", "Korea"]] },
-      { type: "select", id: "src", label: "Bahasa sumber", value: "id", options: [["id", "Indonesia"], ["en", "Inggris"], ["es", "Spanyol"], ["de", "Jerman"], ["fr", "Prancis"], ["ja", "Jepang"], ["ko", "Korea"], ["zh", "Tionghoa"]] },
+      { type: "select", id: "lang", label: "Bahasa tujuan", value: "en", options: TERJEMAH_LANG },
+      { type: "select", id: "src", label: "Bahasa sumber", value: "id", options: TERJEMAH_LANG },
+      {
+        type: "select", id: "engine", label: "Mesin terjemahan", value: "auto",
+        options: [
+          ["auto", "Otomatis (disarankan)"],
+          ["builtin", "Bawaan peramban (Chrome 138+)"],
+          ["offline", "Offline bawaan aplikasi"],
+        ],
+      },
+      {
+        type: "note",
+        text: "Mesin offline bawaan aplikasi sudah termasuk untuk Indonesia ⇄ Inggris dan berjalan tanpa internet. " +
+          "Pasangan bahasa lain memakai mesin bawaan peramban (butuh Chrome 138+ beserta model on-device).",
+      },
     ],
     async run(ctx) {
-      if (!("Translator" in window)) {
-        throw new Error(
-          "Peramban ini belum punya mesin terjemahan bawaan (Chrome 138+ dengan model's on-device translation). " +
-          "Aplikasi ini berjalan offline, jadi terjemahan butuh kemampuan itu."
-        );
+      const TR = window.PDFTranslate;
+      if (!TR) throw new Error("Modul mesin terjemahan belum termuat (tool-translate.js).");
+
+      const from = String(ctx.opts.src || "id");
+      const to = String(ctx.opts.lang || "en");
+      const mode = String(ctx.opts.engine || "auto");
+      if (from === to) {
+        throw new Error("Bahasa sumber dan bahasa tujuan sama — tidak ada yang perlu diterjemahkan.");
       }
+
+      /* Menyiapkan mesin harus terjadi di dalam gestur klik (Chrome
+         mewajibkan user gesture saat model bahasa perlu diunduh),
+         jadi prepare() dipanggil sinkron, sebelum await pertama. */
+      const plan = TR.prepare({
+        from: from,
+        to: to,
+        mode: mode,
+        onProgress: (t) => ctx.progress(null, t),
+      });
+      const engine = await TR.create(plan);
+      const namaMesin = engine.kind === "offline" ? "mesin offline" : "mesin bawaan peramban";
+      ctx.progress(null, "Menerjemahkan dengan " + namaMesin + "…");
+
       const out = [];
+      let totalHalaman = 0;
+      let totalBaris = 0;
+      let cachePakai = 0;
+      const tMulai = (typeof performance !== "undefined" ? performance : Date).now();
+
       for (const f of ctx.files) {
         const pdfjs = await openPdfjs(f.bytes);
-        const chunks = [];
-        for (let i = 1; i <= pdfjs.numPages; i++) {
-          const t = await C.pageText(pdfjs, i);
-          if (t) chunks.push(t);
-          await tick();
-        }
-        try { await pdfjs.destroy(); } catch (_) {}
-        const target = ctx.opts.lang;
-        /* API bawaan peramban menuntut tag bahasa yang pasti, jadi
-           "Otomatis" diterjemahkan menjadi beberapa tebakan. */
-        const kandidat = ctx.opts.src === "auto" ? ["id", "en"] : [ctx.opts.src];
-        let translator = null;
-        let lastErr = null;
-        for (const src of kandidat) {
-          try {
-            translator = await withTimeout(
-              window.Translator.create({ sourceLanguage: src, targetLanguage: target }),
-              30000,
-              "Mesin terjemahan bawaan tidak menjawab dalam 30 detik"
-            );
-            break;
-          } catch (err) {
-            lastErr = err;
+        const halaman = [];
+        try {
+          for (let i = 1; i <= pdfjs.numPages; i++) {
+            const items = await extractText(pdfjs, i);
+            const lines = groupLines(items);
+            const teks = [];
+            for (const ln of lines) {
+              const t = (ln.text || "").replace(/\s+/g, " ").trim();
+              if (t) teks.push(t);
+            }
+            halaman.push(teks);
+            totalHalaman++;
+            await tick();
           }
+        } finally {
+          try { await pdfjs.destroy(); } catch (_) { /* abaikan */ }
         }
-        if (!translator) {
-          const msg = String((lastErr && lastErr.message) || lastErr || "");
-          if (/invalid language tag|sourceLanguage|source language/i.test(msg)) {
-            throw new Error(
-              "Mesin terjemahan bawaan menolak bahasa sumber itu. " +
-              "Pilih bahasa sumber yang lain di panel."
-            );
+
+        /* Terjemahkan per halaman: progres jelas, memori tetap kecil. */
+        const hasilHalaman = [];
+        for (let h = 0; h < halaman.length; h++) {
+          const baris = halaman[h];
+          if (!baris.length) { hasilHalaman.push(""); continue; }
+          ctx.progress(null, f.name + ": menterjemahkan halaman " + (h + 1) + "/" + halaman.length + "…");
+          const prefix = from + ">" + to + "\u0000";
+          const perlu = [];
+          const seen = new Set();
+          for (const t of baris) {
+            if (seen.has(t)) continue;
+            seen.add(t);
+            if (TR.cacheGet(prefix + t) === undefined) perlu.push(t);
           }
-          if (/not.?supported|not.?available|unavailable|NoModificationAllowed|tidak tersedia|tidak menjawab/i.test(msg)) {
-            throw new Error(
-              "Peramban ini belum punya mesin terjemahan bawaan (Chrome 138+ dengan model's on-device translation). " +
-              "Aplikasi ini berjalan offline, jadi terjemahan butuh kemampuan itu."
-            );
+          cachePakai += baris.length - perlu.length;
+          if (perlu.length) {
+            const diterjemah = await engine.translateBatch(perlu);
+            for (let i = 0; i < perlu.length; i++) {
+              TR.cacheSet(prefix + perlu[i], diterjemah[i] != null ? diterjemah[i] : "");
+            }
           }
-          throw new Error("Terjemahan tidak bisa dijalankan: " + msg);
+          /* susun ulang pakai cache (baris yang sama tidak dihitung 2x) */
+          const barisHasil = baris.map((t) => {
+            const c = TR.cacheGet(prefix + t);
+            return c !== undefined ? c : "";
+          });
+          totalBaris += baris.length;
+          hasilHalaman.push(barisHasil.join("\n"));
         }
-        const translated = [];
-        for (const c of chunks) {
-          const r = await translator.translate(c);
-          translated.push(r);
-        }
-        try { translator.destroy(); } catch (_) {}
-        const md = ["# " + C.baseName(f.name), "", ...translated, ""].join("\n\n");
+
+        const md = ["# " + C.baseName(f.name), ...hasilHalaman].join("\n\n") + "\n";
         const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
-        out.push({ name: C.safeName(C.baseName(f.name)) + "-terjemahan.md", blob });
+        out.push({
+          name: C.safeName(C.baseName(f.name)) + "-terjemahan.md",
+          blob: blob,
+          note: namaMesin + " · " + hasilHalaman.length + " halaman · " + totalBaris + " baris",
+        });
       }
+
+      const dt = Math.round(((typeof performance !== "undefined" ? performance : Date).now() - tMulai) / 100) / 10;
+      if (out.length) {
+        out[out.length - 1].note += " · " + dt + " dtk";
+      }
+      void cachePakai;
       return out;
     },
   });

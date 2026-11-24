@@ -322,7 +322,9 @@
         };
         continue;
       }
-      state.opts[f.id] = f.value !== undefined ? f.value : (f.type === "check" ? false : "");
+      if (f.type !== "note") {
+        state.opts[f.id] = f.value !== undefined ? f.value : (f.type === "check" ? false : "");
+      }
     }
     $("#toolTitle").textContent = tool.name;
     $("#toolDesc").textContent = tool.desc;
@@ -654,6 +656,15 @@
         l.appendChild(i);
         l.appendChild(el("span", "", f.label));
         host.appendChild(l);
+        continue;
+      }
+      if (f.type === "note") {
+        const wrap = el("div", "tool-field tool-field-note");
+        wrap.dataset.field = f.id || "note";
+        const p = el("p", "muted small");
+        p.textContent = f.text || "";
+        wrap.appendChild(p);
+        host.appendChild(wrap);
         continue;
       }
       if (f.type === "pagerange") {

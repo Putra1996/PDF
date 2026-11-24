@@ -1,5 +1,5 @@
 {
-  "tanggal": "2026-11-24T09:50:40.480Z",
+  "tanggal": "2026-11-24T11:52:10.614Z",
   "mode": "lokal",
   "pass": 44,
   "fail": 0,
@@ -177,7 +177,7 @@
     {
       "name": "Performa: ganti mode < 3 detik",
       "ok": true,
-      "detail": "1217 ms"
+      "detail": "304 ms"
     },
     {
       "name": "Performa: semua kartu tetap tampil setelah mode dibalik",

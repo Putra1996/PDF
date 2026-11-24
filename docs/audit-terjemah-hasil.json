@@ -1,0 +1,162 @@
+{
+  "tanggal": "2026-11-24T11:20:34.502Z",
+  "pass": 31,
+  "fail": 0,
+  "results": [
+    {
+      "name": "Modul mesin terjemahan termuat",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Model offline menyertakan Indonesia ⇄ Inggris",
+      "ok": true,
+      "detail": "id>en, en>id"
+    },
+    {
+      "name": "Mesin bawaan peramban terdeteksi (Chrome 138+)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Mesin offline menerjemahkan Indonesia → Inggris",
+      "ok": true,
+      "detail": "Good morning, how are you?"
+    },
+    {
+      "name": "Terjemahan kalimat panjang masuk akal",
+      "ok": true,
+      "detail": "This document describes the work plan for the next budget year."
+    },
+    {
+      "name": "Model offline dimuat tepat satu kali",
+      "ok": true,
+      "detail": "muatan=1"
+    },
+    {
+      "name": "Mesin offline memakai satu panggilan per batch",
+      "ok": true,
+      "detail": "panggilan=2"
+    },
+    {
+      "name": "Panggilan kedua jauh lebih cepat (cache internal mesin)",
+      "ok": true,
+      "detail": "764 ms → 50 ms"
+    },
+    {
+      "name": "Baris berulang hanya diterjemahkan satu kali",
+      "ok": true,
+      "detail": " unik=2 dikirim=2"
+    },
+    {
+      "name": "Mesin bawaan peramban dipakai saat model sudah ada",
+      "ok": true,
+      "detail": "[EN] Halo dunia"
+    },
+    {
+      "name": "Opsi availability() dan create() sama (syarat Chrome)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "create() dipanggil dengan monitor unduhan",
+      "ok": true,
+      "detail": "monitor=1"
+    },
+    {
+      "name": "Galat NotSupportedError menyebut pasangan bahasa",
+      "ok": true,
+      "detail": "Mesin bawaan peramban tidak mendukung pasangan bahasa ID→EN. Pilih bahasa lain, atau pilih mesin offline bawaan aplikasi."
+    },
+    {
+      "name": "Galat NetworkError menawarkan mesin offline",
+      "ok": true,
+      "detail": "Paket bahasa untuk mesin bawaan peramban gagal diunduh (butuh internet). Pilih mesin offline bawaan aplikasi agar tetap jalan tanpa internet."
+    },
+    {
+      "name": "Galat NotAllowedError meminta klik lagi",
+      "ok": true,
+      "detail": "Chrome meminta klik pengguna untuk mengunduh paket bahasa ID→EN. Klik \"Proses\" sekali lagi, atau pilih mesin offline bawaan aplikasi."
+    },
+    {
+      "name": "Pasangan tanpa model offline: pesan menyebut pasangan yang tersedia",
+      "ok": true,
+      "detail": "Mesin bawaan peramban tidak mendukung pasangan JA→DE. Pasangan bahasa yang tersedia secara offline: id→en, en→id."
+    },
+    {
+      "name": "Mode otomatis memakai model offline (tanpa unduhan model bawaan)",
+      "ok": true,
+      "detail": "jenis=offline create=0"
+    },
+    {
+      "name": "Alat Terjemah PDF menghasilkan berkas",
+      "ok": true,
+      "detail": "indonesia-terjemahan.md"
+    },
+    {
+      "name": "Hasil terjemahan berbahasa Inggris",
+      "ok": true,
+      "detail": "# indonesia |  | Annual Report_bbox_validator_5483 | Executive Summary"
+    },
+    {
+      "name": "Judul berkas asli dipertahankan",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Catatan hasil menyebut mesin yang dipakai",
+      "ok": true,
+      "detail": "1 KB · mesin offline · 3 halaman · 24 baris · 1.2 dtk"
+    },
+    {
+      "name": "Dua berkas diproses dalam satu jalan",
+      "ok": true,
+      "detail": "hasil=2"
+    },
+    {
+      "name": "PDF tanpa teks tidak membuat alat gagal",
+      "ok": true,
+      "detail": "hasil=1"
+    },
+    {
+      "name": "Terjemahan Inggris → Indonesia jalan",
+      "ok": true,
+      "detail": "# inggris |  | Laporan Tahunan_bbox_validator_5483"
+    },
+    {
+      "name": "Mesin bawaan dibuat satu kali untuk semua berkas",
+      "ok": true,
+      "detail": "create=1"
+    },
+    {
+      "name": "Dua berkas diterjemahkan mesin bawaan peramban",
+      "ok": true,
+      "detail": "hasil=2"
+    },
+    {
+      "name": "Ganti pasangan bahasa memuat model baru",
+      "ok": true,
+      "detail": "id>en=Good morning | en>id=Selamat pagi"
+    },
+    {
+      "name": "Hanya satu model bahasa yang hidup sekaligus",
+      "ok": true,
+      "detail": "model hidup: [\"en>id\"]"
+    },
+    {
+      "name": "Dokumen besar (20 halaman) diterjemahkan",
+      "ok": true,
+      "detail": "hasil=1"
+    },
+    {
+      "name": "Tidak ada object URL menumpuk",
+      "ok": true,
+      "detail": "object URL=0"
+    },
+    {
+      "name": "Tidak ada error JavaScript",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

@@ -5,7 +5,7 @@
 :root{
   /* Penanda build — naikkan setiap kali style.css berubah.
      Dipakai index.html untuk mendeteksi style.css basi di cache browser. */
-  --css-build:20261124e;
+  --css-build:20261124f;
   --bg:#f5f6fa;
   --bg-glow:#e6ebff;
   --surface:#ffffff;
@@ -985,6 +985,8 @@ code{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;
 
 /* ---------- slider rentang halaman ---------- */
 .tool-field-pagerange{margin-bottom:14px}
+.tool-field-note{margin:-2px 0 14px;padding:9px 11px;border-radius:10px;background:var(--surface-2);border:1px solid var(--line)}
+.tool-field-note p{margin:0;line-height:1.45}
 .tool-pagerange{user-select:none}
 /* Empat mode dalam satu baris rata (grid), supaya tidak ada chip
    yang jatuh ke baris kedua. */

@@ -1,5 +1,5 @@
 {
-  "tanggal": "2026-11-24T09:43:56.828Z",
+  "tanggal": "2026-11-24T11:53:52.867Z",
   "pass": 106,
   "fail": 0,
   "results": [
@@ -256,7 +256,7 @@
     {
       "name": "Putar PDF rentang 2-4 berhasil",
       "ok": true,
-      "detail": "3181 byte"
+      "detail": "3180 byte"
     },
     {
       "name": "Halaman 2-4 diputar",
@@ -301,7 +301,7 @@
     {
       "name": "Nomor halaman rentang 2-3 berhasil",
       "ok": true,
-      "detail": "2645 byte"
+      "detail": "2646 byte"
     },
     {
       "name": "Halaman 2 diberi nomor 2",
@@ -361,7 +361,7 @@
     {
       "name": "Potong PDF rentang 2-2 berhasil",
       "ok": true,
-      "detail": "2146 byte"
+      "detail": "2144 byte"
     },
     {
       "name": "Potong: hanya halaman 2 yang dipotong",
@@ -436,7 +436,7 @@
     {
       "name": "OCR rentang 2-3 berhasil",
       "ok": true,
-      "detail": "102934 byte"
+      "detail": "102935 byte"
     },
     {
       "name": "OCR: jumlah halaman tetap 4",
@@ -491,7 +491,7 @@
     {
       "name": "Performa: rentang 2-6 pada 7 halaman < 20 detik",
       "ok": true,
-      "detail": "0.6 detik"
+      "detail": "0.5 detik"
     },
     {
       "name": "Input angka menampilkan nilai yang diminta (2 & 4)",

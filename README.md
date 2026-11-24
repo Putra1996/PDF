@@ -162,9 +162,21 @@ Catatan:
   secara langsung. Format PNG, JPEG, dan WebP diterima; berkas korup
   (CRC PNG tidak cocok, PNG terpotong, JPEG tanpa frame) ditolak dengan
   pesan yang jelas, bukan membuat halaman beku.
-- **OCR** dan **Terjemah** memakai mesin bawaan browser (`TextDetector`,
-  `Translator`). Bila peramban tidak memilikinya, aplikasi menampilkan
-  penjelasan jelas — tidak ada unduhan model dari internet.
+- **OCR** memakai mesin Tesseract yang ikut disertakan di `vendor/`
+  (`TextDetector` bawaan browser juga dipakai bila tersedia).
+- **Terjemah PDF** punya **dua mesin**:
+  1. **Mesin bawaan peramban** (`Translator`, Chrome 138+ dengan model
+     on-device). Dipakai otomatis kalau model bahasa **sudah ada** di
+     perangkat; kalau belum, aplikasi tidak memaksa unduhan ±40 MB.
+  2. **Mesin offline bawaan aplikasi** — mesin Neural Machine Translation
+     Bergamot (WASM) + model **Indonesia ⇄ Inggris** yang ikut disertakan
+     di `vendor/bergamot/`. Jalan **sepenuhnya tanpa internet**, tanpa
+     server, tanpa mengunggah berkas.
+
+  Jadi aplikasi tetap bisa menerjemahkan di peramban yang tidak punya
+  mesin terjemahan bawaan — bug lama "Peramban ini belum punya mesin
+  terjemahan bawaan" sudah tidak lagi menjadi jalan buntu.
+  Rincian audit: `docs/audit-terjemah-2026-11-24.md`.
 - **HTML to PDF** memakai dialog cetak browser, jadi hasilnya perlu disimpan
   manual dari dialog tersebut.
 
@@ -184,12 +196,16 @@ pemisah-pdf/
 ├── tool-decrypt.js   (dekriptor PDF mandiri: R2-R6, object/xref stream)
 ├── tool-smart.js     (kunci, lindungi, tanda tangan, redaksi, banding,
 │                      Markdown, ringkas, terjemah, OCR)
+├── tool-translate.js (mesin terjemahan: bawaan peramban + offline WASM)
 ├── tool-ui.js        (launcher 7 kategori + workspace alat generik)
 └── vendor/
     ├── pdf-lib.min.js       (menulis, memecah, menggabung, menyimpan ulang PDF)
     ├── pdf.min.js           (pdf.js — pratinjau, rasterisasi, dekripsi)
     ├── pdf.worker.min.js
-    └── jszip.min.js         (pembuatan ZIP)
+    ├── jszip.min.js         (pembuatan ZIP)
+    ├── tesseract/           (mesin OCR offline + data bahasa)
+    └── bergamot/            (mesin terjemahan offline WASM + model
+                              Indonesia ⇄ Inggris)
 ```
 
 Folder `vendor/` wajib ada di samping `index.html`. Tidak perlu internet.
