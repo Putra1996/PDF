@@ -1,5 +1,5 @@
 {
-  "tanggal": "2026-11-25T05:34:01.209Z",
+  "tanggal": "2026-11-25T05:58:55.555Z",
   "pass": 129,
   "fail": 0,
   "results": [
@@ -156,7 +156,7 @@
     {
       "nama": "[organize] menghasilkan berkas",
       "ok": true,
-      "detail": "sample-susun.pdf (1424 B)"
+      "detail": "sample-susun.pdf (1423 B)"
     },
     {
       "nama": "organize: halaman yang dihapus hilang",
@@ -226,7 +226,7 @@
     {
       "nama": "[ppt2pdf] menghasilkan berkas",
       "ok": true,
-      "detail": "presentasi.pdf (917 B)"
+      "detail": "presentasi.pdf (915 B)"
     },
     {
       "nama": "ppt2pdf: PDF terbentuk",
@@ -256,7 +256,7 @@
     {
       "nama": "[pdf2word] menghasilkan berkas",
       "ok": true,
-      "detail": "sample.docx (2476 B)"
+      "detail": "sample.docx (2477 B)"
     },
     {
       "nama": "pdf2word: berkas .docx terbentuk",
@@ -376,7 +376,7 @@
     {
       "nama": "[redact] menghasilkan berkas",
       "ok": true,
-      "detail": "redact-redaksi.pdf (46949 B)"
+      "detail": "redact-redaksi.pdf (46950 B)"
     },
     {
       "nama": "redact: kata target hilang dari seluruh PDF",
@@ -481,7 +481,7 @@
     {
       "nama": "[merge] menghasilkan berkas",
       "ok": true,
-      "detail": "sample-dan-1-lainnya-gabungan.pdf (2128 B)"
+      "detail": "sample-dan-1-lainnya-gabungan.pdf (2127 B)"
     },
     {
       "nama": "merge: 3+1 = 4 halaman",
@@ -491,7 +491,7 @@
     {
       "nama": "[split] menghasilkan berkas",
       "ok": true,
-      "detail": "hasil-pisah.zip (3364 B), sample-hal-1.pdf (1006 B), sample-hal-2.pdf (1006 B), sample-hal-3.pdf (1006 B)"
+      "detail": "hasil-pisah.zip (3361 B), sample-hal-1.pdf (1005 B), sample-hal-2.pdf (1005 B), sample-hal-3.pdf (1005 B)"
     },
     {
       "nama": "split: arsip zip dibuat",
@@ -501,7 +501,7 @@
     {
       "nama": "split: zip valid",
       "ok": true,
-      "detail": "3364 B"
+      "detail": "3361 B"
     },
     {
       "nama": "split: 3 PDF per halaman",
