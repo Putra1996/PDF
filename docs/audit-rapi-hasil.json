@@ -1,0 +1,297 @@
+{
+  "tanggal": "2026-11-25T08:56:06.330Z",
+  "lulus": 58,
+  "gagal": 0,
+  "hasil": [
+    {
+      "name": "Masukan terdeteksi miring ~0,8° (estimator mandiri)",
+      "ok": true,
+      "detail": "sudut=-0.8°"
+    },
+    {
+      "name": "Alat berhasil jalan",
+      "ok": true,
+      "detail": "303796 byte, 1.1s"
+    },
+    {
+      "name": "Sudut sisa ~0° (dokumen jadi lurus)",
+      "ok": true,
+      "detail": "sisa=0°"
+    },
+    {
+      "name": "Isi dokumen persis sama, hanya diputar (bukti piksel)",
+      "ok": true,
+      "detail": "jarak rata-rata=0.511 pt"
+    },
+    {
+      "name": "Dokumen TIDAK dibalik (tanda: isi tetap searah)",
+      "ok": true,
+      "detail": "sisa=0°, jarak=0.511 pt"
+    },
+    {
+      "name": "Gambar pindai tidak di-encode ulang (byte identik)",
+      "ok": true,
+      "detail": "gambar=1->1"
+    },
+    {
+      "name": "Catatan hasil menyebut jumlah halaman yang diluruskan",
+      "ok": true,
+      "detail": "297 KB · struktur dibenahi, isi dokumen dipertahankan — 1 halaman diluruskan (rata-rata 0,7°)"
+    },
+    {
+      "name": "Ukuran berkas tidak membengkak jauh",
+      "ok": true,
+      "detail": "303689 -> 303796 byte"
+    },
+    {
+      "name": "akta-miring05.pdf: terdeteksi miring 0.5°",
+      "ok": true,
+      "detail": "estimasi=-0.5°"
+    },
+    {
+      "name": "akta-miring05.pdf: sudut sisa ~0° setelah diperbaiki",
+      "ok": true,
+      "detail": "sisa=0°"
+    },
+    {
+      "name": "akta-miring05.pdf: isi utuh (tidak dibalik, tidak hilang)",
+      "ok": true,
+      "detail": "jarak=0.404 pt"
+    },
+    {
+      "name": "akta-miring08.pdf: terdeteksi miring 0.8°",
+      "ok": true,
+      "detail": "estimasi=-0.8°"
+    },
+    {
+      "name": "akta-miring08.pdf: sudut sisa ~0° setelah diperbaiki",
+      "ok": true,
+      "detail": "sisa=0°"
+    },
+    {
+      "name": "akta-miring08.pdf: isi utuh (tidak dibalik, tidak hilang)",
+      "ok": true,
+      "detail": "jarak=0.511 pt"
+    },
+    {
+      "name": "akta-miring12.pdf: terdeteksi miring 1.2°",
+      "ok": true,
+      "detail": "estimasi=-1.2°"
+    },
+    {
+      "name": "akta-miring12.pdf: sudut sisa ~0° setelah diperbaiki",
+      "ok": true,
+      "detail": "sisa=0°"
+    },
+    {
+      "name": "akta-miring12.pdf: isi utuh (tidak dibalik, tidak hilang)",
+      "ok": true,
+      "detail": "jarak=0.473 pt"
+    },
+    {
+      "name": "akta-miring-minus09.pdf: terdeteksi miring -0.9°",
+      "ok": true,
+      "detail": "estimasi=0.9°"
+    },
+    {
+      "name": "akta-miring-minus09.pdf: sudut sisa ~0° setelah diperbaiki",
+      "ok": true,
+      "detail": "sisa=0°"
+    },
+    {
+      "name": "akta-miring-minus09.pdf: isi utuh (tidak dibalik, tidak hilang)",
+      "ok": true,
+      "detail": "jarak=0.442 pt"
+    },
+    {
+      "name": "akta-miring3.pdf: terdeteksi miring 3°",
+      "ok": true,
+      "detail": "estimasi=-3°"
+    },
+    {
+      "name": "akta-miring3.pdf: sudut sisa ~0° setelah diperbaiki",
+      "ok": true,
+      "detail": "sisa=0°"
+    },
+    {
+      "name": "akta-miring3.pdf: isi utuh (tidak dibalik, tidak hilang)",
+      "ok": true,
+      "detail": "jarak=0.483 pt"
+    },
+    {
+      "name": "Halaman lurus -> alat berhasil",
+      "ok": true,
+      "detail": "293606 byte"
+    },
+    {
+      "name": "Halaman lurus tetap lurus (tidak diputar sia-sia)",
+      "ok": true,
+      "detail": "sisa=0°"
+    },
+    {
+      "name": "Halaman lurus: isi tidak berubah",
+      "ok": true,
+      "detail": "jarak=0.000 pt"
+    },
+    {
+      "name": "Halaman lurus: ukuran halaman tetap sama",
+      "ok": true,
+      "detail": "595.3x841.9 -> 595.3x841.9"
+    },
+    {
+      "name": "digital-lurus.pdf: sudut sisa ~0°",
+      "ok": true,
+      "detail": "sisa=0° (masuk 0°)"
+    },
+    {
+      "name": "digital-lurus.pdf: teks tetap bisa dicari (tidak diraster)",
+      "ok": true,
+      "detail": "item=23->23"
+    },
+    {
+      "name": "digital-lurus.pdf: berkas tetap ramping (bukan gambar)",
+      "ok": true,
+      "detail": "2754 -> 2508 byte"
+    },
+    {
+      "name": "digital-miring08.pdf: sudut sisa ~0°",
+      "ok": true,
+      "detail": "sisa=0° (masuk -0.85°)"
+    },
+    {
+      "name": "digital-miring08.pdf: teks tetap bisa dicari (tidak diraster)",
+      "ok": true,
+      "detail": "item=23->23"
+    },
+    {
+      "name": "digital-miring08.pdf: berkas tetap ramping (bukan gambar)",
+      "ok": true,
+      "detail": "2790 -> 2899 byte"
+    },
+    {
+      "name": "digital-miring2.pdf: sudut sisa ~0°",
+      "ok": true,
+      "detail": "sisa=0° (masuk -2°)"
+    },
+    {
+      "name": "digital-miring2.pdf: teks tetap bisa dicari (tidak diraster)",
+      "ok": true,
+      "detail": "item=23->23"
+    },
+    {
+      "name": "digital-miring2.pdf: berkas tetap ramping (bukan gambar)",
+      "ok": true,
+      "detail": "2792 -> 2905 byte"
+    },
+    {
+      "name": "pindai-terbalik180.pdf: halaman terbalik dibalik jadi tegak",
+      "ok": true,
+      "detail": "sisa=0°"
+    },
+    {
+      "name": "pindai-terbalik180.pdf: isi tetap utuh setelah dibalik",
+      "ok": true,
+      "detail": "jarak=0.485 pt"
+    },
+    {
+      "name": "pindai-tegak90.pdf -> alat berhasil",
+      "ok": true,
+      "detail": "167890 byte"
+    },
+    {
+      "name": "pindai-tegak90.pdf: teks tegak jadi mendatar",
+      "ok": true,
+      "detail": "sisa=0°"
+    },
+    {
+      "name": "Pangkas margin -> alat berhasil",
+      "ok": true,
+      "detail": "304370 byte"
+    },
+    {
+      "name": "Margin putih terpangkas (halaman jadi lebih rapat)",
+      "ok": true,
+      "detail": "crop=500x597"
+    },
+    {
+      "name": "Tidak ada isi yang terpotong saat margin dipangkas",
+      "ok": true,
+      "detail": "titik di luar crop=0"
+    },
+    {
+      "name": "Opsi trim=false: margin tidak dipangkas",
+      "ok": true,
+      "detail": "crop=607x850"
+    },
+    {
+      "name": "PDF 3 halaman -> alat berhasil",
+      "ok": true,
+      "detail": "5927 byte"
+    },
+    {
+      "name": "Jumlah halaman tetap 3",
+      "ok": true,
+      "detail": "halaman=3"
+    },
+    {
+      "name": "Anotasi (tautan) tetap ada setelah dirapikan",
+      "ok": true,
+      "detail": "anotasi=1->1"
+    },
+    {
+      "name": "Metadata dibersihkan saat opsi aktif",
+      "ok": true,
+      "detail": "judul=\"\" penulis=\"\""
+    },
+    {
+      "name": "Metadata tetap ada saat opsi dimatikan",
+      "ok": true,
+      "detail": "judul=\"Dokumen Uji Anotasi\""
+    },
+    {
+      "name": "Batas sudut 1°: halaman 3° tidak diluruskan",
+      "ok": true,
+      "detail": "310340 byte"
+    },
+    {
+      "name": "Batas sudut 1°: kemiringan 3° tetap ada",
+      "ok": true,
+      "detail": "sisa=-3°"
+    },
+    {
+      "name": "Opsi deskew=false: kemiringan tidak disentuh",
+      "ok": true,
+      "detail": "sisa=-0.8°"
+    },
+    {
+      "name": "Opsi autoRotate=false: halaman tegak dibiarkan",
+      "ok": true,
+      "detail": "sisa=-90°"
+    },
+    {
+      "name": "Berkas rusak ditolak dengan pesan jelas",
+      "ok": true,
+      "detail": "Berkas ini rusak total: tidak ada halaman yang bisa dipulihkan. Pastikan berkas memang PDF utuh, bukan potongan atau teks acak."
+    },
+    {
+      "name": "Bukti visual tersimpan (sebelum & sesudah)",
+      "ok": true,
+      "detail": "/home/user/PDF/docs/audit-rapi-2026-11-25"
+    },
+    {
+      "name": "Pratinjau = PDF final (piksel pratinjau ada di PDF final)",
+      "ok": true,
+      "detail": "cakupan=100.0% (balik 99.9%)"
+    },
+    {
+      "name": "PDF final tidak menambah/mengurangi isi",
+      "ok": true,
+      "detail": "tinta 26414 -> 26561 piksel"
+    },
+    {
+      "name": "Tidak ada error JavaScript selama audit",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

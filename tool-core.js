@@ -1059,11 +1059,30 @@ ${Array.from({ length: n }, (_, i) => `<Override PartName="/ppt/slides/slide${i 
     return Math.max(18, Math.min(238, ambang));
   }
 
+  /* Ambang "lembut": piksel yang jelas bukan kertas putih.
+     Level kertas diambil dari persentil 85 histogram (halaman hasil
+     pindai didominasi kertas), lalu diturunkan 25 tingkat supaya blok
+     abu-abu, foto, dan stempel pudar ikut terhitung — tapi derau JPEG
+     tetap diabaikan. */
+  function ambangTintaLembut(gray, n) {
+    const hist = new Uint32Array(256);
+    for (let i = 0; i < n; i++) hist[gray[i]]++;
+    let c = 0, kertas = 255;
+    for (let v = 0; v < 256; v++) {
+      c += hist[v];
+      if (c >= n * 0.85) { kertas = v; break; }
+    }
+    return Math.max(30, Math.min(245, kertas - 25));
+  }
+
   /* Titik tinta (piksel gelap) dalam koordinat PDF user space.
      Canvas -> PDF memakai kebalikan transform viewport, jadi
      rotasi halaman (/Rotate) ikut diperhitungkan. */
   function titikTinta(canvas, viewport, maksTitik) {
-    const kosong = { titik: new Float64Array(0), minX: 0, minY: 0, maxX: 0, maxY: 0, jumlah: 0 };
+    const kosong = {
+      titik: new Float64Array(0), minX: 0, minY: 0, maxX: 0, maxY: 0, jumlah: 0,
+      titikLembut: new Float64Array(0), minXL: 0, minYL: 0, maxXL: 0, maxYL: 0,
+    };
     let data;
     try {
       data = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height);
@@ -1078,30 +1097,55 @@ ${Array.from({ length: n }, (_, i) => `<Override PartName="/ppt/slides/slide${i 
       gray[p] = ((d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000) | 0;
     }
     const ambang = ambangTinta(gray, n);
+    /* Ambang "lembut": semua yang bukan kertas putih. Dipakai untuk
+       kotak pemangkasan margin supaya blok foto, tabel, atau stempel
+       pudar ikut terbawa — kalau tidak, pangkas margin bisa memotong
+       isi dokumen. */
+    const ambangLembut = ambangTintaLembut(gray, n);
     /* langkah 1: hitung jumlah piksel tinta */
     let jumlah = 0;
-    for (let p = 0; p < n; p++) if (gray[p] <= ambang) jumlah++;
+    let jumlahLembut = 0;
+    for (let p = 0; p < n; p++) {
+      if (gray[p] <= ambang) jumlah++;
+      if (gray[p] <= ambangLembut) jumlahLembut++;
+    }
     if (!jumlah) return kosong;
     /* langkah 2: subsample supaya biaya pencarian sudut kecil */
     const batas = Math.max(2000, maksTitik || 60000);
     const langkah = Math.max(1, Math.ceil(jumlah / batas));
+    const batasLembut = Math.max(2000, (maksTitik || 60000) * 2);
+    const langkahLembut = Math.max(1, Math.ceil(jumlahLembut / batasLembut));
     const t = viewport.transform;
     const det = t[0] * t[3] - t[1] * t[2];
     if (!det) return kosong;
     const out = new Float64Array(Math.ceil(jumlah / langkah) * 2);
+    const outL = new Float64Array(Math.ceil(jumlahLembut / langkahLembut) * 2);
     let o = 0;
+    let oL = 0;
     let seen = 0;
+    let seenL = 0;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let minXL = Infinity, minYL = Infinity, maxXL = -Infinity, maxYL = -Infinity;
     for (let y = 0; y < h; y++) {
       const baris = y * w;
       for (let x = 0; x < w; x++) {
         const p = baris + x;
-        if (gray[p] > ambang) continue;
-        if (seen++ % langkah) continue;
+        const g = gray[p];
+        if (g > ambangLembut) continue;
         const cx = x + 0.5, cy = y + 0.5;
         const dx = cx - t[4], dy = cy - t[5];
         const X = (t[3] * dx - t[2] * dy) / det;
         const Y = (-t[1] * dx + t[0] * dy) / det;
+        if (g <= ambangLembut && seenL++ % langkahLembut === 0) {
+          outL[oL++] = X;
+          outL[oL++] = Y;
+          if (X < minXL) minXL = X;
+          if (X > maxXL) maxXL = X;
+          if (Y < minYL) minYL = Y;
+          if (Y > maxYL) maxYL = Y;
+        }
+        if (g > ambang) continue;
+        if (seen++ % langkah) continue;
         out[o++] = X;
         out[o++] = Y;
         if (X < minX) minX = X;
@@ -1110,7 +1154,10 @@ ${Array.from({ length: n }, (_, i) => `<Override PartName="/ppt/slides/slide${i 
         if (Y > maxY) maxY = Y;
       }
     }
-    return { titik: out.subarray(0, o), minX, minY, maxX, maxY, jumlah: o / 2 };
+    return {
+      titik: out.subarray(0, o), minX, minY, maxX, maxY, jumlah: o / 2,
+      titikLembut: outL.subarray(0, oL), minXL, minYL, maxXL, maxYL,
+    };
   }
 
   /* Skor profil proyeksi untuk satu sudut (derajat).
@@ -1123,10 +1170,16 @@ ${Array.from({ length: n }, (_, i) => `<Override PartName="/ppt/slides/slide${i 
     let min = Infinity, max = -Infinity;
     for (let i = 0; i < titik.length; i += 2) {
       const v = titik[i] * sin + titik[i + 1] * cos;
+      /* min & max harus dihitung terpisah. Kalau memakai "else if",
+         titik yang kebetulan lebih kecil dari min sementara itu ikut
+         dilewati untuk cek max, sehingga max bisa jauh lebih kecil dari
+         nilai sebenarnya. Akibatnya rentang bin menyempit, bin terakhir
+         menumpuk ribuan piksel (mis. kotak foto) dan skornya meledak
+         di sudut palsu -> kemiringan terdeteksi salah. */
       if (v < min) min = v;
-      else if (v > max) max = v;
+      if (v > max) max = v;
     }
-    if (!isFinite(min) || max - min < 1e-9) return 0;
+    if (!isFinite(min) || !isFinite(max) || max - min < 1e-9) return 0;
     const k = n / (max - min);
     for (let i = 0; i < titik.length; i += 2) {
       const v = titik[i] * sin + titik[i + 1] * cos;
@@ -1171,8 +1224,9 @@ ${Array.from({ length: n }, (_, i) => `<Override PartName="/ppt/slides/slide${i 
     let min = Infinity, max = -Infinity;
     for (let i = 0; i < titik.length; i += 2) {
       const v = titik[i + 1];
+      /* min & max terpisah (lihat catatan di skorProyeksi) */
       if (v < min) min = v;
-      else if (v > max) max = v;
+      if (v > max) max = v;
     }
     if (!isFinite(min) || max <= min) return [];
     const k = (n - 1) / (max - min);
@@ -1202,8 +1256,10 @@ ${Array.from({ length: n }, (_, i) => `<Override PartName="/ppt/slides/slide${i 
     }
     if (awal >= 0) wilayah.push([awal, n - 1]);
     if (!wilayah.length) return [];
-    /* Titik tiap baris = titik yang bin-nya masuk wilayah itu. */
-    const garis = wilayah.map(() => ({ x0: Infinity, x1: -Infinity, n: 0 }));
+    /* Titik tiap baris = titik yang bin-nya masuk wilayah itu.
+       y0/y1 = batas atas & bawah baris, sy = jumlah koordinat y
+       (dipakai untuk titik berat vertikal baris). */
+    const garis = wilayah.map(() => ({ x0: Infinity, x1: -Infinity, n: 0, y0: Infinity, y1: -Infinity, sy: 0 }));
     for (let i = 0; i < titik.length; i += 2) {
       let b = ((titik[i + 1] - min) * k) | 0;
       if (b < 0) b = 0; else if (b > n - 1) b = n - 1;
@@ -1211,12 +1267,25 @@ ${Array.from({ length: n }, (_, i) => `<Override PartName="/ppt/slides/slide${i 
       while (g + 1 < wilayah.length && b > wilayah[g][1]) g++;
       const row = garis[g];
       const x = titik[i];
+      const y = titik[i + 1];
       if (x < row.x0) row.x0 = x;
       if (x > row.x1) row.x1 = x;
+      if (y < row.y0) row.y0 = y;
+      if (y > row.y1) row.y1 = y;
+      row.sy += y;
       row.n++;
     }
     return garis.filter((g) => g.n >= 8 && g.x1 > g.x0);
   }
+
+  /* Median (nilai tengah) — dipakai untuk titik berat vertikal. */
+  function median(nilai) {
+    if (!nilai.length) return 0;
+    const s = nilai.slice().sort((a, b) => a - b);
+    const t = s.length >> 1;
+    return s.length % 2 ? s[t] : (s[t - 1] + s[t]) / 2;
+  }
+
 
   /* Median absolute deviation: ukuran "kepastian" yang tahan terhadap
      beberapa baris menyimpang (mis. baris berindet). */
@@ -1229,19 +1298,59 @@ ${Array.from({ length: n }, (_, i) => `<Override PartName="/ppt/slides/slide${i 
   }
 
   /* Arah teks: true berarti teks terbalik 180 derajat (sisi rata
-     berada di kanan). "yakin" menyatakan seberapa jelas sinyalnya. */
+     berada di kanan). "yakin" menyatakan seberapa jelas sinyalnya.
+
+     Dua bukti dipakai sekaligus:
+       1. "Sisi rata" — pada teks normal semua baris mulai dari margin
+          kiri yang sama (kiri rapat, kanan ragged). Teks terbalik
+          kebalikannya.
+       2. "Titik berat vertikal" — huruf Latin menumpuk di bagian atas
+          baris (zona x-height & ascender), jadi titik berat tinta
+          berada DI ATAS tengah baris. Teks terbalik -> di bawah.
+     Bukti (2) tidak terpengaruh bentuk huruf dan tidak fooled oleh
+     baris yang rata kiri atau rata kanan. */
   function arahTeks(titik) {
     const bins = new Float64Array(512);
     const garis = garisTeks(titik, bins);
-    if (garis.length < 3) return { terbalik: false, yakin: 0, kiri: 0, kanan: 0, baris: garis.length };
-    const kiri = garis.map((g) => g.x0);
-    const kanan = garis.map((g) => g.x1);
+    const dasar = {
+      terbalik: false, yakin: 0, kiri: 0, kanan: 0, baris: garis.length,
+      vertikal: 0, teks: 0,
+    };
+    if (garis.length < 3) return dasar;
+    /* Hanya baris yang benar-benar mirip baris teks yang dihitung:
+       jauh lebih lebar daripada tinggi, dan cukup banyak tinta.
+       Kotak foto, stempel, dan tabel ikut dibuang agar tidak mengacaukan
+       perhitungan sisi rata.
+       Semua ukuran dinormalkan terhadap lebar baris yang paling umum,
+       jadi angkanya bebas dari satuan. */
+    const lebarBaris = median(garis.map((g) => g.x1 - g.x0));
+    const teks = garis.filter(
+      (g) =>
+        g.n >= 12 &&
+        lebarBaris > 0 &&
+        g.x1 - g.x0 > 0.25 * lebarBaris &&
+        g.y1 - g.y0 < 0.35 * lebarBaris
+    );
+    dasar.teks = teks.length;
+    if (teks.length < 3) return dasar;
+    const kiri = teks.map((g) => g.x0);
+    const kanan = teks.map((g) => g.x1);
     const m0 = mad(kiri), m1 = mad(kanan);
     const xs0 = kiri.slice().sort((a, b) => a - b);
     const xs1 = kanan.slice().sort((a, b) => a - b);
     const lebar = Math.max(1, xs1[xs1.length >> 1] - xs0[xs0.length >> 1]);
     const yakin = Math.abs(m0 - m1) / lebar;
-    return { terbalik: m1 < m0, yakin, kiri: m0, kanan: m1, baris: garis.length };
+    /* titik berat vertikal tiap baris (dinormalisasi terhadap tinggi baris) */
+    const offs = teks
+      .filter((g) => g.y1 - g.y0 > 0.01 * lebarBaris)
+      .map((g) => (g.sy / g.n - (g.y0 + g.y1) / 2) / (g.y1 - g.y0));
+    const vertikal = median(offs);
+    dasar.terbalik = m1 < m0;
+    dasar.yakin = yakin;
+    dasar.kiri = m0;
+    dasar.kanan = m1;
+    dasar.vertikal = vertikal;
+    return dasar;
   }
 
   /* Skor rata-rata seluruh sudut yang diuji (dasar keyakinan). */
@@ -1274,12 +1383,21 @@ ${Array.from({ length: n }, (_, i) => `<Override PartName="/ppt/slides/slide${i 
     const o = opsi || {};
     const maksDeg = Math.min(20, Math.max(1, o.maksDeg || 8));
     const autoRotate = o.autoRotate !== false;
-    /*Ambang keyakinan "sisi rata" baris teks: di bawah nilai ini
-      arah teks tidak boleh diasumsikan. */
-    const AMBANG_YAKIN = 0.02;
+    /* Ambang keyakinan "sisi rata" baris teks. Nilai kecil berarti
+       "hampir sama saja" — di bawah ambang ini arah teks tidak boleh
+       diasumsikan, karena salah arah berarti dokumen dibalik. */
+    const AMBANG_YAKIN = 0.12;
+    /* Ambang titik berat vertikal (seberapa jauh di atas/bawah tengah
+       baris titik berat tinta boleh berada). Nilainya jauh lebih kecil
+       karena sinyal ini hanya~$0,01 tinggi baris, tapi arahnya jelas:
+       teks tegak -> positif, teks terbalik -> negatif. */
+    const AMBANG_VERT = 0.004;
+    /* Minimal baris teks yang harus terdeteksi sebelum arah dipakai. */
+    const MIN_BARIS = 5;
     const hasil = {
       sudut: 0, kepastian: 0, orientasi: 0, terbalik: false,
       sideways: false, tegas: false, kotak: null, jumlah: 0, skor: 0, skor0: 0,
+      yakinArah: 0, vertikal: 0,
     };
     if (!titikInfo || !titikInfo.jumlah || titikInfo.jumlah < 40) return hasil;
     const titik = titikInfo.titik;
@@ -1303,9 +1421,12 @@ ${Array.from({ length: n }, (_, i) => `<Override PartName="/ppt/slides/slide${i 
     }
     const bins = new Float64Array(512);
     const bins2 = new Float64Array(512);
+    /* langkah pencarian kasar: makin kecil, makin tepat sudutnya
+       (pindai resmi biasanya miring < 1 derajat). */
+    const langkah = Math.max(0.08, maksDeg / 40);
 
     /* -- 1. koreksi kecil (batas maksDeg) -- */
-    const kecil = cariSudut(norm, -maksDeg, maksDeg, bins, Math.max(0.1, maksDeg / 18));
+    const kecil = cariSudut(norm, -maksDeg, maksDeg, bins, langkah);
     const skorKecil = kecil.skor;
 
     /* -- 2. sideways? bandingkan ketajaman profil horizontal vs vertikal -- */
@@ -1318,39 +1439,61 @@ ${Array.from({ length: n }, (_, i) => `<Override PartName="/ppt/slides/slide${i 
     let terbalik = false;
     let frame = norm;
     let halus = kecil;
+    let arahDipakai = null;
 
     /* ---- 2b. tentukan orientasi (terbalik 180 derajat atau tidak) ----
        Baris teks harus lebih dulu diluruskan (miring kecil sudah
-       dihitung), baru sisi ratanya bisa dibaca dengan benar. */
+       dihitung), baru sisi ratanya bisa dibaca dengan benar.
+
+       PENTING: putarTitik(f, h.sudut) sudah memutar frame sebesar
+       koreksi yang ditemukan, sehingga baris teksnya menjadi
+       horizontal. memakai tanda minus akan melanjutkan kemiringan
+       (bukan meluruskannya) dan membuat statistik baris kacau. */
     const putar = (dasar) => {
       const f = dasar === 0 ? norm : putarTitik(norm, dasar);
-      const h = cariSudut(f, -maksDeg, maksDeg, bins, Math.max(0.1, maksDeg / 18));
-      const lurus = putarTitik(f, -h.sudut);
+      const h = cariSudut(f, -maksDeg, maksDeg, bins, langkah);
+      const lurus = putarTitik(f, h.sudut);
       const a = arahTeks(lurus);
       return { dasar, f, h, lurus, arah: a };
     };
+    /* Dua bukti harus BANSAH: sisi rata baris DAN titik berat
+       vertikal. Kalau hanya satu yang mendukung, halaman dianggap
+       tidak terbalik — lebih baik halaman tetap miring 0,8 derajat
+       daripada dokumen resmi dibalik 180 derajat. */
+    const buktiTerbalik = (a) =>
+      a.terbalik === true &&
+      a.yakin >= AMBANG_YAKIN &&
+      a.teks >= MIN_BARIS &&
+      a.vertikal <= -AMBANG_VERT;
     if (sideways && autoRotate) {
-      /* Teks tegak: putar -90; kalau hasilnya terbalik, pakai +90. */
-      let o = putar(-90);
-      if (o.arah.terbalik && o.arah.yakin > AMBANG_YAKIN) {
-        const o2 = putar(90);
-        if (o2.arah.yakin >= o.arah.yakin) { o = o2; terbalik = true; }
-      }
+      /* Teks tegak (halaman dipindai miring 90 derajat): coba diputar
+         -90. Kalau setelah diputar teksnya justru terbalik (tanda
+         titik berat vertikal negatif), pakai +90. */
+      const o1 = putar(-90);
+      const o2 = putar(90);
+      const nilai = (o) => (o.arah && o.arah.teks >= 3 ? o.arah.vertikal : 0);
+      let o = o1;
+      if (nilai(o2) > nilai(o1) + AMBANG_VERT) o = o2;
       frame = o.f;
       halus = o.h;
-      sudut = o.dasar + o.h.sudut;
+      arahDipakai = o.arah;
       orientasi = o.dasar;
+      sudut = o.dasar + o.h.sudut;
+      /* Halaman yang juga terbalik 180 derajat ->total putarannya
+         ditambah 180. */
+      if (buktiTerbalik(o.arah)) { terbalik = true; sudut += 180; }
     } else {
       const o = putar(0);
       frame = o.f;
       halus = o.h;
+      arahDipakai = o.arah;
       sudut = o.h.sudut;
-      if (o.arah.terbalik && o.arah.yakin > AMBANG_YAKIN) { terbalik = true; sudut += 180; }
+      if (buktiTerbalik(o.arah)) { terbalik = true; sudut += 180; }
     }
 
     /* -- 3. keyakinan: seberapa jauh skor terbaik di atas rerata,
           dihitung pada frame yang benar-benar dipakai -- */
-    const rerata = rerataSkor(frame, -maksDeg, maksDeg, bins, Math.max(0.1, maksDeg / 18));
+    const rerata = rerataSkor(frame, -maksDeg, maksDeg, bins, langkah);
     hasil.sudut = sudut;
     hasil.orientasi = orientasi;
     hasil.sideways = sideways;
@@ -1358,6 +1501,10 @@ ${Array.from({ length: n }, (_, i) => `<Override PartName="/ppt/slides/slide${i 
     hasil.kepastian = (halus.skor - rerata) / Math.max(1, halus.skor);
     hasil.skor = halus.skor;
     hasil.skor0 = skorY;
+    /* keyakinan arah teks (dipakai untuk laporan & menentukan apakah
+       pembalikan 180 derajat aman dilakukan) */
+    hasil.yakinArah = arahDipakai ? arahDipakai.yakin : 0;
+    hasil.vertikal = arahDipakai ? arahDipakai.vertikal : 0;
     /* tegas = baris teksnya sudah horizontal (halaman mendatar) */
     hasil.tegas = skorY > skorX * 1.25;
     hasil.kotak = {
@@ -1501,17 +1648,45 @@ ${Array.from({ length: n }, (_, i) => `<Override PartName="/ppt/slides/slide${i 
     const o = opsi || {};
     const hal = await pdfDoc.getPage(nomor);
     const v1 = hal.getViewport({ scale: 1 });
-    /* Resolusi analisis: minimal ~140 DPI (A4 -> 1100 px). Di bawah
+    /* Resolusi analisis: minimal ~170 DPI (A4 -> 1400 px). Di bawah
        itu profil proyeksi jadi terlalu kasar sehingga kemiringan
-       kecil tidak terbaca. Batas atas menjaga agar halaman besar
-       tidak boros memori. */
-    const lebar = Math.min(o.lebarMaks || 1600, Math.max(1100, v1.width));
+       kecil (< 1 derajat) tidak terbaca. Batas atas menjaga agar
+       halaman besar tidak boros memori. */
+    const lebar = Math.min(o.lebarMaks || 1800, Math.max(1400, v1.width));
     const skala = Math.min(4, Math.max(0.5, lebar / Math.max(1, v1.width)));
     const { canvas, viewport } = await renderPage(pdfDoc, nomor, skala);
     const tinta = titikTinta(canvas, viewport, o.maksTitik || 60000);
     canvas.width = 0;
     canvas.height = 0;
-    return analisisKemiringan(tinta, o);
+    const hasil = analisisKemiringan(tinta, o);
+    /* Kotak tinta SESUDAH diputar (diputar terhadap titik asal, bukan
+       terhadap pusat halaman). Dipakai alat "Rapi PDF" untuk memangkas
+       margin tepat di tepi isi — bukan kotak yang sudah diputar,
+       yang selalu lebih besar dari kotak aslinya. */
+    const rad = ((hasil.sudut || 0) * Math.PI) / 180;
+    const cos = Math.cos(rad), sin = Math.sin(rad);
+    const kotakPutaran = (titik) => {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (let i = 0; i < titik.length; i += 2) {
+        const x = titik[i], y = titik[i + 1];
+        const X = x * cos - y * sin;
+        const Y = x * sin + y * cos;
+        if (X < minX) minX = X;
+        if (X > maxX) maxX = X;
+        if (Y < minY) minY = Y;
+        if (Y > maxY) maxY = Y;
+      }
+      if (!isFinite(minX) || maxX <= minX) return null;
+      return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+    };
+    const rot = kotakPutaran(tinta.titik);
+    if (rot) hasil.kotakRot = rot;
+    /* Kotak "lembut" (tidak hanya teks gelap, tapi juga foto/tabel/
+       stempel pudar) — dipakai untuk pemangkasan margin supaya isi
+       dokumen tidak ikut terpotong. */
+    const rotLembut = tinta.titikLembut ? kotakPutaran(tinta.titikLembut) : null;
+    if (rotLembut) hasil.kotakRotLembut = rotLembut;
+    return hasil;
   }
 
   window.PDFToolsCore = {
@@ -1529,7 +1704,7 @@ ${Array.from({ length: n }, (_, i) => `<Override PartName="/ppt/slides/slide${i 
     sampleBackground, loadImageEl, applyEdits,
     fontFor, drawTextSafe, getFont,
     ambangTinta, titikTinta, skorProyeksi, cariSudut,
-    putarTitik, rerataSkor, garisTeks, arahTeks, mad,
+    putarTitik, rerataSkor, garisTeks, arahTeks, mad, median,
     analisisKemiringan, analisisHalaman,
     MODE_HALAMAN, normSpesifikasiHalaman, halamanDipilih, halamanTerpilih, ringkasHalaman,
     pastikanHalamanTerpilih, pesanRentangKosong, catatanCakupan,

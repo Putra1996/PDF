@@ -1,5 +1,5 @@
 {
-  "tanggal": "2026-11-25T04:34:35.119Z",
+  "tanggal": "2026-11-25T08:46:58.485Z",
   "pass": 106,
   "fail": 0,
   "results": [
@@ -256,7 +256,7 @@
     {
       "name": "Putar PDF rentang 2-4 berhasil",
       "ok": true,
-      "detail": "3182 byte"
+      "detail": "3181 byte"
     },
     {
       "name": "Halaman 2-4 diputar",
@@ -276,7 +276,7 @@
     {
       "name": "Rapi PDF rentang 2-3 berhasil",
       "ok": true,
-      "detail": "5510 byte"
+      "detail": "5454 byte"
     },
     {
       "name": "Jumlah halaman tetap 7",
@@ -301,7 +301,7 @@
     {
       "name": "Nomor halaman rentang 2-3 berhasil",
       "ok": true,
-      "detail": "2645 byte"
+      "detail": "2643 byte"
     },
     {
       "name": "Halaman 2 diberi nomor 2",
@@ -326,7 +326,7 @@
     {
       "name": "Watermark rentang 2-2 berhasil",
       "ok": true,
-      "detail": "2520 byte"
+      "detail": "2518 byte"
     },
     {
       "name": "Halaman 2 berubah (ada watermark)",
@@ -361,7 +361,7 @@
     {
       "name": "Potong PDF rentang 2-2 berhasil",
       "ok": true,
-      "detail": "2146 byte"
+      "detail": "2145 byte"
     },
     {
       "name": "Potong: hanya halaman 2 yang dipotong",
@@ -376,7 +376,7 @@
     {
       "name": "Putar PDF mode genap berhasil",
       "ok": true,
-      "detail": "2118 byte"
+      "detail": "2119 byte"
     },
     {
       "name": "Halaman genap diputar 90°",
@@ -491,7 +491,7 @@
     {
       "name": "Performa: rentang 2-6 pada 7 halaman < 20 detik",
       "ok": true,
-      "detail": "0.5 detik"
+      "detail": "0.6 detik"
     },
     {
       "name": "Input angka menampilkan nilai yang diminta (2 & 4)",

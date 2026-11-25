@@ -12,12 +12,12 @@
   {
     "name": "Sudut sisa ~0° (halaman jadi lurus)",
     "ok": true,
-    "detail": "sisa=-0.089°"
+    "detail": "sisa=0°"
   },
   {
     "name": "Halaman memang miring sebelum diperbaiki",
     "ok": true,
-    "detail": "sebelum=-2.978°"
+    "detail": "sebelum=-3°"
   },
   {
     "name": "Piksel gambar pindai TIDAK berubah (kualitas utuh)",
@@ -37,12 +37,12 @@
   {
     "name": "Vektor miring 3° -> alat berhasil",
     "ok": true,
-    "detail": "3163 byte, 0.5s"
+    "detail": "3163 byte, 1.2s"
   },
   {
     "name": "Sudut sisa vektor ~0°",
     "ok": true,
-    "detail": "sisa=-0.133°"
+    "detail": "sisa=0°"
   },
   {
     "name": "Teks tetap bisa dicari (tidak diraster)",
@@ -77,7 +77,7 @@
   {
     "name": "Posisi teks tidak meloncat jauh",
     "ok": true,
-    "detail": "geser=22.3 pt"
+    "detail": "geser=22.0 pt"
   },
   {
     "name": "Halaman lurus -> alat berhasil",
@@ -87,7 +87,7 @@
   {
     "name": "Halaman lurus TIDAK diputar",
     "ok": true,
-    "detail": "sisa=-0.089°"
+    "detail": "sisa=0°"
   },
   {
     "name": "Ukuran halaman lurus tetap sama",
@@ -122,7 +122,7 @@
   {
     "name": "Teks tegak jadi mendatar (sisa ~0°)",
     "ok": true,
-    "detail": "sisa=0°"
+    "detail": "sisa=0° (aplikasi: 0°)"
   },
   {
     "name": "Teks tegak dulu mendatar, sekarang tidak lagi",
@@ -137,17 +137,17 @@
   {
     "name": "Pindai miring -2,5° -> alat berhasil",
     "ok": true,
-    "detail": "172649 byte"
+    "detail": "172647 byte"
   },
   {
     "name": "Sudut sisa -2,5° ~0°",
     "ok": true,
-    "detail": "sisa=-0.089°"
+    "detail": "sisa=0°"
   },
   {
     "name": "Sudah miring sebelum diperbaiki",
     "ok": true,
-    "detail": "sebelum=2.489°"
+    "detail": "sebelum=2.5°"
   },
   {
     "name": "Batas sudut 2°: halaman 6° tidak diluruskan",
@@ -157,7 +157,7 @@
   {
     "name": "Sudut tetap ~6° (tidak disentuh)",
     "ok": true,
-    "detail": "sisa=-6°"
+    "detail": "sisa=-6.02°"
   },
   {
     "name": "Opsi deskew=false: berkas tetap dibuat",
@@ -167,7 +167,7 @@
   {
     "name": "Opsi deskew=false: tidak ada pelurusan",
     "ok": true,
-    "detail": "sisa=-2.978°"
+    "detail": "sisa=-3°"
   },
   {
     "name": "Opsi autoRotate=false: halaman tegak dibiarkan",
@@ -182,12 +182,12 @@
   {
     "name": "Pangkas margin: alat berhasil",
     "ok": true,
-    "detail": "3163 byte"
+    "detail": "3161 byte"
   },
   {
     "name": "Pangkas margin: halaman jadi lebih rapat",
     "ok": true,
-    "detail": "ukuran=392.6x372.2"
+    "detail": "ukuran=361x346.6"
   },
   {
     "name": "Pangkas margin: teks masih utuh",
@@ -222,17 +222,17 @@
   {
     "name": "Halaman miring jadi lurus",
     "ok": true,
-    "detail": "sisa=-0.089°"
+    "detail": "sisa=0°"
   },
   {
     "name": "Halaman lurus tetap lurus",
     "ok": true,
-    "detail": "sisa=-0.089°"
+    "detail": "sisa=0°"
   },
   {
     "name": "Halaman vektor miring jadi lurus",
     "ok": true,
-    "detail": "sisa=-0.133°"
+    "detail": "sisa=0°"
   },
   {
     "name": "Metadata tidak dibersihkan bila opsi mati",
@@ -262,17 +262,17 @@
   {
     "name": "Beban 12 halaman -> alat berhasil",
     "ok": true,
-    "detail": "2079195 byte, 3.6s"
+    "detail": "2079195 byte, 4.3s"
   },
   {
     "name": "Beban: semua 12 halaman lurus",
     "ok": true,
-    "detail": "sisa=-0.089,-0.089,-0.089,-0.089,-0.089,-0.089,-0.089,-0.089,-0.089,-0.089,-0.089,-0.089"
+    "detail": "sisa=0,0,0,0,0,0,0,0,0,0,0,0"
   },
   {
     "name": "Beban 12 halaman selesai < 60 detik",
     "ok": true,
-    "detail": "3.6s"
+    "detail": "4.3s"
   },
   {
     "name": "Tidak ada error JavaScript selama audit",
