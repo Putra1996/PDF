@@ -1,0 +1,508 @@
+{
+  "tanggal": "2026-11-25T03:23:09.924Z",
+  "pass": 100,
+  "fail": 0,
+  "results": [
+    {
+      "nama": "[rotate] menghasilkan berkas",
+      "ok": true,
+      "detail": "sample-putar.pdf (1792 B)"
+    },
+    {
+      "nama": "rotate: semua halaman /Rotate 90",
+      "ok": true,
+      "detail": "rot=90,90,90"
+    },
+    {
+      "nama": "rotate: 3 halaman tetap",
+      "ok": true,
+      "detail": "halaman=3"
+    },
+    {
+      "nama": "[numbers] menghasilkan berkas",
+      "ok": true,
+      "detail": "sample-nomor.pdf (2517 B)"
+    },
+    {
+      "nama": "numbers: nomor halaman muncul di teks",
+      "ok": true,
+      "detail": "\"Uji halaman 1  Kata kunci rahasia untuk uji penyensoran.  Ba\""
+    },
+    {
+      "nama": "[watermark] menghasilkan berkas",
+      "ok": true,
+      "detail": "sample-watermark.pdf (2663 B)"
+    },
+    {
+      "nama": "watermark: teks stempel masuk PDF",
+      "ok": true,
+      "detail": "\"Uji halaman 1  Kata kunci rahasia untuk uji penyensoran.  Baris isi dokumen kedu\""
+    },
+    {
+      "nama": "[crop] menghasilkan berkas",
+      "ok": true,
+      "detail": "sample-potong.pdf (1824 B)"
+    },
+    {
+      "nama": "crop: ukuran halaman jadi A4",
+      "ok": true,
+      "detail": "{\"w\":595,\"h\":842}"
+    },
+    {
+      "nama": "[edit] menghasilkan berkas",
+      "ok": true,
+      "detail": "sample-edit.pdf (1808 B)"
+    },
+    {
+      "nama": "edit: PDF hasil tetap valid & 3 halaman",
+      "ok": true,
+      "detail": "halaman=3"
+    },
+    {
+      "nama": "[forms] menghasilkan berkas",
+      "ok": true,
+      "detail": "formulir-formulir.pdf (3313 B)"
+    },
+    {
+      "nama": "forms: PDF formulir punya field",
+      "ok": true,
+      "detail": "acroform=true"
+    },
+    {
+      "nama": "forms: 1 halaman tetap",
+      "ok": true,
+      "detail": "halaman=1"
+    },
+    {
+      "nama": "forms: nilai field tersimpan",
+      "ok": true,
+      "detail": "\"Nilai Uji | \""
+    },
+    {
+      "nama": "[repair] menghasilkan berkas",
+      "ok": true,
+      "detail": "sample-rapi.pdf (2753 B)"
+    },
+    {
+      "nama": "repair: PDF hasil tetap 3 halaman",
+      "ok": true,
+      "detail": "halaman=3"
+    },
+    {
+      "nama": "repair: ukuran halaman wajar",
+      "ok": true,
+      "detail": "{\"w\":595,\"h\":842}"
+    },
+    {
+      "nama": "[pdfa] menghasilkan berkas",
+      "ok": true,
+      "detail": "sample-pdfa.pdf (4189 B)"
+    },
+    {
+      "nama": "pdfa: hasil valid & 3 halaman",
+      "ok": true,
+      "detail": "halaman=3"
+    },
+    {
+      "nama": "pdfa: ada OutputIntent/metadata",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "nama": "organize: pratinjau halaman muncul",
+      "ok": true,
+      "detail": "sel=3"
+    },
+    {
+      "nama": "[organize] menghasilkan berkas",
+      "ok": true,
+      "detail": "sample-susun.pdf (1423 B)"
+    },
+    {
+      "nama": "organize: halaman yang dihapus hilang",
+      "ok": true,
+      "detail": "halaman=2"
+    },
+    {
+      "nama": "[jpg2pdf] menghasilkan berkas",
+      "ok": true,
+      "detail": "gambar.pdf (11378 B)"
+    },
+    {
+      "nama": "jpg2pdf: PDF A4 terbentuk",
+      "ok": true,
+      "detail": "{\"w\":595.28,\"h\":841.89}"
+    },
+    {
+      "nama": "[scan] menghasilkan berkas",
+      "ok": true,
+      "detail": "pindai.pdf (11378 B)"
+    },
+    {
+      "nama": "scan: hasil PDF valid",
+      "ok": true,
+      "detail": "halaman=1"
+    },
+    {
+      "nama": "[pdf2jpg] menghasilkan berkas",
+      "ok": true,
+      "detail": "sample-gambar.zip (20338 B)"
+    },
+    {
+      "nama": "pdf2jpg: satu arsip ZIP",
+      "ok": true,
+      "detail": "sample-gambar.zip"
+    },
+    {
+      "nama": "pdf2jpg: arsip ZIP valid",
+      "ok": true,
+      "detail": "20338 B"
+    },
+    {
+      "nama": "[word2pdf] menghasilkan berkas",
+      "ok": true,
+      "detail": "docu.pdf (990 B)"
+    },
+    {
+      "nama": "word2pdf: PDF terbentuk",
+      "ok": true,
+      "detail": "halaman=1"
+    },
+    {
+      "nama": "word2pdf: isi dokumen terbawa",
+      "ok": true,
+      "detail": "\"Judul Dokumen Uji  Paragraf isi dokumen word untuk uji konversi.\\n\""
+    },
+    {
+      "nama": "[ppt2pdf] menghasilkan berkas",
+      "ok": true,
+      "detail": "presentasi.pdf (916 B)"
+    },
+    {
+      "nama": "ppt2pdf: PDF terbentuk",
+      "ok": true,
+      "detail": "halaman=1"
+    },
+    {
+      "nama": "ppt2pdf: teks slide terbawa",
+      "ok": true,
+      "detail": "\"Slide uji presentasi\\n\""
+    },
+    {
+      "nama": "[xls2pdf] menghasilkan berkas",
+      "ok": true,
+      "detail": "tabel.pdf (1109 B)"
+    },
+    {
+      "nama": "xls2pdf: PDF terbentuk",
+      "ok": true,
+      "detail": "halaman=1"
+    },
+    {
+      "nama": "xls2pdf: isi tabel terbawa",
+      "ok": true,
+      "detail": "\"Lembar1  Judul   Nilai  Baris   42\\n\""
+    },
+    {
+      "nama": "[pdf2word] menghasilkan berkas",
+      "ok": true,
+      "detail": "sample.docx (2476 B)"
+    },
+    {
+      "nama": "pdf2word: berkas .docx terbentuk",
+      "ok": true,
+      "detail": "sample.docx"
+    },
+    {
+      "nama": "pdf2word: docx adalah zip valid",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "nama": "[pdf2xls] menghasilkan berkas",
+      "ok": true,
+      "detail": "sample.xlsx (2024 B)"
+    },
+    {
+      "nama": "pdf2xls: berkas .xlsx terbentuk",
+      "ok": true,
+      "detail": "sample.xlsx"
+    },
+    {
+      "nama": "pdf2xls: xlsx adalah zip valid",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "nama": "[pdf2ppt] menghasilkan berkas",
+      "ok": true,
+      "detail": "sample.pptx (6515 B)"
+    },
+    {
+      "nama": "pdf2ppt: berkas .pptx terbentuk",
+      "ok": true,
+      "detail": "sample.pptx"
+    },
+    {
+      "nama": "pdf2ppt: pptx adalah zip valid",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "nama": "[html2pdf] berjalan tanpa galat fatal",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "nama": "[protect] menghasilkan berkas",
+      "ok": true,
+      "detail": "sample-terkunci.pdf (3468 B)"
+    },
+    {
+      "nama": "protect: PDF jadi terenkripsi",
+      "ok": true,
+      "detail": "terenkripsi=true"
+    },
+    {
+      "nama": "protect: struktur /Encrypt ada",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "nama": "[unlock] menghasilkan berkas",
+      "ok": true,
+      "detail": "terkunci-terbuka.pdf (2825 B)"
+    },
+    {
+      "nama": "unlock: PDF berhasil dibuka",
+      "ok": true,
+      "detail": "terenkripsi=false"
+    },
+    {
+      "nama": "unlock: isi tetap ada",
+      "ok": true,
+      "detail": "halaman=3"
+    },
+    {
+      "nama": "sign: kanvas tanda tangan ada",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "nama": "[sign] menghasilkan berkas",
+      "ok": true,
+      "detail": "sample-ttd.pdf (5907 B)"
+    },
+    {
+      "nama": "sign: PDF hasil valid & 3 halaman",
+      "ok": true,
+      "detail": "halaman=3"
+    },
+    {
+      "nama": "sign: nama berkas keluar benar",
+      "ok": true,
+      "detail": "sample-ttd.pdf"
+    },
+    {
+      "nama": "[redact] menghasilkan berkas",
+      "ok": true,
+      "detail": "redact-redaksi.pdf (46949 B)"
+    },
+    {
+      "nama": "redact: kata target hilang dari seluruh PDF",
+      "ok": true,
+      "detail": "[\"Halaman uji 1  Teks biasa yang harus tetap utuh.\",\"\",\"Halaman uji 3  Teks biasa yang harus tetap utuh.\"]"
+    },
+    {
+      "nama": "redact: 3 halaman hasil",
+      "ok": true,
+      "detail": "halaman=3"
+    },
+    {
+      "nama": "redact: halaman tanpa hit tetap bisa dicari",
+      "ok": true,
+      "detail": "[\"Halaman uji 1  Teks biasa yang harus tetap utuh.\",\"Halaman uji 3  Teks biasa yang harus tetap utuh.\"]"
+    },
+    {
+      "nama": "redact: 3 halaman hasil",
+      "ok": true,
+      "detail": "halaman=3"
+    },
+    {
+      "nama": "[compare] menghasilkan berkas",
+      "ok": true,
+      "detail": "sample-banding.html (1564 B)"
+    },
+    {
+      "nama": "compare: laporan perbandingan dibuat",
+      "ok": true,
+      "detail": "jumlah=1"
+    },
+    {
+      "nama": "compare: nama berkas masuk akal",
+      "ok": true,
+      "detail": "sample-banding.html"
+    },
+    {
+      "nama": "[markdown] menghasilkan berkas",
+      "ok": true,
+      "detail": "sample.md (269 B)"
+    },
+    {
+      "nama": "markdown: berkas .md terbentuk",
+      "ok": true,
+      "detail": "sample.md"
+    },
+    {
+      "nama": "markdown: isi teks terbawa",
+      "ok": true,
+      "detail": "\"## Uji halaman 1\\n\\nKata kunci rahasia untuk uji penyensoran.\\n\\nBaris isi\""
+    },
+    {
+      "nama": "[summarize] menghasilkan berkas",
+      "ok": true,
+      "detail": "sample-ringkasan.md (585 B)"
+    },
+    {
+      "nama": "summarize: ringkasan tidak kosong",
+      "ok": true,
+      "detail": "# Ringkasan — sample\n\n> Ringkasan ekstraktif: 3 dari 6 kalimat dipilih"
+    },
+    {
+      "nama": "[translate] menghasilkan berkas",
+      "ok": true,
+      "detail": "sample-terjemahan.md (252 B)"
+    },
+    {
+      "nama": "translate: berkas .md terbentuk",
+      "ok": true,
+      "detail": "sample-terjemahan.md"
+    },
+    {
+      "nama": "translate: isi terjemahan tidak kosong",
+      "ok": true,
+      "detail": "\"# sample\\n\\nTest page 1\\nSecret keywords for the so-court test.\\nThe second document\""
+    },
+    {
+      "nama": "translate: judul dokumen dipertahankan",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "nama": "[ocr] menghasilkan berkas",
+      "ok": true,
+      "detail": "sample-ocr.pdf (1788 B)"
+    },
+    {
+      "nama": "ocr: PDF hasil valid",
+      "ok": true,
+      "detail": "halaman=3"
+    },
+    {
+      "nama": "[merge] menghasilkan berkas",
+      "ok": true,
+      "detail": "sample-dan-1-lainnya-gabungan.pdf (2128 B)"
+    },
+    {
+      "nama": "merge: 3+1 = 4 halaman",
+      "ok": true,
+      "detail": "halaman=4"
+    },
+    {
+      "nama": "[split] menghasilkan berkas",
+      "ok": true,
+      "detail": "hasil-pisah.zip (3361 B), sample-hal-1.pdf (1005 B), sample-hal-2.pdf (1005 B), sample-hal-3.pdf (1005 B)"
+    },
+    {
+      "nama": "split: arsip zip dibuat",
+      "ok": true,
+      "detail": "hasil-pisah.zip,sample-hal-1.pdf,sample-hal-2.pdf,sample-hal-3.pdf"
+    },
+    {
+      "nama": "split: zip valid",
+      "ok": true,
+      "detail": "3361 B"
+    },
+    {
+      "nama": "split: 3 PDF per halaman",
+      "ok": true,
+      "detail": "jumlah=3"
+    },
+    {
+      "nama": "split: tiap PDF 1 halaman",
+      "ok": true,
+      "detail": "halaman=1"
+    },
+    {
+      "nama": "[remove-pages] menghasilkan berkas",
+      "ok": true,
+      "detail": "sample-hapus-halaman.pdf (1387 B)"
+    },
+    {
+      "nama": "remove-pages: PDF hasil ada",
+      "ok": true,
+      "detail": "sample-hapus-halaman.pdf"
+    },
+    {
+      "nama": "remove-pages: 1 halaman dihapus -> 2 tersisa",
+      "ok": true,
+      "detail": "halaman=2"
+    },
+    {
+      "nama": "[extract-pages] menghasilkan berkas",
+      "ok": true,
+      "detail": "sample-hal-1-1.pdf (1007 B)"
+    },
+    {
+      "nama": "extract-pages: PDF hasil ada",
+      "ok": true,
+      "detail": "sample-hal-1-1.pdf"
+    },
+    {
+      "nama": "extract-pages: hanya 1 halaman",
+      "ok": true,
+      "detail": "halaman=1"
+    },
+    {
+      "nama": "[compress-link] menghasilkan berkas",
+      "ok": true,
+      "detail": "sample-kompres-optimal.pdf (1691 B)"
+    },
+    {
+      "nama": "compress: PDF hasil ada",
+      "ok": true,
+      "detail": "sample-kompres-optimal.pdf"
+    },
+    {
+      "nama": "compress: PDF tetap bisa dibaca",
+      "ok": true,
+      "detail": "halaman=3"
+    },
+    {
+      "nama": "Statis: semua berkas sumber aplikasi bisa di-parse",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "nama": "Responsif: daftar alat lengkap di 360px",
+      "ok": true,
+      "detail": "kartu=33"
+    },
+    {
+      "nama": "Responsif: tidak ada gulir horizontal di 360px",
+      "ok": true,
+      "detail": "selisih=0px"
+    },
+    {
+      "nama": "Responsif: kotak pencarian alat ada",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "nama": "Umum: tidak ada error konsol fatal",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "errors": []
+}

@@ -239,8 +239,29 @@
     const doc = parseXml(xml);
     const body = doc.getElementsByTagNameNS("*", "body")[0] || doc.documentElement;
     const blocks = [];
-    for (const node of body.childNodes) {
-      const tag = (node.nodeName || "").toLowerCase();
+    /* Word sering membungkus isi dokumen dalam content control
+       (w:sdt > w:sdtContent). Isinya harus ikut dibaca, kalau tidak
+       paragraf/tabel di dalamnya hilang diam-diam. */
+    const datar = (node, out) => {
+      for (const child of node.childNodes) {
+        if (child.nodeType !== 1) continue;
+        const nm = (child.localName || child.nodeName || "").toLowerCase();
+        if (nm === "sdt") {
+          const isi = child.getElementsByTagNameNS("*", "sdtContent")[0];
+          if (isi) datar(isi, out);
+          continue;
+        }
+        out.push(child);
+      }
+    };
+    const anak = [];
+    datar(body, anak);
+    for (const node of anak) {
+      /* PENTING: pakai localName, bukan nodeName. Dokumen Word
+         memakai namespace (w:p, w:tbl) sehingga nodeName selalu
+         berawalan prefix — dengan nodeName, tidak satu pun paragraf
+         dikenali dan hasil konversi PDF jadi kosong. */
+      const tag = (node.localName || node.nodeName || "").toLowerCase();
       if (tag === "p") {
         const style = node.getElementsByTagNameNS("*", "pStyle")[0];
         const styleVal = style ? (style.getAttribute("w:val") || "") : "";
