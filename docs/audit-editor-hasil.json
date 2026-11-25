@@ -1,7 +1,7 @@
 {
-  "tanggal": "2026-11-25T03:25:43.084Z",
-  "pass": 27,
-  "fail": 1,
+  "tanggal": "2026-11-25T05:34:41.256Z",
+  "pass": 29,
+  "fail": 0,
   "results": [
     {
       "nama": "editor: modul termuat & halaman terdeteksi",
@@ -96,12 +96,17 @@
     {
       "nama": "editor: ubah semua teks menambah operasi per blok",
       "ok": true,
-      "detail": "blok=4"
+      "detail": "blok=3"
     },
     {
       "nama": "editor: ukuran bulk diterapkan",
-      "ok": false,
-      "detail": "size=24"
+      "ok": true,
+      "detail": "size=30"
+    },
+    {
+      "nama": "editor: warna bulk diterapkan",
+      "ok": true,
+      "detail": "warna=#0066cc"
     },
     {
       "nama": "editor: ekspor .docx menghasilkan berkas",

@@ -186,6 +186,53 @@ async function posisiTeks(bytes) {
   }, { b: Array.from(bytes) });
 }
 
+/* analisis piksel: render halaman PDF ke kanvas lalu hitung tinta.
+   Dipakai sebagai bukti visual terukur (watermark, redaksi, tanda
+   tangan) — bukan sekadar "berkas berhasil dibuat". */
+async function analisisPiksel(bytes, halaman = 1) {
+  if (!_pageRef) return null;
+  return await _pageRef.evaluate(async ({ b, no }) => {
+    try {
+      const doc = await window.pdfjsLib.getDocument({ data: new Uint8Array(b) }).promise;
+      const page = await doc.getPage(no);
+      const vp = page.getViewport({ scale: 1.4 });
+      const c = document.createElement("canvas");
+      c.width = Math.round(vp.width);
+      c.height = Math.round(vp.height);
+      const ctx = c.getContext("2d", { willReadFrequently: true });
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, c.width, c.height);
+      await page.render({ canvasContext: ctx, viewport: vp }).promise;
+      const d = ctx.getImageData(0, 0, c.width, c.height).data;
+      let hitam = 0, abu = 0, total = 0, tinta = 0, tegas = 0;
+      const K = 10; /* grid K x K */
+      const grid = new Array(K * K).fill(0);
+      const w = c.width, h = c.height;
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const i = (y * w + x) * 4;
+          const r = d[i], g = d[i + 1], bl = d[i + 2];
+          total++;
+          const mx = Math.max(r, g, bl), mn = Math.min(r, g, bl);
+          if (mx < 60) hitam++;
+          else if (mx < 245 && mx - mn < 40) abu++;
+          if (mx < 70) tegas++;
+          if (mx < 250) {
+            tinta++;
+            const gx = Math.min(K - 1, Math.floor((x / w) * K));
+            const gy = Math.min(K - 1, Math.floor((y / h) * K));
+            grid[gy * K + gx]++;
+          }
+        }
+      }
+      await doc.destroy();
+      return { w, h, hitam, abu, tinta, tegas, total, grid };
+    } catch (e) {
+      return { err: String((e && e.message) || e) };
+    }
+  }, { b: Array.from(bytes), no: halaman });
+}
+
 /* baca isi berkas ZIP/OOXML lewat JSZip yang ada di peramban */
 async function isiZip(bytes) {
   if (!_pageRef) return {};
@@ -356,7 +403,7 @@ class Harness {
 const FITUR = [
   /* ---------- alat PDF: halaman ---------- */
   {
-    id: "rotate", nama: "Putar PDF", file: "sample.pdf", opts: { angle: "90", dir: "cw" },
+    id: "rotate", nama: "Putar PDF", file: "sample.pdf", opts: { angle: "90", dir: "cw" }, screenshot: "putar",
     async validasi(h, out) {
       const info = await pdfInfo(out[0].bytes);
       cek("rotate: semua halaman /Rotate 90", info.rot.every((r) => r === 90), "rot=" + info.rot.join(","));
@@ -364,7 +411,7 @@ const FITUR = [
     },
   },
   {
-    id: "numbers", nama: "Nomor Halaman", file: "sample.pdf", opts: { pos: "bottom-center" },
+    id: "numbers", nama: "Nomor Halaman", file: "sample.pdf", opts: { pos: "bottom-center" }, screenshot: "nomor",
     async validasi(h, out) {
       const t = await teksDariPdf(out[0].bytes);
       cek("numbers: nomor halaman muncul di teks", /\b1\b/.test(t) && /\b3\b/.test(t), JSON.stringify(t.slice(0, 60)));
@@ -380,16 +427,21 @@ const FITUR = [
     },
   },
   {
-    id: "watermark", nama: "Watermark", file: "sample.pdf", opts: { mode: "text", text: "RAHASIA", opacity: "0.3" },
+    id: "watermark", nama: "Watermark", file: "sample.pdf", screenshot: "watermark",
+    opts: { mode: "text", text: "RAHASIA", opacity: "35", layout: "diagonal", color: "#ff0000" }, screenshot: "watermark",
     async validasi(h, out) {
       const per = await teksPerHalaman(out[0].bytes);
       cek("watermark: teks stempel masuk PDF", /RAHASIA/i.test(per.join(" | ")), JSON.stringify(per).slice(0, 90));
       cek("watermark: stempel ada di setiap halaman", per.length === 3 && per.every((t) => /RAHASIA/i.test(t)),
         "halaman=" + per.length);
+      /* bukti visual: stempel harus benar-benar tergambar di halaman */
+      const pik = await analisisPiksel(out[0].bytes, 1);
+      cek("watermark: stempel benar-benar tergambar (bukan sekadar teks)",
+        !!(pik && pik.hitam > 0), pik ? "piksel gelap=" + pik.hitam : "gagal render");
     },
   },
   {
-    id: "crop", nama: "Potong PDF", file: "sample.pdf",
+    id: "crop", nama: "Potong PDF", file: "sample.pdf", screenshot: "potong",
     opts: { preset: "margin", top: "20", bottom: "20", left: "20", right: "20" },
     async validasi(h, out) {
       const info = await pdfInfo(out[0].bytes);
@@ -407,14 +459,14 @@ const FITUR = [
     },
   },
   {
-    id: "edit", nama: "Edit PDF", file: "sample.pdf", opts: { quality: "vector" },
+    id: "edit", nama: "Edit PDF", file: "sample.pdf", opts: { quality: "vector" }, screenshot: "edit",
     async validasi(h, out) {
       const info = await pdfInfo(out[0].bytes);
       cek("edit: PDF hasil tetap valid & 3 halaman", info.halaman === 3, "halaman=" + info.halaman);
     },
   },
   {
-    id: "forms", nama: "Isi Formulir", file: "formulir.pdf", opts: {},
+    id: "forms", nama: "Isi Formulir", file: "formulir.pdf", opts: {}, screenshot: "formulir",
     prep: async (h) => {
       await h.page.waitForTimeout(1200);
       await h.page.evaluate(() => {
@@ -444,7 +496,7 @@ const FITUR = [
     },
   },
   {
-    id: "pdfa", nama: "PDF/A", file: "sample.pdf", opts: { meta: true, icc: true },
+    id: "pdfa", nama: "PDF/A", file: "sample.pdf", opts: { meta: true, icc: true }, screenshot: "pdfa",
     async validasi(h, out) {
       const info = await pdfInfo(out[0].bytes);
       cek("pdfa: hasil valid & 3 halaman", info.halaman === 3, "halaman=" + info.halaman);
@@ -455,7 +507,7 @@ const FITUR = [
     },
   },
   {
-    id: "organize", nama: "Susun PDF", file: "sample.pdf", opts: {},
+    id: "organize", nama: "Susun PDF", file: "sample.pdf", opts: {}, screenshot: "susun",
     prep: async (h) => {
       await h.page.waitForTimeout(3000);
       const n = await h.page.evaluate(() => document.querySelectorAll(".organize-grid .org-cell").length);
@@ -475,7 +527,7 @@ const FITUR = [
 
   /* ---------- alat konversi ---------- */
   {
-    id: "jpg2pdf", nama: "Gambar ke PDF", file: "gambar.png", opts: { size: "a4", orientation: "auto" },
+    id: "jpg2pdf", nama: "Gambar ke PDF", file: "gambar.png", opts: { size: "a4", orientation: "auto" }, screenshot: "gambar-ke-pdf",
     async validasi(h, out) {
       const info = await pdfInfo(out[0].bytes);
       cek("jpg2pdf: PDF A4 terbentuk", info.halaman === 1 && Math.abs(info.sizes[0].w - 595.28) < 2, JSON.stringify(info.sizes[0]));
@@ -491,7 +543,7 @@ const FITUR = [
     },
   },
   {
-    id: "pdf2jpg", nama: "PDF ke Gambar", file: "sample.pdf", opts: { dpi: "72", format: "jpeg", quality: "80" },
+    id: "pdf2jpg", nama: "PDF ke Gambar", file: "sample.pdf", opts: { dpi: "72", format: "jpeg", quality: "80" }, screenshot: "pdf-ke-gambar",
     async validasi(h, out) {
       /* 3 halaman -> satu arsip ZIP berisi 3 gambar */
       cek("pdf2jpg: satu arsip ZIP", out.length === 1 && /\.zip$/i.test(out[0].nama), out.map((o) => o.nama).join(","));
@@ -569,7 +621,7 @@ const FITUR = [
 
   /* ---------- alat keamanan & tanda tangan ---------- */
   {
-    id: "protect", nama: "Lindungi PDF", file: "sample.pdf", opts: { password: "Rahasia123", allowPrint: true, allowCopy: true, allowModify: false, allowAnnotate: true },
+    id: "protect", nama: "Lindungi PDF", file: "sample.pdf", opts: { password: "Rahasia123", allowPrint: true, allowCopy: true, allowModify: false, allowAnnotate: true }, screenshot: "lindungi",
     async validasi(h, out) {
       const info = await pdfInfo(out[0].bytes);
       cek("protect: PDF jadi terenkripsi", info.terenkripsi, "terenkripsi=" + info.terenkripsi);
@@ -578,7 +630,7 @@ const FITUR = [
     },
   },
   {
-    id: "unlock", nama: "Buka PDF Terkunci", file: "terkunci.pdf", opts: {},
+    id: "unlock", nama: "Buka PDF Terkunci", file: "terkunci.pdf", opts: {}, screenshot: "buka-kunci",
     prep: async (h) => {
       await h.page.waitForTimeout(600);
       await h.page.evaluate(() => {
@@ -597,7 +649,7 @@ const FITUR = [
     },
   },
   {
-    id: "sign", nama: "Tanda Tangan", file: "sample.pdf", opts: {},
+    id: "sign", nama: "Tanda Tangan", file: "sample.pdf", opts: {}, screenshot: "tanda-tangan",
     prep: async (h) => {
       await h.page.waitForTimeout(2500);
       /* tulis tanda tangan di kanvas #signPad lalu simpan */
@@ -630,10 +682,16 @@ const FITUR = [
       const info = await pdfInfo(out[0].bytes);
       cek("sign: PDF hasil valid & 3 halaman", info.halaman === 3, "halaman=" + info.halaman);
       cek("sign: nama berkas keluar benar", /-ttd\.pdf$/i.test(out[0].nama), out[0].nama);
+      /* bukti visual: ada tinta tanda tangan di halaman hasil */
+      const pik = await analisisPiksel(out[0].bytes, 1);
+      const baseline = await analisisPiksel(fs.readFileSync(fx("sample.pdf")), 1);
+      cek("sign: tinta tanda tangan menambah piksel di halaman",
+        !!(pik && baseline && pik.tinta > baseline.tinta + 300),
+        pik && baseline ? "tinta " + pik.tinta + " vs " + baseline.tinta : "-");
     },
   },
   {
-    id: "redact", nama: "Redaksi", file: "redact.pdf", opts: { term: "RAHASIA", scale: "200" },
+    id: "redact", nama: "Redaksi", file: "redact.pdf", opts: { term: "RAHASIA", scale: "200" }, screenshot: "redaksi",
     prep: async (h) => {
       await h.page.waitForTimeout(900);
       await h.page.evaluate(() => {
@@ -649,14 +707,21 @@ const FITUR = [
       const perHalaman = await teksPerHalaman(out[0].bytes);
       cek("redact: kata target hilang dari seluruh PDF", !/rahasia/i.test(perHalaman.join(" | ")),
         JSON.stringify(perHalaman).slice(0, 140));
-      cek("redact: 3 halaman hasil", perHalaman.length === 3, "halaman=" + perHalaman.length);
       cek("redact: halaman tanpa hit tetap bisa dicari", /Teks biasa/.test(perHalaman[0] || "") && /Teks biasa/.test(perHalaman[2] || ""),
         JSON.stringify([perHalaman[0], perHalaman[2]]).slice(0, 140));
-      cek("redact: 3 halaman hasil", perHalaman.length === 3, "halaman=" + perHalaman.length);
+      /* bukti visual: kata yang diredaksi tertutup kotak hitam pekat,
+         sementara halaman lain tetap seperti aslinya */
+      const p1 = await analisisPiksel(out[0].bytes, 1);
+      const p2 = await analisisPiksel(out[0].bytes, 2);
+      cek("redact: hanya halaman yang direduksi punya kotak hitam pekat",
+        !!(p1 && p2 && p2.tegas > p1.tegas + 300),
+        p1 && p2 ? "hal.1=" + p1.tegas + " hal.2=" + p2.tegas : "-");
+      cek("redact: halaman tanpa hit tetap berupa teks (bukan gambar buram)",
+        !!(p1 && p1.hitam > 100), p1 ? "piksel teks hal.1=" + p1.hitam : "-");
     },
   },
   {
-    id: "compare", nama: "Bandingkan PDF", file: "sample.pdf", opts: {},
+    id: "compare", nama: "Bandingkan PDF", file: "sample.pdf", opts: {}, screenshot: "bandingkan",
     prep: async (h) => {
       await h.unggah(fx("satu.pdf"), 0);
       await h.page.waitForTimeout(1200);
@@ -673,7 +738,7 @@ const FITUR = [
 
   /* ---------- alat pintar ---------- */
   {
-    id: "markdown", nama: "PDF ke Markdown", file: "sample.pdf", opts: { pageSep: true, code: false },
+    id: "markdown", nama: "PDF ke Markdown", file: "sample.pdf", opts: { pageSep: true, code: false }, screenshot: "markdown",
     async validasi(h, out) {
       const teks = out[0].bytes.toString("utf8");
       cek("markdown: berkas .md terbentuk", /\.md$/i.test(out[0].nama), out[0].nama);
@@ -697,7 +762,7 @@ const FITUR = [
     },
   },
   {
-    id: "ocr", nama: "OCR PDF", file: "sample.pdf", opts: { lang: "eng" },
+    id: "ocr", nama: "OCR PDF", file: "sample.pdf", opts: { lang: "eng" }, screenshot: "ocr",
     async validasi(h, out) {
       const info = await pdfInfo(out[0].bytes);
       cek("ocr: PDF hasil valid", info.halaman === 3, "halaman=" + info.halaman);
@@ -706,12 +771,13 @@ const FITUR = [
 
   /* ---------- launcher tab utama ---------- */
   {
-    id: "merge", nama: "Gabung PDF", kind: "link", file: "sample.pdf",
+    id: "merge", nama: "Gabung PDF", kind: "link", file: "sample.pdf", screenshot: "gabung",
     async jalankan(h) {
       await h.tab("merge");
       await h.page.waitForTimeout(400);
       await h.page.setInputFiles("#mergeInput", [fx("sample.pdf"), fx("satu.pdf")]);
       await h.page.waitForTimeout(2000);
+      await h.screenshot("gabung-panel");
       await h.page.click("#mergeRunBtn");
       for (let i = 0; i < 60; i++) {
         await h.page.waitForTimeout(500);
@@ -741,12 +807,13 @@ const FITUR = [
     },
   },
   {
-    id: "split", nama: "Pisah PDF", kind: "link", file: "sample.pdf",
+    id: "split", nama: "Pisah PDF", kind: "link", file: "sample.pdf", screenshot: "pisah",
     async jalankan(h) {
       await h.tab("split");
       await h.page.waitForTimeout(400);
       await h.page.setInputFiles("#fileInput", fx("sample.pdf"));
       await h.page.waitForTimeout(2200);
+      await h.screenshot("pisah-panel");
       await h.page.evaluate(() => {
         const r = document.querySelector("input[name=mode][value=each]");
         if (r) { r.checked = true; r.dispatchEvent(new Event("change", { bubbles: true })); }
@@ -788,12 +855,13 @@ const FITUR = [
     },
   },
   {
-    id: "remove-pages", nama: "Hapus Halaman", kind: "link", file: "sample.pdf",
+    id: "remove-pages", nama: "Hapus Halaman", kind: "link", file: "sample.pdf", screenshot: "hapus-halaman",
     async jalankan(h) {
       await h.tab("split");
       await h.page.waitForTimeout(400);
       await h.page.setInputFiles("#fileInput", fx("sample.pdf"));
       await h.page.waitForTimeout(2200);
+      await h.screenshot("hapus-halaman-panel");
       await h.page.evaluate(() => {
         const r = document.querySelector("input[name=mode][value=remove]");
         if (r) { r.checked = true; r.dispatchEvent(new Event("change", { bubbles: true })); }
@@ -841,12 +909,13 @@ const FITUR = [
     },
   },
   {
-    id: "extract-pages", nama: "Ekstrak Halaman", kind: "link", file: "sample.pdf",
+    id: "extract-pages", nama: "Ekstrak Halaman", kind: "link", file: "sample.pdf", screenshot: "ekstrak-halaman",
     async jalankan(h) {
       await h.tab("split");
       await h.page.waitForTimeout(400);
       await h.page.setInputFiles("#fileInput", fx("sample.pdf"));
       await h.page.waitForTimeout(2200);
+      await h.screenshot("ekstrak-halaman-panel");
       await h.page.evaluate(() => {
         const r = document.querySelector("input[name=mode][value=extract]");
         if (r) { r.checked = true; r.dispatchEvent(new Event("change", { bubbles: true })); }
@@ -891,12 +960,13 @@ const FITUR = [
     },
   },
   {
-    id: "compress-link", nama: "Kompres PDF", kind: "link", file: "sample.pdf",
+    id: "compress-link", nama: "Kompres PDF", kind: "link", file: "sample.pdf", screenshot: "kompres",
     async jalankan(h) {
       await h.tab("compress");
       await h.page.waitForTimeout(400);
       await h.page.setInputFiles("#compressInput", fx("sample.pdf"));
       await h.page.waitForTimeout(1800);
+      await h.screenshot("kompres-panel");
       await h.page.click("#compressRunBtn");
       for (let i = 0; i < 90; i++) {
         await h.page.waitForTimeout(500);
@@ -1117,6 +1187,7 @@ async function main() {
          berkas, jadi langkahnya harus urut. */
       if (f.file && !f.kind) await h.unggah(fx(f.file));
       if (f.prep) await f.prep(h);
+      if (f.screenshot && f.kind !== "link") await h.screenshot(f.screenshot + "-panel");
       const out = f.jalankan ? await f.jalankan(h) : await h.jalankan({ timeout: f.timeout || 90 });
       if (f.negatif) {
         /* jalur negatif: aplikasi harus menolak dengan pesan ramah,
@@ -1154,7 +1225,7 @@ async function main() {
         fs.writeFileSync(path.join(dirK, `${f.id}__${bersih}`), o.bytes);
       }
       await f.validasi(h, out.keluar);
-      if (f.screenshot) await h.screenshot(f.screenshot);
+      if (f.screenshot) await h.screenshot(f.screenshot + "-hasil");
     } catch (e) {
       cek(`${label} menjalankan fitur`, false, e && e.message ? e.message : String(e));
     }

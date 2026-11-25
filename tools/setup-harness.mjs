@@ -37,7 +37,7 @@ console.log("Pustaka Chromium: " + ((await siapkanPustaka()) ? "siap" : "belum (
 /* Fixture uji juga gitignored, jadi perlu dibuat ulang setelah reset. */
 const PEMBUAT = ["mkfixtures.mjs", "mkfixtures-sign.mjs", "mkfixtures-translate.mjs",
   "mkfixtures-pagerange.mjs", "mkfixtures-merge.mjs", "mkfixtures-deskew.mjs",
-  "mkfixtures-ocr.mjs"];
+  "mkfixtures-ocr.mjs", "mkfixtures-semua.mjs"];
 for (const f of PEMBUAT) {
   const p = path.join(ROOT, "tools", f);
   if (!fs.existsSync(p)) { console.log("• " + f + " (tidak ada, dilewati)"); continue; }

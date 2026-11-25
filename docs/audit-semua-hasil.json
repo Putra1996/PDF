@@ -1,6 +1,6 @@
 {
-  "tanggal": "2026-11-25T04:30:48.513Z",
-  "pass": 127,
+  "tanggal": "2026-11-25T05:34:01.209Z",
+  "pass": 129,
   "fail": 0,
   "results": [
     {
@@ -41,7 +41,7 @@
     {
       "nama": "[watermark] menghasilkan berkas",
       "ok": true,
-      "detail": "sample-watermark.pdf (2663 B)"
+      "detail": "sample-watermark.pdf (2662 B)"
     },
     {
       "nama": "watermark: teks stempel masuk PDF",
@@ -52,6 +52,11 @@
       "nama": "watermark: stempel ada di setiap halaman",
       "ok": true,
       "detail": "halaman=3"
+    },
+    {
+      "nama": "watermark: stempel benar-benar tergambar (bukan sekadar teks)",
+      "ok": true,
+      "detail": "piksel gelap=2010"
     },
     {
       "nama": "[crop] menghasilkan berkas",
@@ -206,7 +211,7 @@
     {
       "nama": "[word2pdf] menghasilkan berkas",
       "ok": true,
-      "detail": "docu.pdf (991 B)"
+      "detail": "docu.pdf (996 B)"
     },
     {
       "nama": "word2pdf: PDF terbentuk",
@@ -221,7 +226,7 @@
     {
       "nama": "[ppt2pdf] menghasilkan berkas",
       "ok": true,
-      "detail": "presentasi.pdf (915 B)"
+      "detail": "presentasi.pdf (917 B)"
     },
     {
       "nama": "ppt2pdf: PDF terbentuk",
@@ -236,7 +241,7 @@
     {
       "nama": "[xls2pdf] menghasilkan berkas",
       "ok": true,
-      "detail": "tabel.pdf (1109 B)"
+      "detail": "tabel.pdf (1110 B)"
     },
     {
       "nama": "xls2pdf: PDF terbentuk",
@@ -251,7 +256,7 @@
     {
       "nama": "[pdf2word] menghasilkan berkas",
       "ok": true,
-      "detail": "sample.docx (2477 B)"
+      "detail": "sample.docx (2476 B)"
     },
     {
       "nama": "pdf2word: berkas .docx terbentuk",
@@ -364,9 +369,14 @@
       "detail": "sample-ttd.pdf"
     },
     {
+      "nama": "sign: tinta tanda tangan menambah piksel di halaman",
+      "ok": true,
+      "detail": "tinta 8641 vs 7981"
+    },
+    {
       "nama": "[redact] menghasilkan berkas",
       "ok": true,
-      "detail": "redact-redaksi.pdf (46950 B)"
+      "detail": "redact-redaksi.pdf (46949 B)"
     },
     {
       "nama": "redact: kata target hilang dari seluruh PDF",
@@ -374,19 +384,19 @@
       "detail": "[\"Halaman uji 1  Teks biasa yang harus tetap utuh.\",\"\",\"Halaman uji 3  Teks biasa yang harus tetap utuh.\"]"
     },
     {
-      "nama": "redact: 3 halaman hasil",
-      "ok": true,
-      "detail": "halaman=3"
-    },
-    {
       "nama": "redact: halaman tanpa hit tetap bisa dicari",
       "ok": true,
       "detail": "[\"Halaman uji 1  Teks biasa yang harus tetap utuh.\",\"Halaman uji 3  Teks biasa yang harus tetap utuh.\"]"
     },
     {
-      "nama": "redact: 3 halaman hasil",
+      "nama": "redact: hanya halaman yang direduksi punya kotak hitam pekat",
       "ok": true,
-      "detail": "halaman=3"
+      "detail": "hal.1=1367 hal.2=3055"
+    },
+    {
+      "nama": "redact: halaman tanpa hit tetap berupa teks (bukan gambar buram)",
+      "ok": true,
+      "detail": "piksel teks hal.1=1316"
     },
     {
       "nama": "[compare] menghasilkan berkas",
@@ -481,7 +491,7 @@
     {
       "nama": "[split] menghasilkan berkas",
       "ok": true,
-      "detail": "hasil-pisah.zip (3363 B), sample-hal-1.pdf (1006 B), sample-hal-2.pdf (1006 B), sample-hal-3.pdf (1005 B)"
+      "detail": "hasil-pisah.zip (3364 B), sample-hal-1.pdf (1006 B), sample-hal-2.pdf (1006 B), sample-hal-3.pdf (1006 B)"
     },
     {
       "nama": "split: arsip zip dibuat",
@@ -491,7 +501,7 @@
     {
       "nama": "split: zip valid",
       "ok": true,
-      "detail": "3363 B"
+      "detail": "3364 B"
     },
     {
       "nama": "split: 3 PDF per halaman",
@@ -521,7 +531,7 @@
     {
       "nama": "[extract-pages] menghasilkan berkas",
       "ok": true,
-      "detail": "sample-hal-1-1.pdf (1007 B)"
+      "detail": "sample-hal-1-1.pdf (1006 B)"
     },
     {
       "nama": "extract-pages: PDF hasil ada",
