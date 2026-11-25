@@ -1,5 +1,5 @@
 {
-  "tanggal": "2026-11-25T08:47:27.594Z",
+  "tanggal": "2026-11-25T15:22:33.694Z",
   "mode": "lokal",
   "pass": 44,
   "fail": 0,
@@ -32,7 +32,7 @@
     {
       "name": "Thumbnail halaman benar-benar dirender",
       "ok": true,
-      "detail": "gambar=6"
+      "detail": "gambar=3"
     },
     {
       "name": "Ukuran thumbnail thumbnail nyata (bukan kotak kosong)",
@@ -177,7 +177,7 @@
     {
       "name": "Performa: ganti mode < 3 detik",
       "ok": true,
-      "detail": "333 ms"
+      "detail": "302 ms"
     },
     {
       "name": "Performa: semua kartu tetap tampil setelah mode dibalik",

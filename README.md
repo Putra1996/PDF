@@ -2,7 +2,7 @@
 
 Aplikasi web untuk **memecah, mengekstrak, menggabungkan, mengompres, mengedit, mengonversi, dan melindungi** PDF. **Semua proses berjalan di browser** — file tidak pernah diunggah ke server mana pun.
 
-Seluruh proses tetap **offline**: hanya pustaka lokal di `vendor/` (pdf-lib, pdf.js, JSZip) yang dipakai.
+Seluruh proses berjalan **di dalam browser**: hanya pustaka lokal di `vendor/` (pdf-lib, pdf.js, JSZip) yang dipakai, dan **file tidak pernah diunggah**. Satu pengecualian opsional: alat **Terjemah PDF** bisa memakai mesin AI *daring* — teks **dikirim** (bukan file) ke server terjemahan, dan hanya kalau pengguna mengizinkan lewat kolom izin (bisa dimatikan; mesin offline & bawaan peramban tetap tersedia).
 
 > **Dibuat oleh Putra.** Kreditnya tercantum di antarmuka web — di header, di footer, dan di `<title>` halaman. File PDF yang dihasilkan **tidak** memuat kredit/stempel apa pun di dalamnya; metadata Producer/Creator hanya berisi nama aplikasi (`Pemisah PDF`).
 
@@ -164,19 +164,37 @@ Catatan:
   pesan yang jelas, bukan membuat halaman beku.
 - **OCR** memakai mesin Tesseract yang ikut disertakan di `vendor/`
   (`TextDetector` bawaan browser juga dipakai bila tersedia).
-- **Terjemah PDF** punya **dua mesin**:
-  1. **Mesin bawaan peramban** (`Translator`, Chrome 138+ dengan model
+- **Terjemah PDF** punya **tiga mesin**:
+  1. **Mesin AI daring** — server terjemahan (OpenAI-compatible, MyMemory,
+     LibreTranslate, atau server sendiri). Konfigurasi mesin diambil dari
+     **manifest di server** (`ai/translate-engine.json`), jadi begitu model,
+     prompt, atau endpoint diperbarui di server, aplikasi ini **ikut
+     memakainya tanpa perlu pembaruan aplikasi**. Menerjemahkan per
+     **kalimat lengkap** (bukan per baris) dan mengirim beberapa baris
+     berurutan sekaligus supaya model membaca konteks — hasilnya jauh lebih
+     akurat. Ada glosarium istilah, kunci API sendiri, dan tombol
+     "Perbarui dari server".
+  2. **Mesin bawaan peramban** (`Translator`, Chrome 138+ dengan model
      on-device). Dipakai otomatis kalau model bahasa **sudah ada** di
      perangkat; kalau belum, aplikasi tidak memaksa unduhan ±40 MB.
-  2. **Mesin offline bawaan aplikasi** — mesin Neural Machine Translation
+  3. **Mesin offline bawaan aplikasi** — mesin Neural Machine Translation
      Bergamot (WASM) + model **Indonesia ⇄ Inggris** yang ikut disertakan
      di `vendor/bergamot/`. Jalan **sepenuhnya tanpa internet**, tanpa
      server, tanpa mengunggah berkas.
 
-  Jadi aplikasi tetap bisa menerjemahkan di peramban yang tidak punya
-  mesin terjemahan bawaan — bug lama "Peramban ini belum punya mesin
-  terjemahan bawaan" sudah tidak lagi menjadi jalan buntu.
-  Rincian audit: `docs/audit-terjemah-2026-11-24.md`.
+  Rantai mesin: **AI daring → bawaan peramban → offline**. Kalau server AI
+  sedang error, aplikasi otomatis turun ke mesin berikutnya dan
+  memberi tahu pengguna. Teks hanya dikirim ke server kalau izin
+  "Izinkan kirim teks ke server AI daring" dinyalakan — dimatikan, semua
+  tetap jalan di perangkat.
+
+  Hasilnya bukan cuma Markdown: alat ini juga menghasilkan **PDF
+  terjemahan** (halaman asli jadi latar, teks asli ditutup, teks
+  terjemahan ditulis di tempat yang sama) plus **lapisan teks tak
+  terlihat**, jadi hasil terjemahan tetap bisa dicari & disalin.
+
+  Rincian audit: `docs/audit-terjemah-2026-11-24.md` dan
+  `docs/audit-terjemah-ai-2026-11-26.md`.
 - **HTML to PDF** memakai dialog cetak browser, jadi hasilnya perlu disimpan
   manual dari dialog tersebut.
 
@@ -186,6 +204,10 @@ Catatan:
 pemisah-pdf/
 ├── index.html
 ├── style.css
+├── ai/
+│   └── translate-engine.json (manifest mesin terjemahan AI daring —
+│                              boleh diperbarui di server tanpa rilis
+│                              aplikasi baru)
 ├── app.js            (antarmuka, tab, pemisahan, penggabungan)
 ├── compressor.js     (mesin kompresi: struktur, analisis DPI, gambar)
 ├── tool-core.js      (registry alat + helper bersama)
@@ -197,6 +219,7 @@ pemisah-pdf/
 ├── tool-smart.js     (kunci, lindungi, tanda tangan, redaksi, banding,
 │                      Markdown, ringkas, terjemah, OCR)
 ├── tool-translate.js (mesin terjemahan: bawaan peramban + offline WASM)
+├── tool-translate-ai.js (mesin terjemahan AI daring + manifest server)
 ├── tool-ui.js        (launcher 7 kategori + workspace alat generik)
 └── vendor/
     ├── pdf-lib.min.js       (menulis, memecah, menggabung, menyimpan ulang PDF)

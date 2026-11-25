@@ -5,7 +5,7 @@
 :root{
   /* Penanda build — naikkan setiap kali style.css berubah.
      Dipakai index.html untuk mendeteksi style.css basi di cache browser. */
-  --css-build:20261125b;
+  --css-build:20261126a;
   --bg:#f5f6fa;
   --bg-glow:#e6ebff;
   --surface:#ffffff;
@@ -1200,6 +1200,18 @@ code{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;
 /* ---------- pindai ---------- */
 .scan-video{width:100%;max-width:420px;border-radius:10px;margin-top:10px;background:#000}
 .scan-actions{display:flex;gap:8px;margin-top:8px}
+
+/* ---------- panel AI daring (alat Terjemah PDF) ---------- */
+.translate-ai-wrap{margin-top:6px;display:flex;flex-direction:column;gap:4px}
+.translate-ai-wrap p{margin:0 0 2px}
+.translate-ai-wrap .tool-label{margin-top:6px}
+.translate-ai-wrap textarea{resize:vertical;min-height:56px}
+.translate-ai-status{
+  padding:8px 10px;border-radius:8px;
+  background:rgba(120,120,140,.10);
+  line-height:1.45;
+}
+.translate-ai-actions{display:flex;gap:8px;margin-top:10px}
 
 /* ---------- responsif ---------- */
 @media (max-width:900px){

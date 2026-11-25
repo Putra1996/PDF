@@ -1,0 +1,70 @@
+{
+  "version": "2026-11-26.1",
+  "updatedAt": "2026-11-26T00:00:00Z",
+  "catatan": "Manifest mesin terjemahan AI daring. Berkas ini boleh diubah/ditingkatkan di server TANPA Releasing aplikasi baru: aplikasi mengunduh ulang manifest ini (dengan validasi ulang) setiap kali fitur Terjemah dipakai, jadi model, endpoint, dan prompt yang lebih baik langsung ikut terpakai.",
+  "defaults": {
+    "engineId": "",
+    "timeoutMs": 25000,
+    "retries": 2,
+    "concurrency": 3,
+    "temperature": 0.15
+  },
+  "engines": [
+    {
+      "id": "llm",
+      "label": "AI LLM (OpenAI-compatible)",
+      "protocol": "openai",
+      "endpoint": "https://api.openai.com/v1/chat/completions",
+      "model": "gpt-4o-mini",
+      "priority": 100,
+      "requiresKey": true,
+      "maxItems": 40,
+      "maxChars": 6000,
+      "pairs": "all",
+      "catatan": "Kualitas terbaik: kalimat dibaca beserta konteksnya. Butuh kunci API (milik Anda sendiri) atau endpoint OpenAI-compatible sendiri."
+    },
+    {
+      "id": "libretranslate",
+      "label": "LibreTranslate (server sendiri)",
+      "protocol": "libretranslate",
+      "endpoint": "",
+      "model": "",
+      "priority": 80,
+      "requiresKey": false,
+      "maxItems": 12,
+      "maxChars": 1800,
+      "pairs": "all",
+      "catatan": "Untuk server LibreTranslate milik sendiri. Isi endpoint di panel AI daring."
+    },
+    {
+      "id": "mymemory",
+      "label": "MyMemory daring (gratis, tanpa kunci)",
+      "protocol": "mymemory",
+      "endpoint": "https://api.mymemory.translated.net/get",
+      "model": "",
+      "priority": 60,
+      "requiresKey": false,
+      "maxItems": 8,
+      "maxChars": 460,
+      "pairs": "all",
+      "catatan": "Gratis dan tanpa kunci, tapi kuota harian terbatas dan penerjemahannya sifatnya mesin (bukan AI penuh)."
+    },
+    {
+      "id": "custom",
+      "label": "Server terjemahan sendiri (custom)",
+      "protocol": "custom",
+      "endpoint": "",
+      "model": "",
+      "priority": 90,
+      "requiresKey": false,
+      "maxItems": 40,
+      "maxChars": 8000,
+      "pairs": "all",
+      "catatan": "POST {from,to,texts:[...]} -> {translations:[...]}. Cocok untuk proxy AI milik sendiri."
+    }
+  ],
+  "prompt": {
+    "system": "Anda adalah penerjemah profesional dan teliti. Terjemahkan teks dari {from} ke {to} secara natural, akurat, dan mengalir, dengan gaya yang sama seperti aslinya. Pertahankan nama diri, istilah teknis, angka, satuan, kode, dan penanda seperti (catatan) atau [nomor]. Jangan menambah, menghapus, atau mengarang informasi. Balas HANYA dengan larik JSON berisi satu string untuk tiap baris masukan, dengan urutan yang sama persis.",
+    "user": "Terjemahkan baris-baris berikut dari {from} ke {to}.\n\n{glossary}\n\nBaris:\n{items}\n\nBalas hanya larik JSON berisi {n} string (satu per baris, urutan sama)."
+  }
+}

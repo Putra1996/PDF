@@ -1002,13 +1002,27 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
   /* ============================================================
      8. Terjemah PDF
      ------------------------------------------------------------
-     Dua mesin bisa dipakai (lihat tool-translate.js):
-       - "bawaan" : Translator API bawaan Chrome 138+ (on-device)
-       - "offline" : mesin Bergamot yang ikut disertakan di vendor/
-                     -> jalan penuh tanpa internet
-     Terjemahan dipecah per baris supaya:
-       - bisa diproses paralel (mesin bawaan peramban)
-       - kalimat yang sama (header/footer) tidak diterjemahkan 2x
+     Tiga mesin (lihat tool-translate.js):
+       - "online" : AI daring. Konfigurasi mesin (endpoint, model,
+                    prompt) diambil dari manifest di server, jadi
+                    perbaikan di server ikut terpakai tanpa rilis
+                    aplikasi baru.
+       - "bawaan" : Translator API bawaan Chrome 138+ (on-device).
+       - "offline" : mesin Bergamot yang ikut disertakan di vendor/.
+
+     Terjemahan dipecah per KALIMAT, bukan per baris:
+       - kalimat yang patah antar baris diterjemahkan utuh
+         (terjemahan per baris menghasilkan kalimat rancu,
+         pronoun menggantung, istilah tidak konsisten);
+       - kalimat yang sama (header/footer) tidak diterjemahkan 2x;
+       - mesin AI daring menerima beberapa baris BERURUTAN dalam
+         satu permintaan, jadi model membaca konteksnya -> hasil
+         jauh lebih akurat.
+
+     Hasil: berkas Markdown + PDF terjemahan (opsional). PDF
+     terjemahan memakai halaman asli sebagai latar (teks asli
+     ditutup) atau latar putih, dan selalu punya lapisan teks
+     tak terlihat supaya hasil tetap bisa dicari & disalin.
      ============================================================ */
 
   const TERJEMAH_LANG = [
@@ -1018,29 +1032,237 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
     ["ar", "Arab"], ["hi", "Hindi"], ["th", "Thai"], ["vi", "Vietnam"],
   ];
 
+  /* Baris teks dalam RUANG TAMPILAN (viewport pdf.js): koordinat
+     sudah memperhitungkan rotasi halaman, jadi teks terjemahan bisa
+     ditaruh tepat di tempat teks aslinya pada PDF hasil. */
+  async function barisTampilan(pdfjs, no) {
+    const page = await pdfjs.getPage(no);
+    const vp = page.getViewport({ scale: 1 });
+    const tc = await page.getTextContent();
+    const util = window.pdfjsLib && window.pdfjsLib.Util;
+    const items = [];
+    for (const it of tc.items) {
+      if (!it.str || !it.str.trim()) continue;
+      let x = it.transform ? it.transform[4] : 0;
+      let y = it.transform ? it.transform[5] : 0;
+      let h = it.height || 10;
+      let w = it.width || 0;
+      if (util && it.transform) {
+        const tx = util.transform(vp.transform, it.transform);
+        x = tx[4];
+        y = tx[5];
+        h = Math.hypot(tx[2], tx[3]) || h;
+        w = w || Math.hypot(tx[0], tx[1]);
+      }
+      items.push({ str: it.str, x: x, y: y, w: w, h: h, size: h });
+    }
+    /* Kelompokkan item menjadi baris (jarak y kecil = satu baris). */
+    const rows = [];
+    for (const it of items) {
+      let row = null;
+      for (const r of rows) {
+        if (Math.abs(r.y - it.y) < Math.max(2, it.h * 0.5)) { row = r; break; }
+      }
+      if (!row) { row = { y: it.y, items: [] }; rows.push(row); }
+      row.items.push(it);
+    }
+    /* Ruang tampilan: y makin besar = makin bawah. */
+    rows.sort((a, b) => a.y - b.y);
+    return rows.map((r) => {
+      r.items.sort((a, b) => a.x - b.x);
+      const text = r.items.map((i) => i.str).join("").replace(/\s+/g, " ").trim();
+      const x0 = Math.min.apply(null, r.items.map((i) => i.x));
+      const x1 = Math.max.apply(null, r.items.map((i) => i.x + i.w));
+      const size = Math.max.apply(null, r.items.map((i) => i.h));
+      return { text: text, x: x0, y: r.y, w: Math.max(1, x1 - x0), size: size, h: size };
+    });
+  }
+
+  /* Gabungkan baris menjadi satuan kalimat. Baris yang tidak diakhiri
+     tanda baca kalimat masih dilanjutkan ke baris berikutnya, jadi
+     satu kalimat yang patah dua baris diterjemahkan sebagai satu
+     kesatuan. Jarak baris yang jauh atau ukuran huruf yang berubah
+     besar menandai paragraf/judul baru. */
+  function buatSatuan(baris) {
+    const satuan = [];
+    let cur = null;
+    let prevY = null;
+    let prevSize = 0;
+    let prevText = "";
+    for (const ln of baris) {
+      const t = String(ln.text || "").trim();
+      if (!t) { cur = null; prevY = null; prevText = ""; continue; }
+      const tinggi = ln.size || 10;
+      const jarak = prevY == null ? 0 : ln.y - prevY;
+      const paragrafBaru = cur && (jarak > tinggi * 1.9 || ln.size > prevSize * 1.3);
+      /* Baris ini LANJUT dari baris sebelumnya hanya kalau:
+           - baris sebelumnya belum mengakhiri kalimat,
+           - baris sebelumnya bukan label/angka pendek, dan
+           - baris ini mulai huruf kecil ATAU baris sebelumnya berakhir
+             dengan tanda sambung (koma/hyphen).
+         Tanpa aturan ini, daftar angka (mis. tabel) ikut digabung
+         jadi satu "kalimat" dan angka terkirim ke server. */
+      const kataPrev = prevText ? prevText.split(/\s+/).length : 0;
+      const lanjut =
+        cur &&
+        !/[.!?…]["')\]]?$/.test(prevText) &&
+        kataPrev >= 3 &&
+        (/^[a-zà-ÿ]/.test(t) || /[,—–-]$/.test(prevText));
+      if (!cur || paragrafBaru || !lanjut) { cur = { baris: [], text: "" }; satuan.push(cur); }
+      cur.baris.push(ln);
+      cur.text = cur.text ? cur.text + " " + t : t;
+      /* Kalimat selesai kalau baris berakhir dengan tanda baca akhir
+         kalimat -> baris berikutnya jadi satuan baru. */
+      if (/[.!?…]["')\]]?$/.test(t)) cur = null;
+      prevY = ln.y;
+      prevSize = ln.size;
+      prevText = t;
+    }
+    return satuan;
+  }
+
+  /* Bagi kalimat terjemahan kembali ke jumlah baris aslinya
+     (perbandingan panjang proporsional). Isi dokumen tetap utuh:
+     tidak ada kata yang dibuang. */
+  function pecahKeBaris(teks, baris) {
+    const n = baris.length;
+    if (n <= 1) return [String(teks == null ? "" : teks)];
+    const kata = String(teks == null ? "" : teks).split(/\s+/).filter(Boolean);
+    if (!kata.length) return baris.map(function () { return ""; });
+    const bobot = baris.map(function (b) { return Math.max(1, String(b.text || "").length); });
+    const total = bobot.reduce(function (a, b) { return a + b; }, 0);
+    const hasil = [];
+    let k = 0;
+    for (let i = 0; i < n; i++) {
+      const sisaBaris = n - i;
+      const sisaKata = kata.length - k;
+      let ambil;
+      if (sisaBaris === 1) {
+        ambil = sisaKata;
+      } else {
+        ambil = Math.round((bobot[i] / total) * kata.length);
+        ambil = Math.max(1, Math.min(ambil, sisaKata - (sisaBaris - 1)));
+      }
+      hasil.push(kata.slice(k, k + ambil).join(" "));
+      k += ambil;
+    }
+    return hasil;
+  }
+
+  /* PDF terjemahan: halaman asli jadi latar (teks aslinya ditutup),
+     teks terjemahan ditulis di tempat yang sama. Selalu ada lapisan
+     teks tak_visible supaya hasil tetap bisa dicari & disalin. */
+  async function buatPdfTerjemahan(pdfjs, hasilBaris, asliBaris, opsi) {
+    const SKALA = 2;
+    const FONT = 'system-ui, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans", "DejaVu Sans", Arial, sans-serif';
+    const doc = await PDFDocument.create();
+    for (let i = 0; i < hasilBaris.length; i++) {
+      const no = i + 1;
+      const hal = await renderPage(pdfjs, no, SKALA, { skipRender: (opsi.latar || "asli") === "putih" });
+      const ctx = hal.ctx;
+      const asal = asliBaris[i] || [];
+      const hasil = hasilBaris[i] || [];
+      /* Tutup teks asli dengan kotak putih (hanya area teks, jadi
+         foto, stempel, dan garis yang tidak bertabrakan tetap utuh). */
+      ctx.fillStyle = "#ffffff";
+      for (const b of asal) {
+        const x = b.x * SKALA;
+        const y = (b.y - b.h * 0.98) * SKALA;
+        const w = Math.max(2, b.w * SKALA);
+        const h = Math.max(2, b.h * 1.3 * SKALA);
+        ctx.fillRect(x, y, w, h);
+      }
+      /* Tulis teks terjemahan. */
+      ctx.fillStyle = "#000000";
+      ctx.textBaseline = "alphabetic";
+      for (let k = 0; k < hasil.length; k++) {
+        const b = hasil[k];
+        if (!b || !b.text) continue;
+        const fs = Math.max(4, (b.size / 0.72) * SKALA);
+        ctx.font = fs + "px " + FONT;
+        const avail = Math.max(4, b.w * SKALA);
+        const m = ctx.measureText(b.text);
+        if (m.width > avail && m.width > 0) {
+          /* Teks lebih panjang dari kolom aslinya: dikompres horizontal
+             (tidak dipotong, tidak ada kata yang hilang). */
+          const k2 = Math.max(0.55, avail / m.width);
+          ctx.save();
+          ctx.translate(b.x * SKALA, b.y * SKALA);
+          ctx.scale(k2, 1);
+          ctx.fillText(b.text, 0, 0);
+          ctx.restore();
+        } else {
+          ctx.fillText(b.text, b.x * SKALA, b.y * SKALA);
+        }
+      }
+      const jpg = await canvasToBytes(hal.canvas, "image/jpeg", 0.92);
+      hal.canvas.width = hal.canvas.height = 0;
+      const lebarPt = hal.viewport.width / SKALA;
+      const tinggiPt = hal.viewport.height / SKALA;
+      const img = await doc.embedJpg(jpg);
+      const p = doc.addPage([lebarPt, tinggiPt]);
+      p.drawImage(img, { x: 0, y: 0, width: lebarPt, height: tinggiPt });
+      /* Lapisan teks tak terlihat -> hasil tetap bisa dicari & disalin. */
+      for (const b of hasil) {
+        if (!b || !b.text) continue;
+        await drawTextSafe(p, bersihkanTeks(b.text), {
+          x: b.x,
+          y: tinggiPt - b.y,
+          size: Math.max(4, b.size * 0.8),
+          color: C.rgb(0, 0, 0),
+          opacity: 0,
+          maxWidth: b.w * 1.02,
+        });
+      }
+      await tick();
+    }
+    return await saveDoc(doc);
+  }
+
   register({
     id: "translate",
     cat: "ai",
     name: "Terjemah PDF",
-    desc: "Terjemahkan teks PDF dengan mesin bawaan peramban atau mesin offline bawaan aplikasi.",
+    desc: "Terjemahkan teks PDF dengan AI daring, mesin bawaan peramban, atau mesin offline bawaan aplikasi.",
     icon: "translate",
     accept: ".pdf,application/pdf",
     multiple: true,
+    custom: "translateAI",
     fields: [
       { type: "select", id: "lang", label: "Bahasa tujuan", value: "en", options: TERJEMAH_LANG },
       { type: "select", id: "src", label: "Bahasa sumber", value: "id", options: TERJEMAH_LANG },
       {
         type: "select", id: "engine", label: "Mesin terjemahan", value: "auto",
         options: [
-          ["auto", "Otomatis (disarankan)"],
+          ["auto", "Otomatis — AI daring dulu, lalu bawaan peramban, lalu offline"],
+          ["online", "AI daring (server online)"],
           ["builtin", "Bawaan peramban (Chrome 138+)"],
-          ["offline", "Offline bawaan aplikasi"],
+          ["offline", "Offline bawaan aplikasi (privat, tanpa internet)"],
         ],
       },
       {
+        type: "select", id: "format", label: "Hasil", value: "both",
+        options: [
+          ["both", "Markdown + PDF terjemahan"],
+          ["md", "Markdown (.md) saja"],
+          ["pdf", "PDF terjemahan (.pdf) saja"],
+        ],
+      },
+      {
+        type: "select", id: "latar", label: "Latar PDF terjemahan", value: "asli",
+        options: [
+          ["asli", "Halaman asli (teks asli ditutup, foto/stempel tetap)"],
+          ["putih", "Latar putih bersih"],
+        ],
+      },
+      {
+        type: "check", id: "aiAllow", label: "Izinkan kirim teks ke server AI daring", value: true,
+      },
+      {
         type: "note",
-        text: "Mesin offline bawaan aplikasi sudah termasuk untuk Indonesia ⇄ Inggris dan berjalan tanpa internet. " +
-          "Pasangan bahasa lain memakai mesin bawaan peramban (butuh Chrome 138+ beserta model on-device).",
+        text: "Mesin AI daring menerjemahkan per kalimat lengkap (bukan per baris) dan membaca beberapa baris " +
+          "sekaligus, jadi hasilnya lebih akurat. Matikan izin di atas kalau dokumen tidak boleh keluar dari perangkat — " +
+          "mesin offline bawaan aplikasi (Indonesia ⇄ Inggris) tetap bisa dipakai tanpa internet.",
       },
     ],
     async run(ctx) {
@@ -1053,6 +1275,10 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
       if (from === to) {
         throw new Error("Bahasa sumber dan bahasa tujuan sama — tidak ada yang perlu diterjemahkan.");
       }
+      const aiOpsi = Object.assign({}, ctx.opts.ai || {});
+      const aiAllow = ctx.opts.aiAllow !== false;
+      const format = String(ctx.opts.format || "both");
+      const latar = String(ctx.opts.latar || "asli");
 
       /* Menyiapkan mesin harus terjadi di dalam gestur klik (Chrome
          mewajibkan user gesture saat model bahasa perlu diunduh),
@@ -1061,82 +1287,117 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
         from: from,
         to: to,
         mode: mode,
+        aiAllow: aiAllow,
+        ai: {
+          engineId: String(aiOpsi.engineId || ""),
+          apiKey: String(aiOpsi.apiKey || ""),
+          model: String(aiOpsi.model || ""),
+          endpoint: String(aiOpsi.endpoint || ""),
+          glossary: String(aiOpsi.glossary || ""),
+        },
         onProgress: (t) => ctx.progress(null, t),
       });
       const engine = await TR.create(plan);
-      const namaMesin = engine.kind === "offline" ? "mesin offline" : "mesin bawaan peramban";
+      const namaMesin =
+        engine.kind === "online"
+          ? "AI daring (" + (engine.label || engine.engineId || "server") + ")"
+          : engine.kind === "offline"
+            ? "mesin offline"
+            : "mesin bawaan peramban";
       ctx.progress(null, "Menerjemahkan dengan " + namaMesin + "…");
 
       const out = [];
       let totalHalaman = 0;
       let totalBaris = 0;
       let cachePakai = 0;
+      let terkirim = 0;
       const tMulai = (typeof performance !== "undefined" ? performance : Date).now();
 
       for (const f of ctx.files) {
         const pdfjs = await openPdfjs(f.bytes);
-        const halaman = [];
         try {
+          /* 1. Ambil teks per halaman (ruang tampilan). */
+          const asliBaris = [];
+          const satuanHalaman = [];
           for (let i = 1; i <= pdfjs.numPages; i++) {
-            const items = await extractText(pdfjs, i);
-            const lines = groupLines(items);
-            const teks = [];
-            for (const ln of lines) {
-              const t = (ln.text || "").replace(/\s+/g, " ").trim();
-              if (t) teks.push(t);
-            }
-            halaman.push(teks);
+            const baris = await barisTampilan(pdfjs, i);
+            asliBaris.push(baris);
+            satuanHalaman.push(buatSatuan(baris));
             totalHalaman++;
             await tick();
+          }
+
+          /* 2. Terjemahkan per halaman, per kalimat. */
+          const hasilBaris = [];
+          const hasilHalaman = [];
+          for (let h = 0; h < satuanHalaman.length; h++) {
+            const satuan = satuanHalaman[h];
+            if (!satuan.length) { hasilBaris.push([]); hasilHalaman.push(""); continue; }
+            ctx.progress(null, f.name + ": menterjemahkan halaman " + (h + 1) + "/" + satuanHalaman.length + "…");
+            const prefix = TR.cachePrefix(engine, from, to);
+            const perlu = [];
+            for (const s of satuan) {
+              if (TR.cacheGet(prefix + s.text) !== undefined) continue;
+              if (!TR.layakTerjemahkan(s.text)) continue;
+              perlu.push(s.text);
+            }
+            cachePakai += satuan.length - perlu.length;
+            if (perlu.length) {
+              const diterjemah = await engine.translateBatch(perlu, {
+                glossary: String(aiOpsi.glossary || ""),
+              });
+              terkirim += perlu.length;
+              for (let i = 0; i < perlu.length; i++) {
+                TR.cacheSet(prefix + perlu[i], diterjemah[i] != null ? diterjemah[i] : "");
+              }
+            }
+            /* Susun baris hasil: kalimat diterjemahan dipecah lagi ke
+               baris asalnya supaya posisinya tetap cocok. */
+            const baris = [];
+            for (const s of satuan) {
+              const c = TR.cacheGet(prefix + s.text);
+              const teks = c !== undefined ? c : s.text;
+              const pecah = pecahKeBaris(teks, s.baris);
+              for (let i = 0; i < s.baris.length; i++) {
+                baris.push({
+                  text: pecah[i] || "",
+                  x: s.baris[i].x, y: s.baris[i].y, w: s.baris[i].w,
+                  size: s.baris[i].size, h: s.baris[i].h,
+                });
+              }
+            }
+            totalBaris += baris.length;
+            hasilBaris.push(baris);
+            hasilHalaman.push(baris.map((b) => b.text).join("\n"));
+          }
+
+          /* 3. Hasil: Markdown dan/atau PDF terjemahan. */
+          const dasar = C.safeName(C.baseName(f.name));
+          const catatan = namaMesin + " · " + hasilHalaman.length + " halaman · " + totalBaris + " baris";
+          if (format === "md" || format === "both") {
+            const md = ["# " + C.baseName(f.name), "> " + catatan, ...hasilHalaman].join("\n\n") + "\n";
+            const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
+            out.push({ name: dasar + "-terjemahan.md", blob: blob, note: catatan });
+          }
+          if (format === "pdf" || format === "both") {
+            ctx.progress(null, f.name + ": menyusun PDF terjemahan…");
+            const bytes = await buatPdfTerjemahan(pdfjs, hasilBaris, asliBaris, { latar: latar });
+            out.push({ name: dasar + "-terjemahan.pdf", bytes: bytes, note: catatan + " · PDF" });
           }
         } finally {
           try { await pdfjs.destroy(); } catch (_) { /* abaikan */ }
         }
-
-        /* Terjemahkan per halaman: progres jelas, memori tetap kecil. */
-        const hasilHalaman = [];
-        for (let h = 0; h < halaman.length; h++) {
-          const baris = halaman[h];
-          if (!baris.length) { hasilHalaman.push(""); continue; }
-          ctx.progress(null, f.name + ": menterjemahkan halaman " + (h + 1) + "/" + halaman.length + "…");
-          const prefix = from + ">" + to + "\u0000";
-          const perlu = [];
-          const seen = new Set();
-          for (const t of baris) {
-            if (seen.has(t)) continue;
-            seen.add(t);
-            if (TR.cacheGet(prefix + t) === undefined) perlu.push(t);
-          }
-          cachePakai += baris.length - perlu.length;
-          if (perlu.length) {
-            const diterjemah = await engine.translateBatch(perlu);
-            for (let i = 0; i < perlu.length; i++) {
-              TR.cacheSet(prefix + perlu[i], diterjemah[i] != null ? diterjemah[i] : "");
-            }
-          }
-          /* susun ulang pakai cache (baris yang sama tidak dihitung 2x) */
-          const barisHasil = baris.map((t) => {
-            const c = TR.cacheGet(prefix + t);
-            return c !== undefined ? c : "";
-          });
-          totalBaris += baris.length;
-          hasilHalaman.push(barisHasil.join("\n"));
-        }
-
-        const md = ["# " + C.baseName(f.name), ...hasilHalaman].join("\n\n") + "\n";
-        const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
-        out.push({
-          name: C.safeName(C.baseName(f.name)) + "-terjemahan.md",
-          blob: blob,
-          note: namaMesin + " · " + hasilHalaman.length + " halaman · " + totalBaris + " baris",
-        });
       }
 
+      /* Catatan mesin (mis. AI daring gagal lalu turun ke offline). */
+      const catatanMesin = (plan.catatan || []).join(" ");
       const dt = Math.round(((typeof performance !== "undefined" ? performance : Date).now() - tMulai) / 100) / 10;
       if (out.length) {
         out[out.length - 1].note += " · " + dt + " dtk";
+        if (catatanMesin) out[out.length - 1].note += " · " + catatanMesin;
       }
       void cachePakai;
+      void terkirim;
       return out;
     },
   });
