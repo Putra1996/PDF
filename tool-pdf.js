@@ -705,6 +705,26 @@
     return m;
   }
 
+  /* Kotak tinta setelah diputar terhadap pusat halaman.
+     "kotakRot" dihitung analisis dengan memutar titik tinta terhadap
+     titik asal; di sini digeser supaya ikut pusat halaman, supaya
+     hasilnya sama persis dengan isi yang benar-benar diputar. */
+  function kotakSetelahRotasi(kotakRot, sudut, box) {
+    if (!kotakRot) return null;
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    const rad = (sudut * Math.PI) / 180;
+    const cos = Math.cos(rad), sin = Math.sin(rad);
+    const rx = cx * cos - cy * sin;
+    const ry = cx * sin + cy * cos;
+    return {
+      x: kotakRot.x + cx - rx,
+      y: kotakRot.y + cy - ry,
+      w: kotakRot.w,
+      h: kotakRot.h,
+    };
+  }
+
   /* Pangkas margin kosong (CropBox mengikuti kotak tinta). */
   function pangkasMargin(doc, page, kotak, m, margin) {
     if (!kotak || kotak.w <= 1 || kotak.h <= 1) return false;
@@ -759,6 +779,10 @@
       const AMBANG_SUDUT = 0.25;
       /* putaran 90 derajat mengubah halaman banyak, jadi syaratnya lebih ketat */
       const AMBANG_90 = 0.25;
+      /* pembalikan 180 derajat (halaman terbalik) mengubah isi dokumen
+         seluruhnya, jadi syaratnya paling ketat: analisis harus
+         benar-benar yakin halaman itu terbalik. */
+      const AMBANG_180 = 0.3;
 
       for (const f of files) {
         /* 1. Analisis kemiringan per halaman (hanya membaca berkas).
@@ -799,6 +823,48 @@
         const catatan = [];
         let diluruskan = 0, diputar = 0, dipangkas = 0, totalSudut = 0;
 
+        /* Terapkan koreksi pada satu halaman: putar isinya bila perlu,
+           lalu pangkas margin. Mengembalikan apa yang dilakukan. */
+        const terapkan = (doc, page, a) => {
+          const sudut = a.sudut || 0;
+          const besar = Math.abs(sudut);
+          /* Syarat kelayakan tergantung besar sudutnya:
+             - sudut kecil  : keyakinan analisis harus cukup
+             - 90 derajat   : mengubah halaman banyak -> lebih ketat
+             - 180 derajat  : membalik seluruh isi -> paling ketat, dan
+                              hanya boleh jalan bila analisis benar-benar
+                              yakin halamannya terbalik. */
+          const pembalikan = besar >= 135;
+          const ambang = a.orientasi ? AMBANG_90 : pembalikan ? AMBANG_180 : AMBANG_KEPASTIAN;
+          /* pembalikan 180 derajat hanya boleh jalan bila analisis
+             menandai halamannya terbalik (dua bukti independen sudah
+             sepakat). Tanpa itu, kemiringan kecil saja yang boleh
+             diperbaiki — lebih baik halaman tetap miring daripada
+             dokumen resmi dibalik. */
+          const boleh = pembalikan ? a.terbalik === true : true;
+          const layak = boleh && a.kepastian >= ambang && besar >= AMBANG_SUDUT;
+          let matriks = null;
+          if (mauDeskew && layak) {
+            matriks = putarIsiHalaman(doc, page, sudut);
+            diluruskan++;
+            totalSudut += besar;
+            if (a.orientasi) diputar++;
+          }
+          if (mauPangkas) {
+            /* Kotak tinta yang sudah diputar (dihitung pas analisis)
+               dipakai supaya pangkasannya tepat di tepi isi. Yang dipakai
+               adalah kotak "lembut" (ikut menghitung foto, tabel, dan
+               stempel pudar) supaya tidak ada isi yang terpotong. */
+            const kotakRot = a.kotakRotLembut || a.kotakRot;
+            const kotak =
+              matriks && kotakRot
+                ? kotakSetelahRotasi(kotakRot, sudut, page.getMediaBox())
+                : a.kotak;
+            if (pangkasMargin(doc, page, kotak, null, 8)) dipangkas++;
+          }
+          return matriks;
+        };
+
         /* Cara 1: muat & simpan berkas apa adanya. Semua isi (vektor,
            teks, anotasi, bookmark, field formulir) tetap utuh. */
         try {
@@ -807,18 +873,7 @@
           for (let i = 1; i <= total; i++) {
             const a = analisis.get(i);
             if (!a) continue;
-            const page = doc.getPage(i - 1);
-            let matriks = null;
-            const sudut = a.sudut || 0;
-            const ambang = a.orientasi ? AMBANG_90 : AMBANG_KEPASTIAN;
-            const layak = a.kepastian >= ambang && Math.abs(sudut) >= AMBANG_SUDUT;
-            if (mauDeskew && layak) {
-              matriks = putarIsiHalaman(doc, page, sudut);
-              diluruskan++;
-              totalSudut += Math.abs(sudut);
-              if (a.orientasi) diputar++;
-            }
-            if (mauPangkas && pangkasMargin(doc, page, a.kotak, matriks, 8)) dipangkas++;
+            terapkan(doc, doc.getPage(i - 1), a);
           }
           if (opts.stripMeta) {
             doc.setTitle("");
@@ -846,17 +901,7 @@
             for (let i = 1; i <= copied.length; i++) {
               const a = analisis.get(i);
               if (!a) continue;
-              const page = dst.getPage(i - 1);
-              let matriks = null;
-              const sudut = a.sudut || 0;
-              const ambang = a.orientasi ? AMBANG_90 : AMBANG_KEPASTIAN;
-              if (mauDeskew && a.kepastian >= ambang && Math.abs(sudut) >= AMBANG_SUDUT) {
-                matriks = putarIsiHalaman(dst, page, sudut);
-                diluruskan++;
-                totalSudut += Math.abs(sudut);
-                if (a.orientasi) diputar++;
-              }
-              if (mauPangkas && pangkasMargin(dst, page, a.kotak, matriks, 8)) dipangkas++;
+              terapkan(dst, dst.getPage(i - 1), a);
             }
             if (opts.stripMeta) {
               dst.setTitle("");

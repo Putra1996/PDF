@@ -86,8 +86,12 @@ const BARIS = [
         const e = cx - a * cx - c * cy, f = cy - b * cx - d * cy;
         const fmt = (n) => (Math.round(n * 100000) / 100000).toString();
         const ctx = doc.context;
-        const awal = ctx.register(ctx.stream("q\\n" + [a,b,c,d,e,f].map(fmt).join(" ") + " cm\\n"));
-        const akhir = ctx.register(ctx.stream("Q\\n"));
+        /* "\n" di dalam template literal berakhir sebagai "\"+"n"
+           (bukan baris baru) sehingga operator "cm" tidak pernah
+           dibaca PDF dan halamannya tetap lurus. Pakai NL eksplisit. */
+        const NL = String.fromCharCode(10);
+        const awal = ctx.register(ctx.stream("q" + NL + [a,b,c,d,e,f].map(fmt).join(" ") + " cm" + NL));
+        const akhir = ctx.register(ctx.stream("Q" + NL));
         const isi = page.node.get(PDFName.of("Contents"));
         const arr = isi instanceof PDFArray ? isi.asArray().slice() : (isi ? [isi] : []);
         page.node.set(PDFName.of("Contents"), ctx.obj([awal, ...arr, akhir]));

@@ -1,12 +1,12 @@
 {
-  "tanggal": "2026-11-25T05:38:12.209Z",
+  "tanggal": "2026-11-25T08:49:23.622Z",
   "pass": 39,
   "fail": 0,
   "results": [
     {
       "name": "Pisah: thumbnail pertama tampil cepat",
       "ok": true,
-      "detail": "1317 ms"
+      "detail": "1512 ms"
     },
     {
       "name": "Pisah: thumbnail benar-benar ter-render (bukan placeholder)",
@@ -41,12 +41,12 @@
     {
       "name": "Pisah: reorder file cepat",
       "ok": true,
-      "detail": "1207 ms"
+      "detail": "1208 ms"
     },
     {
       "name": "Gabung: kartu pratinjau muncul cepat",
       "ok": true,
-      "detail": "271 ms"
+      "detail": "266 ms"
     },
     {
       "name": "Gabung: thumbnail pratinjau benar-benar ter-render",
@@ -81,7 +81,7 @@
     {
       "name": "Gabung: ganti mode cepat",
       "ok": true,
-      "detail": "1208 ms"
+      "detail": "1206 ms"
     },
     {
       "name": "Gabung: kembali ke mode awal TIDAK render ulang (cache bekerja)",
@@ -101,7 +101,7 @@
     {
       "name": "Gabung: geser halaman cepat",
       "ok": true,
-      "detail": "1208 ms"
+      "detail": "1207 ms"
     },
     {
       "name": "Gabung: setelah scroll, kartu yang terlihat punya thumbnail",
@@ -126,7 +126,7 @@
     {
       "name": "Susun: grid halaman muncul cepat",
       "ok": true,
-      "detail": "292 ms"
+      "detail": "313 ms"
     },
     {
       "name": "Susun: thumbnail yang terlihat benar-benar ter-render",

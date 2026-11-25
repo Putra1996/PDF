@@ -5,7 +5,7 @@
 :root{
   /* Penanda build — naikkan setiap kali style.css berubah.
      Dipakai index.html untuk mendeteksi style.css basi di cache browser. */
-  --css-build:20261125a;
+  --css-build:20261125b;
   --bg:#f5f6fa;
   --bg-glow:#e6ebff;
   --surface:#ffffff;

@@ -114,6 +114,70 @@ const ANALISIS = async ({ b64 }) => {
   return hasil;
 };
 
+/* ---------- estimator sudut mandiri (entropi profil proyeksi) ----------
+   Ditulis terpisah dari kode aplikasi supaya hasil "sisa sudut"
+   tidak hanya mengulang apa yang diuji. */
+const SUDUT_MANDIRI = async ({ b64, min, max, langkah }) => {
+  const bin = atob(b64);
+  const u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  const doc = await pdfjsLib.getDocument({ data: u8 }).promise;
+  const hal = await doc.getPage(1);
+  const vp = hal.getViewport({ scale: 1.5 });
+  const c = document.createElement("canvas");
+  c.width = Math.ceil(vp.width);
+  c.height = Math.ceil(vp.height);
+  const ctx = c.getContext("2d", { alpha: false });
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, c.width, c.height);
+  await hal.render({ canvasContext: ctx, viewport: vp }).promise;
+  const img = ctx.getImageData(0, 0, c.width, c.height).data;
+  const t = vp.transform;
+  const det = t[0] * t[3] - t[1] * t[2];
+  const titik = [];
+  for (let y = 0; y < c.height; y += 2) {
+    for (let x = 0; x < c.width; x += 2) {
+      const p4 = (y * c.width + x) * 4;
+      const g = (img[p4] * 299 + img[p4 + 1] * 587 + img[p4 + 2] * 114) / 1000;
+      if (g > 170) continue;
+      const dx = x + 0.5 - t[4], dy = y + 0.5 - t[5];
+      titik.push((t[3] * dx - t[2] * dy) / det, (-t[1] * dx + t[0] * dy) / det);
+    }
+  }
+  await doc.destroy();
+  const n = titik.length / 2;
+  if (n < 200) return null;
+  const BINS = 512;
+  let terbaik = 0, terbaikH = Infinity;
+  for (let a = min; a <= max + 1e-9; a += langkah) {
+    const rad = (a * Math.PI) / 180;
+    const s = Math.sin(rad), co = Math.cos(rad);
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < titik.length; i += 2) {
+      const v = titik[i] * s + titik[i + 1] * co;
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+    }
+    if (!(hi > lo)) continue;
+    const bins = new Float64Array(BINS);
+    const k = (BINS - 1) / (hi - lo);
+    for (let i = 0; i < titik.length; i += 2) {
+      const v = titik[i] * s + titik[i + 1] * co;
+      let b = ((v - lo) * k) | 0;
+      if (b < 0) b = 0; else if (b > BINS - 1) b = BINS - 1;
+      bins[b]++;
+    }
+    let H = 0;
+    for (let i = 0; i < BINS; i++) {
+      if (!bins[i]) continue;
+      const pr = bins[i] / n;
+      H -= pr * Math.log(pr);
+    }
+    if (H < terbaikH) { terbaikH = H; terbaik = a; }
+  }
+  return Math.round(terbaik * 1000) / 1000;
+};
+
 /* ---------- bandingkan piksel gambar (bukti kualitas) ---------- */
 const BANDINGKAN_GAMBAR = async ({ a, b }) => {
   const keBytes = (b64) => {
@@ -350,8 +414,13 @@ async function main() {
     if (r.bytes) {
       const after = await analisis(r.bytes);
       simpan("sesudah-pindai-tegak90.png", after.halaman[0].png);
-      check("Teks tegak jadi mendatar (sisa ~0°)", Math.abs(after.halaman[0].sudut) < 0.5,
-        `sisa=${after.halaman[0].sudut}°`);
+      /* estimator mandiri: rentang -100..100 supaya putaran 90 derajat
+         juga terlihat (analisis aplikasi hanya mencari sudut kecil) */
+      const sisaMandiri = await page.evaluate(SUDUT_MANDIRI, {
+        b64: r.bytes.toString("base64"), min: -100, max: 100, langkah: 0.5,
+      });
+      check("Teks tegak jadi mendatar (sisa ~0°)", Math.abs(sisaMandiri) < 1.5,
+        `sisa=${sisaMandiri}° (aplikasi: ${after.halaman[0].sudut}°)`);
       check("Teks tegak dulu mendatar, sekarang tidak lagi",
         !before.halaman[0].tegas && after.halaman[0].tegas,
         `tegas=${before.halaman[0].tegas} -> ${after.halaman[0].tegas}`);

@@ -1,12 +1,12 @@
 {
-  "tanggal": "2026-11-25T05:58:55.555Z",
+  "tanggal": "2026-11-25T08:42:55.822Z",
   "pass": 129,
   "fail": 0,
   "results": [
     {
       "nama": "[rotate] menghasilkan berkas",
       "ok": true,
-      "detail": "sample-putar.pdf (1792 B)"
+      "detail": "sample-putar.pdf (1791 B)"
     },
     {
       "nama": "rotate: semua halaman /Rotate 90",
@@ -111,7 +111,7 @@
     {
       "nama": "[repair] menghasilkan berkas",
       "ok": true,
-      "detail": "sample-rapi.pdf (2753 B)"
+      "detail": "sample-rapi.pdf (2642 B)"
     },
     {
       "nama": "repair: PDF hasil tetap 3 halaman",
@@ -211,7 +211,7 @@
     {
       "nama": "[word2pdf] menghasilkan berkas",
       "ok": true,
-      "detail": "docu.pdf (996 B)"
+      "detail": "docu.pdf (995 B)"
     },
     {
       "nama": "word2pdf: PDF terbentuk",
@@ -226,7 +226,7 @@
     {
       "nama": "[ppt2pdf] menghasilkan berkas",
       "ok": true,
-      "detail": "presentasi.pdf (915 B)"
+      "detail": "presentasi.pdf (916 B)"
     },
     {
       "nama": "ppt2pdf: PDF terbentuk",
@@ -256,7 +256,7 @@
     {
       "nama": "[pdf2word] menghasilkan berkas",
       "ok": true,
-      "detail": "sample.docx (2477 B)"
+      "detail": "sample.docx (2476 B)"
     },
     {
       "nama": "pdf2word: berkas .docx terbentuk",
@@ -376,7 +376,7 @@
     {
       "nama": "[redact] menghasilkan berkas",
       "ok": true,
-      "detail": "redact-redaksi.pdf (46950 B)"
+      "detail": "redact-redaksi.pdf (46949 B)"
     },
     {
       "nama": "redact: kata target hilang dari seluruh PDF",
@@ -471,7 +471,7 @@
     {
       "nama": "[ocr] menghasilkan berkas",
       "ok": true,
-      "detail": "sample-ocr.pdf (1788 B)"
+      "detail": "sample-ocr.pdf (1787 B)"
     },
     {
       "nama": "ocr: PDF hasil valid",
@@ -481,7 +481,7 @@
     {
       "nama": "[merge] menghasilkan berkas",
       "ok": true,
-      "detail": "sample-dan-1-lainnya-gabungan.pdf (2127 B)"
+      "detail": "sample-dan-1-lainnya-gabungan.pdf (2128 B)"
     },
     {
       "nama": "merge: 3+1 = 4 halaman",
@@ -491,7 +491,7 @@
     {
       "nama": "[split] menghasilkan berkas",
       "ok": true,
-      "detail": "hasil-pisah.zip (3361 B), sample-hal-1.pdf (1005 B), sample-hal-2.pdf (1005 B), sample-hal-3.pdf (1005 B)"
+      "detail": "hasil-pisah.zip (3364 B), sample-hal-1.pdf (1006 B), sample-hal-2.pdf (1006 B), sample-hal-3.pdf (1006 B)"
     },
     {
       "nama": "split: arsip zip dibuat",
@@ -501,7 +501,7 @@
     {
       "nama": "split: zip valid",
       "ok": true,
-      "detail": "3361 B"
+      "detail": "3364 B"
     },
     {
       "nama": "split: 3 PDF per halaman",

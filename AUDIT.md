@@ -35,7 +35,7 @@ persis seperti susunan screenshot.
 | Item screenshot | Status | Bukti kode | Bukti uji |
 |---|---|---|---|
 | Compress PDF | **existing** | Tab `#compressView` + `compressor.js` (5 tingkat, estimasi ukuran, anti-membengkak). Launcher: tautan `link:"compress"`. | `regress.mjs` → "compress: ukuran lebih kecil 29241 → 22823", "40 halaman tetap" |
-| Rapi PDF (Repair) | **new** → **meningkat** | `tool-pdf.js:514` `repair` — bangun ulang struktur, **luruskan halaman hasil pindai yang miring** (deteksi dari piksel tinta, koreksi lewat matriks content stream — vektor/teks/gambar **tidak ditulis ulang**), putar 90° otomatis, pangkas margin, anotasi/field ikut diputar | `tools/audit-deskew.mjs` → **56 pemeriksaan lulus, 0 gagal** (sudut sisa 0,00°, piksel gambar pindai byte-identik, tautan & teks tetap utuh) — rinci di `docs/audit-deskew-2026-11-24.md` |
+| Rapi PDF (Repair) | **new** → **meningkat** | `tool-pdf.js` `repair` — bangun ulang struktur, **luruskan halaman hasil pindai yang miring** (deteksi dari piksel tinta, koreksi lewat matriks content stream — vektor/teks/gambar **tidak ditulis ulang**), putar 90° otomatis, pangkas margin (kotak "lembut" supaya foto/stempel pudar tidak terpotong), anotasi/field ikut diputar, pembalikan 180° hanya bila dua bukti independen sepakat | `tools/audit-deskew.mjs` → **56 lulus, 0 gagal** · `tools/audit-rapi.mjs` → **58 lulus, 0 gagal** (sudut sisa 0,00° diukur estimator mandiri, isi 0,5 pt dari asal, cakupan piksel pratinjau↔PDF final 100 %) — rinci di `docs/audit-rapi-2026-11-25.md` |
 | OCR PDF | **new** | `tool-smart.js` `ocr` — mesin Tesseract **offline** (`vendor/tesseract`), dokumen asli disalamat di tempat, tiga mode hasil (tak terlihat / dokumen bersih / teks terlihat di atas gambar), halaman berteks dilewati, mesin OCR paralel, progres nyata | `tools/audit-ocr.mjs` → **44 pemeriksaan lulus, 0 gagal** (duplikasi, koordinat rotasi/crop, lebar kata, anotasi, bookmark & field formulir, 24 halaman 18,6 detik) — rinci di `docs/audit-ocr-2026-11-23.md` |
 
 ### CONVERT TO PDF (5)
@@ -622,3 +622,73 @@ berisi tiap berkas keluaran yang diuji).
 | `tools/audit-ocr.mjs` | 44 | 0 |
 | `tools/audit-preview-perf.mjs` | 39 | 0 |
 | `tools/verify-produksi.mjs` | 74 | 0 — cacat layout toolbar lama ikut terperbaiki |
+
+---
+
+# Audit Mendalam "Rapi PDF" — dokumen pindai miring ±0,8° — 2026-11-25
+
+Kasus nyata dari pengguna: **surat keterangan hasil pindai dengan kemiringan
+kecil ±0,8°** (kop surat, nomor, stempel bundar, foto, tanda tangan).
+Audit ini mencakup seluruh fitur **Rapi PDF**, lalu memperbaikinya.
+
+Rincian lengkap: `docs/audit-rapi-2026-11-25.md` ·
+bukti visual: `docs/audit-rapi-2026-11-25/` ·
+harness baru: `tools/audit-rapi.mjs` (**58 lulus / 0 gagal**) ·
+fixture baru: `tools/mkfixtures-rapi.mjs` (11 fixture).
+
+## Temuan yang diperbaiki
+
+| # | Temuan | Dampak |
+|---|---|---|
+| 1 | `skorProyeksi` salah hitung rentang min–max (`else if`) | skor meledak di sudut palsu → **kemiringan terdeteksi salah** |
+| 2 | Tanda arah saat meluruskan frame salah (`-h.sudut`) | sisa miring 2× lipat, segmentasi baris kacau |
+| 3 | Deteksi "terbalik" terlalu lemah (ambang 0,02, satu bukti) | **dokumen pindai 0,8° dibalik 180°** — dokumen resmi jadi terbalik |
+| 4 | Cabang "teks tegak" selalu memilih −90° | pindai −90° berakhir terbalik |
+| 5 | Fixture deskew **tidak pernah benar-benar miring** (escaping `\n`) | regresi deskew 56/0 sebelumnya **false positive** |
+| 6 | Pangkas margin memakai ambang "tinta gelap" | foto/tabel/stempel pudar bisa **terpotong** |
+| 7 | Kotak margin dari AABB yang diputar | pangkas margin selalu lebih longgar dari seharusnya |
+| 8 | Pembalikan 180° tanpa penjaga di sisi alat | dokumen bisa dibalik tanpa bukti kuat |
+| 9 | Resolusi analisis 1100 px & langkah 0,44° | sudut kecil (<1°) kurang presisi |
+
+Kasus pengguna, sebelum → sesudah:
+
+| | Sebelum | Sesudah |
+|---|---|---|
+| Sudut koreksi | **179,20°** (dokumen dibalik) | **−0,74°** |
+| Sisa kemiringan | — | **0,00°** |
+| Jarak isi masukan ↔ keluaran | — | **0,511 pt** (sub-piksel) |
+| Cakupan piksel pratinjau di PDF final | — | **100,0 %** (balik 99,9 %) |
+| Stream JPEG pindai | — | byte-identik (tidak di-encode ulang) |
+
+Perbaikan kunci: (a) `min`/`max` dihitung terpisah; (b) frame diluruskan
+dengan `+h.sudut`; (c) deteksi terbalik butuh **dua bukti independen**
+saling sepakat — *sisi rata* baris teks **dan** *titik berat vertikal*
+(huruf Latin menumpuk di atas baris, jadi teks terbalik menandainya
+terbalik); (d) pembalikan ≥135° hanya boleh jalan bila analisis menandainya
+tebalik dengan keyakinan lebih tinggi.
+
+## Bukti independen
+
+Sudut residual diukur dengan estimator **yang ditulis ulang di harness**
+(profil proyeksi diukur dengan entropi histogram, bukan jumlah kuadrat isi
+bin seperti di aplikasi) — jadi hasil audit tidak mengulang kode yang
+sedang diuji. Konten diverifikasi secara geometrik (jarak titik tinta
+masukan yang diputar vs keluaran) **dan** secara piksel (cakupan
+pratinjau ↔ PDF final di ruang pengguna PDF).
+
+## Status suite regresi setelah audit Rapi PDF
+
+| Harness | Pemeriksaan | Gagal |
+|---|---|---|
+| `tools/audit-rapi.mjs` (baru) | 58 | 0 |
+| `tools/audit-deskew.mjs` (fixture asli + estimator mandiri) | 56 | 0 |
+| `tools/audit-semua.mjs` (payung 33 fitur) | 129 | 0 |
+| `tools/audit-editor.mjs` | 29 | 0 |
+| `tools/verify-produksi.mjs` | 74 | 0 |
+| `tools/audit-sign.mjs` | 65 | 0 |
+| `tools/audit-sign-touch.mjs` | 27 | 0 |
+| `tools/audit-pagerange.mjs` | 106 | 0 |
+| `tools/audit-merge-preview.mjs` | 44 | 0 |
+| `tools/audit-ocr.mjs` | 44 | 0 |
+| `tools/audit-preview-perf.mjs` | 39 | 0 |
+| `tools/audit-translate.mjs` | 30 | 1 — batasan lingkungan (Translator API tak tersedia di Chromium headless; fallback offline lulus) |
