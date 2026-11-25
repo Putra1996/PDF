@@ -5,7 +5,7 @@
 :root{
   /* Penanda build — naikkan setiap kali style.css berubah.
      Dipakai index.html untuk mendeteksi style.css basi di cache browser. */
-  --css-build:20261124i;
+  --css-build:20261125a;
   --bg:#f5f6fa;
   --bg-glow:#e6ebff;
   --surface:#ffffff;
@@ -1238,7 +1238,7 @@ code{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;
    ============================================================ */
 .ed-wrap{display:flex;flex-direction:column;gap:12px}
 .ed-bar{
-  display:flex;flex-wrap:wrap;align-items:center;gap:6px;
+  display:flex;flex-wrap:wrap;align-items:stretch;gap:6px;
   padding:10px 12px;border:1px solid var(--line);border-radius:12px;
   background:var(--surface);
 }
@@ -1246,7 +1246,7 @@ code{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;
 /* Grup toolbar: tombol dalam satu grup tidak dipisah antar baris,
    sehingga toolbar rapi di desktop maupun mobile. */
 .ed-group{display:inline-flex;align-items:center;gap:4px;flex:0 0 auto}
-.ed-bar .ed-menu-wrap{flex:0 0 auto}
+.ed-bar .ed-menu-wrap{flex:0 0 auto;align-items:center}
 .ed-menu-wrap{position:relative;display:inline-flex}
 .ed-menu{
   position:absolute;top:calc(100% + 6px);left:0;z-index:40;min-width:200px;

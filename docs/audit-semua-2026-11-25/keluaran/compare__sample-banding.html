@@ -1,0 +1,19 @@
+<!DOCTYPE html><html lang="id"><head><meta charset="utf-8"><title>Perbandingan PDF</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:24px;background:#f8fafc;color:#0f172a}
+h1{font-size:20px} .meta{color:#64748b;font-size:13px;margin-bottom:16px}
+table{border-collapse:collapse;width:100%;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+td{border-top:1px solid #e2e8f0;padding:8px 10px;font-size:13px;vertical-align:top}
+td.tag{font-weight:600;white-space:nowrap;width:90px}
+.d- .tag{color:#b91c1c}.d+ .tag{color:#15803d}.d= .tag{color:#64748b}
+.d- td:nth-child(2){background:#fef2f2}.d+ td:nth-child(3){background:#f0fdf4}
+</style></head><body>
+<h1>Perbandingan PDF</h1>
+<p class="meta">sample.pdf &harr; satu.pdf · 2 baris sama, 4 hilang, 0 baru · 3 vs 1 halaman</p>
+<table><tr class="d-="><td class="tag">SAMA</td><td>Uji halaman 1 Kata kunci rahasia untuk uji penyensoran.</td><td>Uji halaman 1 Kata kunci rahasia untuk uji penyensoran.</td></tr>
+<tr class="d-="><td class="tag">SAMA</td><td>Baris isi dokumen kedua.</td><td>Baris isi dokumen kedua.</td></tr>
+<tr class="d--"><td class="tag">HILANG</td><td>Uji halaman 2 Kata kunci rahasia untuk uji penyensoran.</td><td></td></tr>
+<tr class="d--"><td class="tag">HILANG</td><td>Baris isi dokumen kedua.</td><td></td></tr>
+<tr class="d--"><td class="tag">HILANG</td><td>Uji halaman 3 Kata kunci rahasia untuk uji penyensoran.</td><td></td></tr>
+<tr class="d--"><td class="tag">HILANG</td><td>Baris isi dokumen kedua.</td><td></td></tr></table>
+</body></html>

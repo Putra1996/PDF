@@ -2,7 +2,7 @@
   {
     "name": "Pindai miring 3° -> alat berhasil",
     "ok": true,
-    "detail": "173591 byte, 2.0s"
+    "detail": "173718 byte, 1.4s"
   },
   {
     "name": "Jumlah halaman tetap 1",
@@ -17,17 +17,17 @@
   {
     "name": "Halaman memang miring sebelum diperbaiki",
     "ok": true,
-    "detail": "sebelum=-3.022°"
+    "detail": "sebelum=-2.978°"
   },
   {
     "name": "Piksel gambar pindai TIDAK berubah (kualitas utuh)",
     "ok": true,
-    "detail": "gambar=1->1, ukuran=172165->172165"
+    "detail": "gambar=1->1, ukuran=172292->172292"
   },
   {
     "name": "Ukuran berkas tidak membengkak",
     "ok": true,
-    "detail": "173480 -> 173591 byte"
+    "detail": "173607 -> 173718 byte"
   },
   {
     "name": "Catatan hasil informatif",
@@ -37,7 +37,7 @@
   {
     "name": "Vektor miring 3° -> alat berhasil",
     "ok": true,
-    "detail": "3163 byte, 1.3s"
+    "detail": "3163 byte, 0.5s"
   },
   {
     "name": "Sudut sisa vektor ~0°",
@@ -82,7 +82,7 @@
   {
     "name": "Halaman lurus -> alat berhasil",
     "ok": true,
-    "detail": "169075 byte"
+    "detail": "168997 byte"
   },
   {
     "name": "Halaman lurus TIDAK diputar",
@@ -102,7 +102,7 @@
   {
     "name": "Foto tanpa teks -> alat berhasil",
     "ok": true,
-    "detail": "506541 byte"
+    "detail": "506449 byte"
   },
   {
     "name": "Foto tanpa teks: halaman tidak diputar (ukuran sama)",
@@ -117,7 +117,7 @@
   {
     "name": "Pindai tegak 90° -> alat berhasil",
     "ok": true,
-    "detail": "168017 byte"
+    "detail": "167890 byte"
   },
   {
     "name": "Teks tegak jadi mendatar (sisa ~0°)",
@@ -137,7 +137,7 @@
   {
     "name": "Pindai miring -2,5° -> alat berhasil",
     "ok": true,
-    "detail": "172428 byte"
+    "detail": "172649 byte"
   },
   {
     "name": "Sudut sisa -2,5° ~0°",
@@ -152,7 +152,7 @@
   {
     "name": "Batas sudut 2°: halaman 6° tidak diluruskan",
     "ok": true,
-    "detail": "174831 byte"
+    "detail": "175132 byte"
   },
   {
     "name": "Sudut tetap ~6° (tidak disentuh)",
@@ -162,17 +162,17 @@
   {
     "name": "Opsi deskew=false: berkas tetap dibuat",
     "ok": true,
-    "detail": "173234 byte"
+    "detail": "173361 byte"
   },
   {
     "name": "Opsi deskew=false: tidak ada pelurusan",
     "ok": true,
-    "detail": "sisa=-3.022°"
+    "detail": "sisa=-2.978°"
   },
   {
     "name": "Opsi autoRotate=false: halaman tegak dibiarkan",
     "ok": true,
-    "detail": "167748 byte"
+    "detail": "167621 byte"
   },
   {
     "name": "Opsi autoRotate=false: tidak diputar 90°",
@@ -212,7 +212,7 @@
   {
     "name": "PDF 3 halaman -> alat berhasil",
     "ok": true,
-    "detail": "344856 byte, 1.4s"
+    "detail": "344905 byte, 1.1s"
   },
   {
     "name": "Jumlah halaman tetap 3",
@@ -262,7 +262,7 @@
   {
     "name": "Beban 12 halaman -> alat berhasil",
     "ok": true,
-    "detail": "2077671 byte, 2.9s"
+    "detail": "2079195 byte, 3.6s"
   },
   {
     "name": "Beban: semua 12 halaman lurus",
@@ -272,7 +272,7 @@
   {
     "name": "Beban 12 halaman selesai < 60 detik",
     "ok": true,
-    "detail": "2.9s"
+    "detail": "3.6s"
   },
   {
     "name": "Tidak ada error JavaScript selama audit",

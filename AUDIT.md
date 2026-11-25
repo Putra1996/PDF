@@ -566,3 +566,59 @@ Bukti visual ada di `docs/audit-ttd-2026-11-24/`; rincian lengkap di
   `https://putra1996.github.io/PDF/`. Workflow-nya ada di
   `.github/workflows/verify-produksi.yml` (dipasang manual: token yang
   dipakai sandbox tidak punya scope `workflows`).
+
+---
+
+# Audit payung SEMUA fitur — 2026-11-25
+
+Audit sebelumnya menguji area per topik (tanda tangan, OCR, deskew, rentang
+halaman, …). Audit ini menutup **seluruh permukaan fitur** dalam satu kali
+jalan: 28 alat registry + 5 launcher tab utama + 9 kemampuan editor visual.
+
+| Harness | Pemeriksaan | Gagal |
+|---|---|---|
+| `tools/audit-semua.mjs` (baru — payung) | **129** | **0** |
+| `tools/audit-editor.mjs` (baru — editor visual) | **29** | **0** |
+| `tools/verify-produksi.mjs` | **74** | **0** (sebelumnya 73/1 — diperbaiki) |
+
+Rincian lengkap: `docs/audit-semua-2026-11-25.md`.
+Bukti: `docs/audit-semua-2026-11-25/` (44 tangkapan layar + folder `keluaran/`
+berisi tiap berkas keluaran yang diuji).
+
+## Cacat nyata yang ditemukan & diperbaiki
+
+| # | Cacat | Akar | Perbaikan |
+|---|---|---|---|
+| 1 | **Word → PDF menghasilkan PDF kosong** | `tool-convert.js` memakai `node.nodeName`; dokumen Word ber-namespace ⇒ nama elemennya `w:p`/`w:tbl`, bukan `p`/`tbl`, sehingga tidak satu pun paragraf dikenali | pakai `node.localName` (dengan `nodeName` sebagai cadangan) |
+| 2 | Dokumen Word dengan content control ikut kosong | isi berada di `w:sdt` → `w:sdtContent`, dilewati parser | parser membuka `w:sdtContent` lebih dulu |
+| 3 | **Toolbar editor 4 baris di 360 px** | `.ed-bar` memakai `align-items:center` ⇒ tiap grup mulai pada koordinat *top* berbeda sehingga baris terukur terpecah | `align-items:stretch` pada `.ed-bar`, `align-items:center` pada `.ed-menu-wrap` → 3 baris |
+| 4 | Pemeriksaan statis baru untuk kelas bug "keyword tanpa spasi" | `functionX` dibaca sebagai satu identifier → galat `Unexpected identifier` | semua berkas sumber kini di-parse (`node --check`) di dalam harness |
+
+## Yang dipverifikasi per fitur (bukan sekadar "berkas jadi")
+
+- **Geometri**: `crop` → CropBox menyusut 20 mm/sisi sementara MediaBox tetap.
+- **Posisi**: `numbers` → nomor ada di tiap halaman dan berada di bagian bawah.
+- **Per halaman**: `watermark` → stempel ada di ketiga halaman.
+- **Tertanam**: `jpg2pdf`/`scan` → halaman memuat XObject gambar.
+- **Isi berkas**: `pdf2word`/`pdf2xls`/`pdf2ppt` → XML di dalam OOXML memuat teks PDF.
+- **Struktur**: `pdfa` → ada `/OutputIntent` + `pdfaid:part` di XMP, tidak terenkripsi.
+- **Enkripsi**: `protect` → `/Encrypt` ada; `unlock` → benar-benar terbuka.
+- **Bukti piksel**: `watermark` 2 010 piksel gelap · `redact` hal.1 1 367 vs hal.2
+  3 055 piksel pekat (kotak penutup) · `sign` tinta 2 077 vs 2 010.
+- **Banyak berkas**: `rotate` & `protect` dengan 2 PDF sekaligus.
+- **11 jalur galat**: semuanya ditolak dengan pesan ramah, tanpa galat tak tertangani.
+- **Responsif**: 33 kartu alat di 360 px, nol gulir horizontal.
+
+## Status suite regresi setelah audit payung
+
+| Harness | Pemeriksaan | Gagal |
+|---|---|---|
+| `tools/audit-sign.mjs` | 65 | 0 |
+| `tools/audit-sign-touch.mjs` | 27 | 0 |
+| `tools/audit-translate.mjs` | 30 | 1 — "Mesin bawaan peramban terdeteksi" (batasan lingkungan; mesin offline bawaan berhasil dipakai) |
+| `tools/audit-pagerange.mjs` | 106 | 0 |
+| `tools/audit-merge-preview.mjs` | 44 | 0 |
+| `tools/audit-deskew.mjs` | 56 | 0 |
+| `tools/audit-ocr.mjs` | 44 | 0 |
+| `tools/audit-preview-perf.mjs` | 39 | 0 |
+| `tools/verify-produksi.mjs` | 74 | 0 — cacat layout toolbar lama ikut terperbaiki |
