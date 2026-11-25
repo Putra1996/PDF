@@ -1223,7 +1223,13 @@
           <div id="signDrag" class="sign-drag" role="button" tabindex="0" hidden
                aria-label="Kotak tanda tangan — tekan dan geser untuk memindahkan posisi"
                aria-describedby="signPreviewHint"
-               aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight"></div>
+               aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight">
+            <span class="sign-grip" aria-hidden="true"></span>
+          </div>
+          <div id="signResize" class="sign-resize" role="button" tabindex="0" hidden
+               aria-label="Sudut kanan bawah — tekan dan geser untuk mengubah lebar tanda tangan"
+               aria-describedby="signPreviewHint"
+               aria-keyshortcuts="ArrowLeft ArrowRight"></div>
         </div>
         <p class="muted tiny" id="signPreviewHint">Pilih satu PDF untuk melihat pratinjau.</p>
         <span class="sr-only" id="signDragStatus" role="status" aria-live="polite"></span>
@@ -1268,6 +1274,7 @@
     const prevBtn = $("#signPrev", wrap);
     const nextBtn = $("#signNext", wrap);
     const drag = $("#signDrag", wrap);
+    const resize = $("#signResize", wrap);
     const statusEl = $("#signDragStatus", wrap);
     /* Salinan halaman tanpa tanda tangan — supaya kotak tanda tangan bisa
        digeser tanpa render ulang PDF (cukup satu frame). */
@@ -1564,12 +1571,20 @@
        ukuran kanvas (ponsel layar sempit, zoom, dan lain-lain). */
     const posisiPegangan = () => {
       /* Pegangan hanya muncul kalau ada tanda tangan untuk digeser. */
-      if (!geo || !geo.pageWmm || !geo.pageHmm || !sigImg) { drag.hidden = true; return; }
+      if (!geo || !geo.pageWmm || !geo.pageHmm || !sigImg) {
+        drag.hidden = true;
+        resize.hidden = true;
+        return;
+      }
       drag.hidden = false;
       drag.style.left = (geo.xMm / geo.pageWmm * 100) + "%";
       drag.style.top = ((geo.pageHmm - geo.yMm - geo.hMm) / geo.pageHmm * 100) + "%";
       drag.style.width = (geo.wMm / geo.pageWmm * 100) + "%";
       drag.style.height = (geo.hMm / geo.pageHmm * 100) + "%";
+      /* Sudut kanan bawah untuk mengubah lebar (jarum jempol) */
+      resize.hidden = false;
+      resize.style.left = ((geo.xMm + geo.wMm) / geo.pageWmm * 100) + "%";
+      resize.style.top = ((geo.pageHmm - geo.yMm) / geo.pageHmm * 100) + "%";
     };
 
     /* Pindahkan kotak tanda tangan ke posisi mm tertentu (dijepit). */
@@ -1579,6 +1594,26 @@
       const pos = jepit(xmm, ymm, kotak.w, kotak.h);
       geo.xMm = pos.x; geo.yMm = pos.y;
       geo.wMm = kotak.w; geo.hMm = kotak.h;
+      geo.xPx = geo.xMm * geo.k;
+      geo.wPx = geo.wMm * geo.k;
+      geo.hPx = geo.hMm * geo.k;
+      geo.yPx = geo.tinggiPx - (geo.yMm + geo.hMm) * geo.k;
+      gambarTanda();
+      posisiPegangan();
+      terapkanPosisi();
+    };
+
+    /* Ubah lebar tanda tangan (rasio tinggi/lebar tetap terjaga). */
+    const ubahLebar = (lebarMm) => {
+      if (!geo) return;
+      const r = geo.wMm > 0 ? geo.hMm / geo.wMm : 1;
+      let w = Math.max(10, Math.min(Number(lebarMm) || 0, batas.w || Infinity));
+      let h = w * r;
+      if (batas.h && h > batas.h) { h = batas.h; w = r > 0 ? h / r : w; }
+      geo.wMm = w; geo.hMm = h;
+      /* posisi ikut dijepit supaya kotak tetap muat di halaman */
+      const pos = jepit(geo.xMm, geo.yMm, w, h);
+      geo.xMm = pos.x; geo.yMm = pos.y;
       geo.xPx = geo.xMm * geo.k;
       geo.wPx = geo.wMm * geo.k;
       geo.hPx = geo.hMm * geo.k;
@@ -1631,41 +1666,66 @@
       return { x: fx * geo.pageWmm, y: geo.pageHmm - fy * geo.pageHmm };
     };
 
-    drag.addEventListener("pointerdown", (e) => {
+    /* Mulai gerakan. `mode` = "geser" (pindah posisi) atau "lebar"
+       (ubah ukuran). Selisih jepitan disimpan supaya tanda tangan
+       mengikuti titik sentuh secara relatif — tidak melompat. */
+    const mulaiSeret = (e, el, mode) => {
       if (!geo) return;
       if (e.pointerType === "mouse" && e.button !== 0) return;
       const p = titikMm(e);
       if (!p) return;
       e.preventDefault();
-      /* selisih jepitan: tanda tangan tidak melompat ke titik sentuh */
-      seret = { id: e.pointerId, dx: p.x - geo.xMm, dy: p.y - geo.yMm };
-      try { drag.setPointerCapture(e.pointerId); } catch (_) { /* abaikan */ }
+      seret = {
+        id: e.pointerId, mode: mode || "geser", el: el,
+        dx: p.x - geo.xMm, dy: p.y - geo.yMm,
+        xKiri: geo.xMm, wAwal: geo.wMm,
+      };
+      /* Pointer capture: drag tetap jalan walau jari keluar dari kotak.
+         Kalau browser tidak mendukung, listener window (di bawah) yang
+         menjaganya. */
+      try { el.setPointerCapture(e.pointerId); } catch (_) { /* abaikan */ }
       drag.classList.add("is-drag");
-      try { drag.focus({ preventScroll: true }); } catch (_) { /* abaikan */ }
-      pindahkan(p.x - seret.dx, p.y - seret.dy);
-    });
+      resize.classList.add("is-drag");
+      try { el.focus({ preventScroll: true }); } catch (_) { /* abaikan */ }
+      if (seret.mode === "lebar") ubahLebar(p.x - seret.xKiri);
+      else pindahkan(p.x - seret.dx, p.y - seret.dy);
+    };
 
-    drag.addEventListener("pointermove", (e) => {
+    const jalanSeret = (e) => {
       if (!seret || e.pointerId !== seret.id) return;
-      e.preventDefault();
       const p = titikMm(e);
       if (!p) return;
-      pindahkan(p.x - seret.dx, p.y - seret.dy);
-    });
+      if (seret.mode === "lebar") ubahLebar(p.x - seret.xKiri);
+      else pindahkan(p.x - seret.dx, p.y - seret.dy);
+    };
 
     const selesaiSeret = (e) => {
       if (!seret) return;
       if (e && e.pointerId != null && e.pointerId !== seret.id) return;
       const id = seret.id;
+      const el = seret.el;
       seret = null;
       drag.classList.remove("is-drag");
-      try { drag.releasePointerCapture(id); } catch (_) { /* abaikan */ }
+      resize.classList.remove("is-drag");
+      try { el && el.releasePointerCapture(id); } catch (_) { /* abaikan */ }
       perbaruiInfo();
       if (geo) setStatus(teksPosisi());
     };
+
+    drag.addEventListener("pointerdown", (e) => mulaiSeret(e, drag, "geser"));
+    resize.addEventListener("pointerdown", (e) => mulaiSeret(e, resize, "lebar"));
     drag.addEventListener("pointerup", selesaiSeret);
     drag.addEventListener("pointercancel", selesaiSeret);
     drag.addEventListener("lostpointercapture", selesaiSeret);
+    resize.addEventListener("pointerup", selesaiSeret);
+    resize.addEventListener("pointercancel", selesaiSeret);
+    resize.addEventListener("lostpointercapture", selesaiSeret);
+    /* Cadangan: listener di window — jalan walau pointer capture gagal
+       (sebagian peramban seluler tidak meneruskan pointermove ke elemen
+       yang tidak lagi berada di bawah jari). */
+    window.addEventListener("pointermove", jalanSeret, { passive: true });
+    window.addEventListener("pointerup", selesaiSeret);
+    window.addEventListener("pointercancel", selesaiSeret);
 
     /* Pindah posisi juga dengan keyboard (tanpa tetikus/jari). */
     drag.addEventListener("keydown", (e) => {
@@ -1680,6 +1740,19 @@
       e.preventDefault();
       pindahkan(geo.xMm + dx, geo.yMm + dy);
       setStatus(teksPosisi());
+    });
+
+    /* Ubah lebar dengan keyboard (tanpa tetikus/jari). */
+    resize.addEventListener("keydown", (e) => {
+      if (!geo) return;
+      const langkah = e.shiftKey ? 5 : 1;
+      let d = 0;
+      if (e.key === "ArrowRight") d = langkah;
+      else if (e.key === "ArrowLeft") d = -langkah;
+      else return;
+      e.preventDefault();
+      ubahLebar(geo.wMm + d);
+      setStatus("Lebar tanda tangan " + bulat(geo.wMm) + " milimeter.");
     });
 
     /* Ukuran halaman terkecil di antara halaman tujuan (mm). Dipakai
@@ -1718,6 +1791,7 @@
         setHint("Pilih satu PDF untuk melihat pratinjau.");
         prevBtn.disabled = nextBtn.disabled = true;
         drag.hidden = true;
+        resize.hidden = true;
         state.custom.previewInfo = null;
         return;
       }
@@ -1735,6 +1809,7 @@
         } catch (err) {
           setHint("PDF tidak bisa dibuka untuk pratinjau: " + ((err && err.message) || err));
           drag.hidden = true;
+          resize.hidden = true;
           geo = null;
           state.custom.previewInfo = null;
           return;
@@ -1750,6 +1825,7 @@
         setHint("Halaman \"" + (state.opts.page || "1") + "\" tidak ada di PDF ini.");
         prevBtn.disabled = nextBtn.disabled = true;
         drag.hidden = true;
+        resize.hidden = true;
         geo = null;
         state.custom.previewInfo = null;
         return;
@@ -1787,6 +1863,7 @@
       } catch (err) {
         setHint("Halaman tidak bisa dirender: " + ((err && err.message) || err));
         drag.hidden = true;
+        resize.hidden = true;
         geo = null;
         state.custom.previewInfo = null;
         return;
@@ -1798,6 +1875,7 @@
       } catch (err) {
         setHint("Halaman tidak bisa dirender: " + ((err && err.message) || err));
         drag.hidden = true;
+        resize.hidden = true;
         geo = null;
         state.custom.previewInfo = null;
         return;
@@ -1857,6 +1935,7 @@
         } catch (_) {
           setHint("Gambar tanda tangan tidak bisa digambar.");
           drag.hidden = true;
+          resize.hidden = true;
           geo = null;
           state.custom.previewInfo = null;
           return;
@@ -1870,7 +1949,7 @@
         setHint("Tanda tangan belum ada — tulis di kanvas atau impor foto/QR code. " + posisiTeks + "." + banyak);
       } else {
         setHint((disesuaikan ? "Posisi disesuaikan agar tetap di dalam halaman. " : "")
-          + "Geser kotak tanda tangan (atau tekan panah keyboard) untuk memindahkan. "
+          + "Geser kotak tanda tangan dengan jari untuk memindahkan; seret titik bulat di pojok kanan bawah untuk mengubah lebar. "
           + posisiTeks + " · " + Math.round(wPx) + "×" + Math.round(hPx) + " px di layar." + banyak);
       }
     }
@@ -1934,6 +2013,11 @@
       /* batalkan render yang sedang jalan sebelum dokumen ditutup */
       batalRender();
       kunciTampil = "";
+      /* lepaskan listener global (window) */
+      window.removeEventListener("pointermove", jalanSeret);
+      window.removeEventListener("pointerup", selesaiSeret);
+      window.removeEventListener("pointercancel", selesaiSeret);
+      resize.classList.remove("is-drag");
       if (pdfDoc) { try { pdfDoc.destroy(); } catch (_) { /* abaikan */ } pdfDoc = null; }
       pdfBytesKey = "";
       seret = null;

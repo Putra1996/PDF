@@ -506,11 +506,41 @@ memuat dokumen.
 Uji balapan render (2×, 3×, + ganti halaman) di harness: sebelum perbaikan
 **3 gagal**, sesudah **65 lulus / 0 gagal**.
 
+#### Audit sentuhan — target sentuh & area tangkap
+
+Laporan: *"fitur tanda tangani belum bisa digeser dengan jari, harus manual
+dengan input angka di menu pilihan."*
+
+Audit sentuhan (emulasi iPhone 13, 390 px, sentuhan asli via CDP)
+menemukan bahwa fitur geser **sudah ada**, tapi **area tangkapnya terlalu
+kecil untuk jempol**:
+
+| | Sebelum | Sesudah |
+|---|---|---|
+| Area tangkap (390 px) | 80 × **28** px | **94 × 55** px |
+| Area tangkap (320 px) | 64 × **22** px | **78 × 49** px |
+| Jari meleset 12 px dari kotak | **tidak tertangkap** | tertangkap |
+| `-webkit-touch-callout` | aktif | dimatikan |
+| Ubah lebar tanpa mengetik angka | tidak ada | pegangan pojok kanan bawah (62 × 62 px) |
+
+| Temuan | Perbaikan |
+|---|---|
+| Area tangkap setipis 28 px — di bawah ambang sentuh 44 px | `.sign-drag::before { inset:-15px }` memperbesar area tangkap; kotak terlihat tetap menandai posisi sebenarnya |
+| Tidak ada toleransi saat jari meleset | Area tangkap diperbesar 15 px per sisi (Δx 37,3 mm untuk meleset 12 px) |
+| Panggilan konteks iOS mengganggu gerakan | `-webkit-touch-callout:none` + `-webkit-tap-highlight-color:transparent` |
+| Lebar hanya bisa diisi angka | Pegangan **ubah-lebar** di pojok kanan bawah (62 × 62 px), rasio gambar tetap terjaga |
+| `pointermove` hanya di elemen pegangan | Listener `pointermove`/`pointerup`/`pointercancel` juga di `window` — drag tetap jalan walau pointer capture gagal |
+
+Harness `tools/audit-sign-touch.mjs` (baru, **26 pemeriksaan**): terhadap
+kode sebelum perbaikan **8 gagal**, terhadap kode sesudah **26 lulus / 0
+gagal**. Bukti: `docs/audit-ttd-sentuh-2026-11-25.md`.
+
 #### Hasil suite
 
 | Harness | Pemeriksaan | Gagal |
 |---|---|---|
 | `tools/audit-sign.mjs` (audit khusus tanda tangan) | 65 | 0 |
+| `tools/audit-sign-touch.mjs` (audit sentuhan / layar ponsel) | 26 | 0 |
 | `tools/audit-translate.mjs` | 30 | 1 — "Mesin bawaan peramban terdeteksi" (versi Chromium di lingkungan uji; bukan perubahan kode) |
 | `tools/audit-pagerange.mjs` | 106 | 0 |
 | `tools/audit-merge-preview.mjs` | 44 | 0 |
