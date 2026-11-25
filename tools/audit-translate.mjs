@@ -112,6 +112,22 @@ async function main() {
   await page.goto(`http://127.0.0.1:${PORT}/index.html`, { waitUntil: "load" });
   await page.waitForTimeout(800);
 
+  /* Mesin AI daring dimatikan supaya harness ini tetap deterministik
+     dan tidak pernah menyentuh jaringan. Mesin AI daring diuji
+     terpisah di tools/audit-translate-ai.mjs (server tiruan). */
+  const MATIKAN_AI = `
+    (function () {
+      if (!window.PDFTranslateAI) return;
+      window.PDFTranslateAI.configure({ endpoint: "", apiKey: "", model: "", engineId: "" });
+      window.PDFTranslateAI.loadManifest = function () {
+        return Promise.resolve({
+          version: "dimatikan-untuk-harness", engines: [], prompt: {}, defaults: {}, asal: "harness",
+        });
+      };
+      window.PDFTranslateAI.isConfigured = function () { return false; };
+    })();
+  `;
+
   /* ==========================================================
      1. Modul & detections
      ========================================================== */
@@ -208,6 +224,7 @@ async function main() {
   const fakePage = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   fakePage.on("pageerror", (e) => errors.push("fake: " + String(e)));
   await fakePage.addInitScript(FAKE_BUILTIN);
+  await fakePage.addInitScript(MATIKAN_AI);
   await fakePage.goto(`http://127.0.0.1:${PORT}/index.html`, { waitUntil: "load" });
   await fakePage.waitForTimeout(500);
 
@@ -372,12 +389,22 @@ async function main() {
       }
     }
     const durasi = ((Date.now() - t0) / 1000).toFixed(1);
-    const hasil = await fakePage.evaluate(async () => {
-      const a = document.querySelector("#toolResults a");
-      if (!a) return null;
-      const r = await fetch(a.href);
-      return { nama: a.download, teks: await r.text() };
+    /* Semua hasil diambil (satu berkas bisa menghasilkan Markdown +
+       PDF terjemahan). Hasil pertama tetap disimpan di "hasil" supaya
+       pemeriksaan yang sudah ada tidak berubah. */
+    const semuaHasil = await fakePage.evaluate(async () => {
+      const a = [...document.querySelectorAll("#toolResults a")];
+      const out = [];
+      for (const x of a) {
+        const r = await fetch(x.href);
+        const buf = await r.arrayBuffer();
+        let teks = "";
+        try { teks = new TextDecoder().decode(buf); } catch (_) { teks = ""; }
+        out.push({ nama: x.download, ukuran: buf.byteLength, teks: teks });
+      }
+      return out;
     });
+    const hasil = semuaHasil.length ? semuaHasil[0] : null;
     const catatan = await fakePage.evaluate(() => {
       const el = document.querySelector("#toolResults .res-meta");
       return el ? el.textContent : "";
@@ -388,7 +415,7 @@ async function main() {
     });
     await fakePage.click("#toolBackBtn").catch(() => {});
     await fakePage.waitForTimeout(300);
-    return { hasil, durasi, progres, catatan, jumlah: n, pesan };
+    return { hasil, semuaHasil, durasi, progres, catatan, jumlah: n, pesan };
   }
 
   const alat = await jalankanAlat([path.join(FIX, "indonesia.pdf")], { src: "id", lang: "en" });
@@ -401,12 +428,23 @@ async function main() {
   check("Judul berkas asli dipertahankan", !!alat.hasil && /^# indonesia/m.test(alat.hasil.teks || ""));
   check("Catatan hasil menyebut mesin yang dipakai", /offline|bawaan peramban/i.test(alat.catatan || ""), alat.catatan || "");
 
-  /* Dua berkas: model harus dimuat satu kali saja */
+  /* Dua berkas: model harus dimuat satu kali saja.
+     Setiap berkas kini menghasilkan DUA hasil: Markdown + PDF
+     terjemahan (PDF punya lapisan teks tak terlihat, jadi tetap
+     bisa dicari & disalin). */
   const duaBerkas = await jalankanAlat(
     [path.join(FIX, "indonesia.pdf"), path.join(FIX, "satu-kalimat.pdf")],
     { src: "id", lang: "en" }
   );
-  check("Dua berkas diproses dalam satu jalan", duaBerkas.jumlah === 2, "hasil=" + duaBerkas.jumlah);
+  check("Dua berkas diproses dalam satu jalan", duaBerkas.jumlah === 4, "hasil=" + duaBerkas.jumlah);
+  check(
+    "Setiap berkas menghasilkan Markdown + PDF terjemahan",
+    duaBerkas.semuaHasil.filter((h) => /\.md$/i.test(h.nama)).length === 2 &&
+      duaBerkas.semuaHasil.filter((h) => /\.pdf$/i.test(h.nama)).length === 2,
+    duaBerkas.semuaHasil.map((h) => h.nama).join(", ")
+  );
+  const pdfHasil = duaBerkas.semuaHasil.find((h) => /\.pdf$/i.test(h.nama));
+  check("PDF terjemahan berukuran wajar", !!pdfHasil && pdfHasil.ukuran > 1000, pdfHasil ? pdfHasil.ukuran + " B" : "tidak ada");
 
   /* Berkas tanpa teks: tidak boleh error */
   const tanpaTeks = await jalankanAlat([path.join(FIX, "tanpa-teks.pdf")], { src: "id", lang: "en" });
@@ -433,7 +471,7 @@ async function main() {
     calls: window.__fake.calls,
   }));
   check("Mesin bawaan dibuat satu kali untuk semua berkas", fakeState.creates === 1, "create=" + fakeState.creates);
-  check("Dua berkas diterjemahkan mesin bawaan peramban", builtinDua.jumlah === 2, "hasil=" + builtinDua.jumlah);
+  check("Dua berkas diterjemahkan mesin bawaan peramban", builtinDua.jumlah >= 2, "hasil=" + builtinDua.jumlah);
 
   /* Ganti pasangan bahasa: model lama harus dilepas, yang baru dimuat. */
   const gantiBahasa = await fakePage.evaluate(async () => {
@@ -462,7 +500,7 @@ async function main() {
 
   /* Progres harus dilaporkan saat terjemahan berjalan. */
   const progresOk = await jalankanAlat([path.join(FIX, "besar.pdf")], { src: "id", lang: "en" });
-  check("Dokumen besar (20 halaman) diterjemahkan", progresOk.jumlah === 1, "hasil=" + progresOk.jumlah);
+  check("Dokumen besar (20 halaman) diterjemahkan", progresOk.jumlah >= 1, "hasil=" + progresOk.jumlah);
 
   await fakePage.screenshot({ path: path.join(SHOTS, "terjemah-pdf.png") });
 

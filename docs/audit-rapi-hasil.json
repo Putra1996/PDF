@@ -1,5 +1,5 @@
 {
-  "tanggal": "2026-11-25T08:56:06.330Z",
+  "tanggal": "2026-11-25T15:29:57.204Z",
   "lulus": 58,
   "gagal": 0,
   "hasil": [
@@ -11,7 +11,7 @@
     {
       "name": "Alat berhasil jalan",
       "ok": true,
-      "detail": "303796 byte, 1.1s"
+      "detail": "303796 byte, 1.8s"
     },
     {
       "name": "Sudut sisa ~0° (dokumen jadi lurus)",

@@ -954,6 +954,7 @@
     if (tool.custom === "html") return void renderHtml(host);
     if (tool.custom === "scan") return void renderScan(host);
     if (tool.custom === "unlock") return void renderUnlock(host);
+    if (tool.custom === "translateAI") return void renderTranslateAI(host);
     if (tool.custom === "editor") {
       if (window.PDFToolsEditor && typeof window.PDFToolsEditor.render === "function") {
         return void window.PDFToolsEditor.render(host);
@@ -2162,6 +2163,141 @@
         });
       }, "image/jpeg", 0.92);
     });
+  }
+
+  /* --- AI daring (panel Terjemah PDF) ---
+     Panel ini menampilkan keadaan server mesin terjemahan dan
+     membiarkan pengguna menunjuk endpoint / model / kunci API
+     sendiri. Daftar mesin diambil dari MANIFEST server, jadi mesin
+     baru yang ditambahkan di server langsung muncul di sini tanpa
+     perlu rilis aplikasi baru. */
+  function renderTranslateAI(host) {
+    const TR = window.PDFTranslate;
+    const AI = window.PDFTranslateAI;
+    const wrap = el("div", "translate-ai-wrap");
+    wrap.innerHTML = `
+      <p class="muted small">Mesin AI daring memakai manifest dari server: begitu model, prompt, atau
+      endpoint diperbarui di server, aplikasi ini ikut memakainya tanpa perlu pembaruan aplikasi.</p>
+      <div class="translate-ai-status muted small" id="aiStatus">Memuat manifest mesin AI…</div>
+      <label class="tool-label" for="aiEngine">Mesin AI</label>
+      <select id="aiEngine"><option value="">Otomatis (pilih yang terbaik)</option></select>
+      <label class="tool-label" for="aiEndpoint">Endpoint server AI (opsional)</label>
+      <input id="aiEndpoint" type="text" autocomplete="off" placeholder="https://…/v1/chat/completions" />
+      <label class="tool-label" for="aiModel">Model AI (opsional)</label>
+      <input id="aiModel" type="text" autocomplete="off" placeholder="mis. gpt-4o-mini" />
+      <label class="tool-label" for="aiKey">Kunci API (opsional, disimpan lokal di peramban)</label>
+      <input id="aiKey" type="password" autocomplete="new-password" />
+      <label class="tool-label" for="aiGlossary">Glosarium (satu per baris: sumber = target)</label>
+      <textarea id="aiGlossary" rows="3" placeholder="rp = rupiah&#10;npwp = NPWP"></textarea>
+      <div class="translate-ai-actions">
+        <button type="button" class="btn btn-ghost btn-sm" id="aiRefresh">Perbarui dari server</button>
+      </div>`;
+    host.appendChild(wrap);
+
+    if (!TR || !AI) {
+      const s = wrap.querySelector("#aiStatus");
+      if (s) s.textContent = "Modul AI daring belum termuat (tool-translate-ai.js).";
+      return;
+    }
+
+    const statusEl = wrap.querySelector("#aiStatus");
+    const selEngine = wrap.querySelector("#aiEngine");
+    const inEndpoint = wrap.querySelector("#aiEndpoint");
+    const inModel = wrap.querySelector("#aiModel");
+    const inKey = wrap.querySelector("#aiKey");
+    const inGlos = wrap.querySelector("#aiGlossary");
+
+    const cfg = AI.config();
+    inEndpoint.value = cfg.endpoint || "";
+    inModel.value = cfg.model || "";
+    inKey.value = cfg.apiKey || "";
+    inGlos.value = cfg.glossary || "";
+
+    const tulisOpsi = () => {
+      state.custom.opts.ai = {
+        endpoint: inEndpoint.value.trim(),
+        model: inModel.value.trim(),
+        apiKey: inKey.value,
+        engineId: selEngine.value || "",
+        glossary: inGlos.value,
+      };
+    };
+    [inEndpoint, inModel, inKey, inGlos].forEach((i) => {
+      i.addEventListener("input", () => {
+        tulisOpsi();
+        /* Simpan supaya setelan tidak hilang saat panel dibuka lagi. */
+        AI.configure({
+          endpoint: inEndpoint.value.trim(),
+          model: inModel.value.trim(),
+          apiKey: inKey.value,
+          glossary: inGlos.value,
+        });
+      });
+    });
+    selEngine.addEventListener("change", () => {
+      tulisOpsi();
+      AI.configure({ engineId: selEngine.value || "" });
+    });
+
+    const gambarMesin = () => {
+      const daftar = TR.onlineEngines ? TR.onlineEngines({ from: "id", to: "en" }) : [];
+      const chosen = selEngine.value;
+      selEngine.innerHTML = "";
+      const o0 = document.createElement("option");
+      o0.value = "";
+      o0.textContent = "Otomatis (pilih yang terbaik)";
+      selEngine.appendChild(o0);
+      for (const e of daftar) {
+        const o = document.createElement("option");
+        o.value = e.id;
+        o.textContent = e.label + (e.siap ? "" : " — belum siap: " + e.alasan);
+        o.disabled = !e.siap && e.id !== chosen;
+        selEngine.appendChild(o);
+      }
+      selEngine.value = chosen || "";
+      tulisOpsi();
+    };
+
+    const gambarStatus = () => {
+      const st = TR.onlineStatus ? TR.onlineStatus() : null;
+      if (!st) { if (statusEl) statusEl.textContent = "Modul AI daring belum termuat."; return; }
+      const sumber = st.remoteOk ? "server" : st.sumber === "lokal" ? "berkas lokal" : "bawaan aplikasi";
+      const st2 = st.galat ? " · " + st.galat : "";
+      if (statusEl) {
+        statusEl.textContent =
+          "Manifest versi " + (st.version || "-") + " (" + sumber + ")" +
+          (st.berubah ? " · versi baru terdeteksi" : "") + st2;
+      }
+      gambarMesin();
+    };
+
+    /* Muat manifest saat panel dibuka (tanpa memblokir). */
+    AI.loadManifest({}).then(gambarStatus).catch(() => gambarStatus());
+
+    const btn = wrap.querySelector("#aiRefresh");
+    if (btn) {
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        const t = btn.textContent;
+        btn.textContent = "Memeriksa…";
+        try {
+          const r = await TR.checkUpdateAI();
+          gambarStatus();
+          if (r && r.berubah) {
+            if (sh().toast) {
+              sh().toast("Manifest AI diperbarui: versi " + r.version + ".", "ok");
+            }
+          } else if (sh().toast) {
+            sh().toast("Manifest AI sudah terbaru (versi " + ((r && r.version) || "-") + ").");
+          }
+        } catch (err) {
+          if (sh().toast) sh().toast("Gagal memperbarui manifest AI: " + (err.message || err), "err", 5000);
+        } finally {
+          btn.disabled = false;
+          btn.textContent = t;
+        }
+      });
+    }
   }
 
   /* --- Buka kunci --- */

@@ -1,5 +1,5 @@
 {
-  "tanggal": "2026-11-25T08:46:58.485Z",
+  "tanggal": "2026-11-25T15:22:06.686Z",
   "pass": 106,
   "fail": 0,
   "results": [
@@ -221,7 +221,7 @@
     {
       "name": "Putar PDF mode ganjil berhasil",
       "ok": true,
-      "detail": "3180 byte"
+      "detail": "3178 byte"
     },
     {
       "name": "Halaman ganjil diputar 90°",
@@ -326,7 +326,7 @@
     {
       "name": "Watermark rentang 2-2 berhasil",
       "ok": true,
-      "detail": "2518 byte"
+      "detail": "2520 byte"
     },
     {
       "name": "Halaman 2 berubah (ada watermark)",
@@ -361,7 +361,7 @@
     {
       "name": "Potong PDF rentang 2-2 berhasil",
       "ok": true,
-      "detail": "2145 byte"
+      "detail": "2146 byte"
     },
     {
       "name": "Potong: hanya halaman 2 yang dipotong",
@@ -376,7 +376,7 @@
     {
       "name": "Putar PDF mode genap berhasil",
       "ok": true,
-      "detail": "2119 byte"
+      "detail": "2117 byte"
     },
     {
       "name": "Halaman genap diputar 90°",
@@ -391,7 +391,7 @@
     {
       "name": "Mode semua: semua halaman diputar",
       "ok": true,
-      "detail": "2116 byte"
+      "detail": "2115 byte"
     },
     {
       "name": "Keempat halaman diputar 90°",
@@ -436,7 +436,7 @@
     {
       "name": "OCR rentang 2-3 berhasil",
       "ok": true,
-      "detail": "102696 byte"
+      "detail": "102695 byte"
     },
     {
       "name": "OCR: jumlah halaman tetap 4",
@@ -456,7 +456,7 @@
     {
       "name": "Redaksi rentang 2-2 berhasil",
       "ok": true,
-      "detail": "28686 byte"
+      "detail": "28685 byte"
     },
     {
       "name": "Redaksi: jumlah halaman tetap 4",
@@ -491,7 +491,7 @@
     {
       "name": "Performa: rentang 2-6 pada 7 halaman < 20 detik",
       "ok": true,
-      "detail": "0.6 detik"
+      "detail": "0.5 detik"
     },
     {
       "name": "Input angka menampilkan nilai yang diminta (2 & 4)",

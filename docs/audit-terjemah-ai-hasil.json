@@ -1,0 +1,282 @@
+{
+  "tanggal": "2026-11-25T15:31:34.513Z",
+  "pass": 55,
+  "fail": 0,
+  "results": [
+    {
+      "name": "Modul AI daring termuat",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Manifest diambil dari server (bukan berkas lokal)",
+      "ok": true,
+      "detail": "sumber=server"
+    },
+    {
+      "name": "Versi manifest terbaca dari server",
+      "ok": true,
+      "detail": "versi=uji-1"
+    },
+    {
+      "name": "Daftar mesin dari manifest terbaca",
+      "ok": true,
+      "detail": "llm, mymemory"
+    },
+    {
+      "name": "Mesin daring dianggap siap",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Mesin LLM siap (punya endpoint + kunci)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Model dari manifest dipakai",
+      "ok": true,
+      "detail": "model-uji-v1"
+    },
+    {
+      "name": "Mesin daring dipakai saat mode=online",
+      "ok": true,
+      "detail": "online/llm"
+    },
+    {
+      "name": "Terjemahan dari server AI dipakai",
+      "ok": true,
+      "detail": "EN Dokumen ini menjelaskan rencana kerja untuk tahun anggaran berikutnya."
+    },
+    {
+      "name": "Model dari manifest terkirim ke server",
+      "ok": true,
+      "detail": "model-uji-v1"
+    },
+    {
+      "name": "Versi manifest tercatat di mesin",
+      "ok": true,
+      "detail": "uji-1"
+    },
+    {
+      "name": "Server AI menerima permintaan OpenAI-compatible",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Beberapa baris berurutan dikirim dalam SATU permintaan (konteks terbaca)",
+      "ok": true,
+      "detail": "permintaan=1"
+    },
+    {
+      "name": "Prompt menyertakan kedua baris",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Glosarium ikut dikirim ke server",
+      "ok": true,
+      "detail": "Anda penerjemah profesional. Terjemahkan dari Bahasa Indonesia ke English. Balas larik JSON.\nTerjemahkan:\nGlosarium (WAJ"
+    },
+    {
+      "name": "Kunci API terkirim sebagai header Authorization",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Angka tidak dikirim ke server",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "URL tidak dikirim ke server",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Teks biasa tetap dikirim",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Angka dikembalikan apa adanya",
+      "ok": true,
+      "detail": "1.500.000"
+    },
+    {
+      "name": "URL dikembalikan apa adanya",
+      "ok": true,
+      "detail": "https://contoh.id/dokumen"
+    },
+    {
+      "name": "Perubahan manifest di server terdeteksi",
+      "ok": true,
+      "detail": "{\"berubah\":true,\"version\":\"uji-2\",\"sebelumnya\":\"uji-1\",\"sumber\":\"server\",\"catatan\":\"\",\"mesin\":[{\"id\":\"llm\",\"label\":\"AI LLM uji (v2)\",\"protocol\":\"openai\",\"model\":\"model-uji-v2\"},{\"id\":\"mymemory\",\"label\":\"MyMemory uji\",\"protocol\":\"mymemory\",\"model\":\"\"}]}"
+    },
+    {
+      "name": "Status ikut menampilkan versi baru",
+      "ok": true,
+      "detail": "uji-2"
+    },
+    {
+      "name": "Model baru dari server langsung dipakai",
+      "ok": true,
+      "detail": "model-uji-v2"
+    },
+    {
+      "name": "Versi manifest baru terbaca mesin",
+      "ok": true,
+      "detail": "uji-2"
+    },
+    {
+      "name": "Permintaan memakai model baru (bukan yang lama)",
+      "ok": true,
+      "detail": "model-uji-v2"
+    },
+    {
+      "name": "Kunci cache berbeda untuk mesin berbeda",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Hasil mesin lama tidak bocor ke mesin baru",
+      "ok": true,
+      "detail": "A=hasil mesin A B=undefined"
+    },
+    {
+      "name": "Server error 5xx dicoba ulang lalu berhasil",
+      "ok": true,
+      "detail": "EN Uji percobaan ulang saat server error."
+    },
+    {
+      "name": "Jumlah percobaan ulang tercatat",
+      "ok": true,
+      "detail": "retry=2"
+    },
+    {
+      "name": "Galat kunci API punya pesan yang jelas",
+      "ok": true,
+      "detail": "Server AI menolak kunci API (HTTP 401). Periksa kunci API atau endpoint Anda."
+    },
+    {
+      "name": "Kunci API TIDAK bocor ke pesan galat",
+      "ok": true,
+      "detail": "Server AI menolak kunci API (HTTP 401). Periksa kunci API atau endpoint Anda."
+    },
+    {
+      "name": "Server AI gagal -> otomatis turun ke mesin bawaan peramban",
+      "ok": true,
+      "detail": "[BB] Dokumen gagal diterjemahkan."
+    },
+    {
+      "name": "Perpindahan mesin dilaporkan ke pengguna",
+      "ok": true,
+      "detail": "Mesin AI daring gagal (Server AI sedang sibuk (HTTP 500). Permintaan diulang otomatis.) — memakai mesin bawaan peramban."
+    },
+    {
+      "name": "Izin dimatikan -> mesin daring ditolak dengan pesan jelas",
+      "ok": true,
+      "detail": "Izin kirim teks ke server AI daring dimatikan. Aktifkan lagi di kolom \"Izinkan kirim teks ke server AI daring\"."
+    },
+    {
+      "name": "Panel AI daring menampilkan versi manifest dari server",
+      "ok": true,
+      "detail": "Manifest versi uji-2 (server)"
+    },
+    {
+      "name": "Daftar mesin di panel diambil dari manifest server",
+      "ok": true,
+      "detail": "Otomatis (pilih yang terbaik) | AI LLM uji (v2) | MyMemory uji"
+    },
+    {
+      "name": "Panel punya tombol Perbarui dari server",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Panel punya kolom glosarium",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Alat Terjemah PDF menghasilkan berkas",
+      "ok": true,
+      "detail": "jumlah=2"
+    },
+    {
+      "name": "Hasil Markdown terbentuk",
+      "ok": true,
+      "detail": "gabungan-terjemahan.md"
+    },
+    {
+      "name": "Hasil PDF terjemahan terbentuk",
+      "ok": true,
+      "detail": "gabungan-terjemahan.pdf 61426 B"
+    },
+    {
+      "name": "Markdown berisi terjemahan dari server AI",
+      "ok": true,
+      "detail": "# gabungan |  | > AI daring (AI LLM uji (v2)) · 1 halaman · 5 baris |  | EN Rencana Kerja 2026 | EN Dokumen ini menjelaskan rencana kerja untuk"
+    },
+    {
+      "name": "Kalimat panjang dipecah kembali ke baris aslinya (isi utuh)",
+      "ok": true,
+      "detail": "EN Rencana Kerja 2026 | EN Dokumen ini menjelaskan rencana kerja untuk | tahun anggaran berikutnya beserta rincian biayanya. | EN Seluruh kegiatan dijalankan langsung di dalam peramban."
+    },
+    {
+      "name": "Catatan hasil menyebut mesin AI daring",
+      "ok": true,
+      "detail": "307 B · AI daring (AI LLM uji (v2)) · 1 halaman · 5 baris"
+    },
+    {
+      "name": "Kalimat patah dua baris dikirim sebagai satu satuan utuh",
+      "ok": true,
+      "detail": "Anda penerjemah profesional. Terjemahkan dari Bahasa Indonesia ke English. Balas larik JSON. | Terjemahkan: | Glosarium (WAJIB dipakai persis): | - anggaran = budget | - rupiah = rupiah | 1. Rencana Kerja 2026 | 2. Dokum"
+    },
+    {
+      "name": "PDF terjemahan punya halaman",
+      "ok": true,
+      "detail": "halaman=1"
+    },
+    {
+      "name": "Bukti visual PDF terjemahan tersimpan",
+      "ok": true,
+      "detail": "pdf-terjemahan-halaman1.png"
+    },
+    {
+      "name": "PDF terjemahan punya lapisan teks tak terlihat (bisa dicari)",
+      "ok": true,
+      "detail": "EN Rencana Kerja 2026  EN Dokumen ini menjelaskan rencana kerja untuk  tahun anggaran berikutnya beserta rincian biayanya.  EN Seluruh kegiatan dijalankan langs"
+    },
+    {
+      "name": "Alat tidak mengirim angka ke server AI",
+      "ok": true,
+      "detail": "Anda penerjemah profesional. Terjemahkan dari Bahasa Indonesia ke English. Balas larik JSON. | Terjemahkan: | Glosarium (WAJIB dipakai persis): | - anggaran = b"
+    },
+    {
+      "name": "Alat tidak mengirim URL ke server AI",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Angka tetap utuh di hasil terjemahan",
+      "ok": true,
+      "detail": "# angka-url |  | > AI daring (AI LLM uji (v2)) · 1 halaman · 5 baris |  | EN Rekapitulasi Anggaran | 1.500.000"
+    },
+    {
+      "name": "Mode offline tidak menghubungi server AI",
+      "ok": true,
+      "detail": "permintaan=0"
+    },
+    {
+      "name": "Mode offline tetap menghasilkan terjemahan",
+      "ok": true,
+      "detail": "# gabungan\n\n> mesin offline · 1 halaman · 5 baris\n\nWork Plan 2026\nThis document describes the work plan for the next\nbudget year along with the details of the cost.\nAll activities are carried out directly in the browser.\nOur team will review the operating costs each quarter.\n"
+    },
+    {
+      "name": "Tidak ada error JavaScript",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

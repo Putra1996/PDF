@@ -2,7 +2,7 @@
   {
     "name": "Pindai miring 3° -> alat berhasil",
     "ok": true,
-    "detail": "173718 byte, 1.4s"
+    "detail": "173718 byte, 1.5s"
   },
   {
     "name": "Jumlah halaman tetap 1",
@@ -37,7 +37,7 @@
   {
     "name": "Vektor miring 3° -> alat berhasil",
     "ok": true,
-    "detail": "3163 byte, 1.2s"
+    "detail": "3163 byte, 0.5s"
   },
   {
     "name": "Sudut sisa vektor ~0°",
@@ -212,7 +212,7 @@
   {
     "name": "PDF 3 halaman -> alat berhasil",
     "ok": true,
-    "detail": "344905 byte, 1.1s"
+    "detail": "344905 byte, 1.9s"
   },
   {
     "name": "Jumlah halaman tetap 3",

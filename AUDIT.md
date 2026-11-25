@@ -692,3 +692,73 @@ pratinjau ↔ PDF final di ruang pengguna PDF).
 | `tools/audit-ocr.mjs` | 44 | 0 |
 | `tools/audit-preview-perf.mjs` | 39 | 0 |
 | `tools/audit-translate.mjs` | 30 | 1 — batasan lingkungan (Translator API tak tersedia di Chromium headless; fallback offline lulus) |
+
+---
+
+# Audit Mendauh "Terjemah PDF" — mesin AI daring + akurasi terjemahan — 2026-11-26
+
+Audit mendalam fitur terjemahan. Temuan: **12 cacat/keteterbatasan**, semuanya
+diperbaiki. Rincian: `docs/audit-terjemah-ai-2026-11-26.md` ·
+bukti visual: `docs/audit-terjemah-ai-2026-11-26/` ·
+harness baru: `tools/audit-translate-ai.mjs` (**55 lulus / 0 gagal**, server AI tiruan).
+
+## Yang berubah
+
+| | Sebelum | Sesudah |
+|---|---|---|
+| Mesin terjemahan | 2 (bawaan peramban + offline WASM) | **3** (+ **AI daring**) |
+| Pasangan bahasa | 2 offline; sisanya butuh Chrome 138+ | **semua** (AI daring) |
+| Granularitas | per **baris** | per **kalimat** + konteks paragraf |
+| Hasil | hanya `.md` | **`.md` + `.pdf`** (PDF punya lapisan teks tak terlihat) |
+| Konfigurasi mesin | terkunci di aplikasi | **manifest di server** (`ai/translate-engine.json`) → perbaikan AI di server ikut terpakai tanpa rilis baru |
+| Galat jaringan | membatalkan seluruh pekerjaan | retry + backoff + timeout + pesan yang bisa ditindaklanjuti |
+| Cache kalimat | tidak membedakan mesin | **terisolasi per mesin** (hasil lama tidak bocor ke mesin baru) |
+| Privasi | — | izin kirim ke server + glosarium + kunci API sendiri |
+
+## Rantai mesin
+
+**AI daring → bawaan peramban → offline.** Kalau server AI error, aplikasi
+otomatis turun ke mesin berikutnya dan memberi tahu pengguna. Mode "AI daring"
+yang dipilih TUJUAN tidak pernah diam-diam memakai mesin lain.
+
+## Protokol server yang didukung
+
+`openai` (OpenAI-compatible) · `mymemory` · `libretranslate` · `custom`
+(POST `{from,to,texts:[…]}` → `{translations:[…]}`).
+
+## Manifest server
+
+`ai/translate-engine.json` berisi versi, daftar mesin (endpoint, model, protokol,
+prioritas, batas item/karakter), **template prompt**, dan setelan default
+(timeout, retry, konkurensi, temperatur). Manifest diunduh ulang dengan validasi
+`ETag`; kalau versinya naik, **model, endpoint, dan prompt yang baru langsung
+dipakai** — tombol "Perbarui dari server" memaksa pemeriksaan. Cadangan berlapis:
+server → berkas lokal → manifest bawaan di dalam `tool-translate-ai.js`.
+
+## Bukti yang diuji otomatis
+
+Perubahan manifest di server terdeteksi dan model baru langsung dipakai ·
+beberapa baris berurutan dikirim dalam **satu** permintaan (konteks terbaca) ·
+glosarium ikut terkirim · angka/kode/URL **tidak** dikirim dan dikembalikan apa
+adanya · retry saat 5xx · 401 → pesan "kunci API ditolak" · **kunci API tidak
+pernah bocor** ke pesan galat · server AI gagal → turun ke mesin bawaan dan
+**perpindahan mesin dilaporkan** · PDF terjemahan punya lapisan teks tak terlihat
+(hasilnya bisa dicari keluar dari PDF).
+
+## Status suite regresi
+
+| Harness | Pemeriksaan | Gagal |
+|---|---|---|
+| `tools/audit-translate-ai.mjs` (baru) | 55 | 0 |
+| `tools/audit-translate.mjs` | 32 | 1 — Chromium headless dijalankan dengan `--disable-features=Translate` sehingga API Translator tidak ada (batasan lingkungan) |
+| `tools/audit-semua.mjs` (payung 33 fitur) | 129 | 0 |
+| `tools/verify-produksi.mjs` | 74 | 0 |
+| `tools/audit-editor.mjs` | 29 | 0 |
+| `tools/audit-sign.mjs` | 65 | 0 |
+| `tools/audit-sign-touch.mjs` | 27 | 0 |
+| `tools/audit-pagerange.mjs` | 106 | 0 |
+| `tools/audit-merge-preview.mjs` | 44 | 0 |
+| `tools/audit-ocr.mjs` | 44 | 0 |
+| `tools/audit-preview-perf.mjs` | 39 | 0 |
+| `tools/audit-deskew.mjs` | 56 | 0 |
+| `tools/audit-rapi.mjs` | 58 | 0 |

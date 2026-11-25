@@ -1,6 +1,6 @@
 {
-  "tanggal": "2026-11-25T08:49:47.259Z",
-  "pass": 30,
+  "tanggal": "2026-11-25T15:05:14.766Z",
+  "pass": 32,
   "fail": 1,
   "results": [
     {
@@ -41,7 +41,7 @@
     {
       "name": "Panggilan kedua jauh lebih cepat (cache internal mesin)",
       "ok": true,
-      "detail": "815 ms → 63 ms"
+      "detail": "783 ms → 52 ms"
     },
     {
       "name": "Baris berulang hanya diterjemahkan satu kali",
@@ -96,7 +96,7 @@
     {
       "name": "Hasil terjemahan berbahasa Inggris",
       "ok": true,
-      "detail": "# indonesia |  | Annual Report_bbox_validator_5483 | Executive Summary"
+      "detail": "# indonesia |  | > mesin offline · 3 halaman · 24 baris | "
     },
     {
       "name": "Judul berkas asli dipertahankan",
@@ -106,22 +106,32 @@
     {
       "name": "Catatan hasil menyebut mesin yang dipakai",
       "ok": true,
-      "detail": "1 KB · mesin offline · 3 halaman · 24 baris · 1.4 dtk"
+      "detail": "1 KB · mesin offline · 3 halaman · 24 baris"
     },
     {
       "name": "Dua berkas diproses dalam satu jalan",
       "ok": true,
-      "detail": "hasil=2"
+      "detail": "hasil=4"
+    },
+    {
+      "name": "Setiap berkas menghasilkan Markdown + PDF terjemahan",
+      "ok": true,
+      "detail": "indonesia-terjemahan.md, indonesia-terjemahan.pdf, satu-kalimat-terjemahan.md, satu-kalimat-terjemahan.pdf"
+    },
+    {
+      "name": "PDF terjemahan berukuran wajar",
+      "ok": true,
+      "detail": "279364 B"
     },
     {
       "name": "PDF tanpa teks tidak membuat alat gagal",
       "ok": true,
-      "detail": "hasil=1"
+      "detail": "hasil=2"
     },
     {
       "name": "Terjemahan Inggris → Indonesia jalan",
       "ok": true,
-      "detail": "# inggris |  | Laporan Tahunan_bbox_validator_5483"
+      "detail": "# inggris |  | > mesin offline · 2 halaman · 16 baris"
     },
     {
       "name": "Mesin bawaan dibuat satu kali untuk semua berkas",
@@ -131,7 +141,7 @@
     {
       "name": "Dua berkas diterjemahkan mesin bawaan peramban",
       "ok": true,
-      "detail": "hasil=2"
+      "detail": "hasil=4"
     },
     {
       "name": "Ganti pasangan bahasa memuat model baru",
@@ -146,7 +156,7 @@
     {
       "name": "Dokumen besar (20 halaman) diterjemahkan",
       "ok": true,
-      "detail": "hasil=1"
+      "detail": "hasil=2"
     },
     {
       "name": "Tidak ada object URL menumpuk",

@@ -275,6 +275,27 @@ const zipBytes = (b) => b.length > 4 && b[0] === 0x50 && b[1] === 0x4b;
 /* ============================================================
    Driver
    ============================================================ */
+const STUB_AI = `
+/* Mesin AI daring dimatikan supaya harness ini deterministik dan tidak
+   pernah mengirim dokumen ke internet (atau menyentuh jaringan sama
+   sekali). Mesin AI daring diuji terpisah di
+   tools/audit-translate-ai.mjs dengan server tiruan. */
+(function () {
+  if (!window.PDFTranslateAI) return;
+  window.PDFTranslateAI.configure({ endpoint: "", apiKey: "", model: "", engineId: "" });
+  window.PDFTranslateAI.loadManifest = function () {
+    return Promise.resolve({
+      version: "dimatikan-untuk-harness",
+      engines: [],
+      prompt: {},
+      defaults: {},
+      asal: "harness",
+    });
+  };
+  window.PDFTranslateAI.isConfigured = function () { return false; };
+})();
+`;
+
 class Harness {
   constructor(page) {
     this.page = page;
@@ -284,6 +305,10 @@ class Harness {
   async muat() {
     await this.page.goto(`http://127.0.0.1:${PORT}/index.html`, { waitUntil: "load" });
     await this.page.waitForTimeout(900);
+    /* Mesin AI daring dimatikan supaya audit ini deterministik dan
+       tidak pernah menyentuh jaringan. Mesin AI daring diuji
+       terpisah di tools/audit-translate-ai.mjs (server tiruan). */
+    await this.page.evaluate(STUB_AI);
     _pageRef = this.page;
   }
 

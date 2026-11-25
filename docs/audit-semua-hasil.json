@@ -1,12 +1,12 @@
 {
-  "tanggal": "2026-11-25T08:42:55.822Z",
+  "tanggal": "2026-11-25T15:17:20.550Z",
   "pass": 129,
   "fail": 0,
   "results": [
     {
       "nama": "[rotate] menghasilkan berkas",
       "ok": true,
-      "detail": "sample-putar.pdf (1791 B)"
+      "detail": "sample-putar.pdf (1792 B)"
     },
     {
       "nama": "rotate: semua halaman /Rotate 90",
@@ -156,7 +156,7 @@
     {
       "nama": "[organize] menghasilkan berkas",
       "ok": true,
-      "detail": "sample-susun.pdf (1423 B)"
+      "detail": "sample-susun.pdf (1424 B)"
     },
     {
       "nama": "organize: halaman yang dihapus hilang",
@@ -181,7 +181,7 @@
     {
       "nama": "[scan] menghasilkan berkas",
       "ok": true,
-      "detail": "pindai.pdf (11378 B)"
+      "detail": "pindai.pdf (11377 B)"
     },
     {
       "nama": "scan: hasil PDF valid",
@@ -211,7 +211,7 @@
     {
       "nama": "[word2pdf] menghasilkan berkas",
       "ok": true,
-      "detail": "docu.pdf (995 B)"
+      "detail": "docu.pdf (991 B)"
     },
     {
       "nama": "word2pdf: PDF terbentuk",
@@ -241,7 +241,7 @@
     {
       "nama": "[xls2pdf] menghasilkan berkas",
       "ok": true,
-      "detail": "tabel.pdf (1110 B)"
+      "detail": "tabel.pdf (1109 B)"
     },
     {
       "nama": "xls2pdf: PDF terbentuk",
@@ -451,7 +451,7 @@
     {
       "nama": "[translate] menghasilkan berkas",
       "ok": true,
-      "detail": "sample-terjemahan.md (252 B)"
+      "detail": "sample-terjemahan.md (293 B), sample-terjemahan.pdf (108474 B)"
     },
     {
       "nama": "translate: berkas .md terbentuk",
@@ -461,7 +461,7 @@
     {
       "nama": "translate: isi terjemahan tidak kosong",
       "ok": true,
-      "detail": "\"# sample\\n\\nTest page 1\\nSecret keywords for the so-court test.\\nThe second document\""
+      "detail": "\"# sample\\n\\n> mesin offline · 3 halaman · 9 baris\\n\\nTest page 1\\nSecret keywords for\""
     },
     {
       "nama": "translate: judul dokumen dipertahankan",
@@ -471,7 +471,7 @@
     {
       "nama": "[ocr] menghasilkan berkas",
       "ok": true,
-      "detail": "sample-ocr.pdf (1787 B)"
+      "detail": "sample-ocr.pdf (1788 B)"
     },
     {
       "nama": "ocr: PDF hasil valid",
@@ -481,7 +481,7 @@
     {
       "nama": "[merge] menghasilkan berkas",
       "ok": true,
-      "detail": "sample-dan-1-lainnya-gabungan.pdf (2128 B)"
+      "detail": "sample-dan-1-lainnya-gabungan.pdf (2127 B)"
     },
     {
       "nama": "merge: 3+1 = 4 halaman",
@@ -491,7 +491,7 @@
     {
       "nama": "[split] menghasilkan berkas",
       "ok": true,
-      "detail": "hasil-pisah.zip (3364 B), sample-hal-1.pdf (1006 B), sample-hal-2.pdf (1006 B), sample-hal-3.pdf (1006 B)"
+      "detail": "hasil-pisah.zip (3363 B), sample-hal-1.pdf (1006 B), sample-hal-2.pdf (1006 B), sample-hal-3.pdf (1005 B)"
     },
     {
       "nama": "split: arsip zip dibuat",
@@ -501,7 +501,7 @@
     {
       "nama": "split: zip valid",
       "ok": true,
-      "detail": "3364 B"
+      "detail": "3363 B"
     },
     {
       "nama": "split: 3 PDF per halaman",
