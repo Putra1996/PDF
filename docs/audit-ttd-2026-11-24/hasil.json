@@ -1,0 +1,331 @@
+{
+  "pass": 65,
+  "fail": 0,
+  "results": [
+    {
+      "name": "Pegangan geser ada di pratinjau",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Pegangan geser punya role button + tabindex",
+      "ok": true,
+      "detail": "button/0"
+    },
+    {
+      "name": "Pegangan geser punya aria-label & aria-describedby",
+      "ok": true,
+      "detail": "Kotak tanda tangan — tekan dan geser untuk memindahkan posisi"
+    },
+    {
+      "name": "Pegangan geser punya petunjuk tombol panah",
+      "ok": true,
+      "detail": "ArrowUp ArrowDown ArrowLeft ArrowRight"
+    },
+    {
+      "name": "Pegangan geser memakai touch-action:none (halaman tidak ikut geser)",
+      "ok": true,
+      "detail": "none"
+    },
+    {
+      "name": "Pegangan geser memakai kursor grab",
+      "ok": true,
+      "detail": "grab"
+    },
+    {
+      "name": "Panggung pratinjau berposisi relatif",
+      "ok": true,
+      "detail": "relative"
+    },
+    {
+      "name": "Ada live region untuk pembaca layar",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Pegangan geser terlihat setelah tanda tangan dibuat",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Kotak pegangan tepat di atas kotak tanda tangan di pratinjau",
+      "ok": true,
+      "detail": "dx=0.0 dy=0.0 dw=0.0"
+    },
+    {
+      "name": "Luas pegangan mengikuti kotak tanda tangan (bukan layar penuh)",
+      "ok": true,
+      "detail": "80px dari 338px"
+    },
+    {
+      "name": "Geser dengan JARI memindahkan posisi X",
+      "ok": true,
+      "detail": "ΔX=24.85 mm (haraapan 24.85)"
+    },
+    {
+      "name": "Geser dengan JARI memindahkan posisi Y (arah bawah)",
+      "ok": true,
+      "detail": "ΔY=-15.52 mm (haraapan -15.53)"
+    },
+    {
+      "name": "Kolom X/Y ikut diperbarui setelah geser",
+      "ok": true,
+      "detail": "kolom=54.85,4.48 state=54.85,4.48"
+    },
+    {
+      "name": "Geser dengan TETIKUS memindahkan posisi",
+      "ok": true,
+      "detail": "ΔX=-18.64 mm"
+    },
+    {
+      "name": "Kelas seret (is-drag) dibersihkan setelah mouse up",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Panah kanan memindahkan X 1 mm per tekan",
+      "ok": true,
+      "detail": "ΔX=2.00"
+    },
+    {
+      "name": "Shift + panah atas memindahkan Y 5 mm",
+      "ok": true,
+      "detail": "ΔY=5.00"
+    },
+    {
+      "name": "Geser keluar halaman tetap dijepit",
+      "ok": true,
+      "detail": "x=160 y=0 (halaman 210×297)"
+    },
+    {
+      "name": "Posisi hasil drag benar-benar BERPINDAH dari posisi awal",
+      "ok": true,
+      "detail": "Δx=31.1 Δy=-18.6 mm"
+    },
+    {
+      "name": "Tinta tanda tangan di pratinjau ikut bergeser",
+      "ok": true,
+      "detail": "pratinjau Δx=30.8 mm"
+    },
+    {
+      "name": "PDF hasil dibuat dari posisi hasil drag",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Tanda tangan hasil drag ada di PDF akhir",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "POSISI HASIL DRAG SAMA DENGAN PDF AKHIR (bukan hanya pratinjau)",
+      "ok": true,
+      "detail": "kafka x=65.4 y=6.3 | pratinjau x=65.0 y=5.9 | Δ=0.5/0.4 mm"
+    },
+    {
+      "name": "Rotasi 0°: pratinjau memakai dimensi halaman yang terlihat",
+      "ok": true,
+      "detail": "210×297 mm (harapan 210×297)"
+    },
+    {
+      "name": "Rotasi 0°: PDF hasil dibuat",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Rotasi 0°: tanda tangan ada di PDF hasil",
+      "ok": true,
+      "detail": "kotak 34.4..55.2 mm"
+    },
+    {
+      "name": "Rotasi 0°: posisi tanda tangan sama dengan pratinjau",
+      "ok": true,
+      "detail": "beda mm: 0.27, 0.08, 0.13, 0.50"
+    },
+    {
+      "name": "Rotasi 0°: orientasi tanda tangan sama dengan pratinjau",
+      "ok": true,
+      "detail": "PDF=20.8×7.2 mm pratinjau=21.0×7.9 mm"
+    },
+    {
+      "name": "Rotasi 90°: pratinjau memakai dimensi halaman yang terlihat",
+      "ok": true,
+      "detail": "297×210 mm (harapan 297×210)"
+    },
+    {
+      "name": "Rotasi 90°: PDF hasil dibuat",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Rotasi 90°: tanda tangan ada di PDF hasil",
+      "ok": true,
+      "detail": "kotak 34.4..55.2 mm"
+    },
+    {
+      "name": "Rotasi 90°: posisi tanda tangan sama dengan pratinjau",
+      "ok": true,
+      "detail": "beda mm: 0.06, 2.31, 0.04, 0.24"
+    },
+    {
+      "name": "Rotasi 90°: orientasi tanda tangan sama dengan pratinjau",
+      "ok": true,
+      "detail": "PDF=20.8×7.2 mm pratinjau=18.6×7.4 mm"
+    },
+    {
+      "name": "Rotasi 180°: pratinjau memakai dimensi halaman yang terlihat",
+      "ok": true,
+      "detail": "210×297 mm (harapan 210×297)"
+    },
+    {
+      "name": "Rotasi 180°: PDF hasil dibuat",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Rotasi 180°: tanda tangan ada di PDF hasil",
+      "ok": true,
+      "detail": "kotak 34.4..55.2 mm"
+    },
+    {
+      "name": "Rotasi 180°: posisi tanda tangan sama dengan pratinjau",
+      "ok": true,
+      "detail": "beda mm: 0.27, 0.08, 0.13, 0.50"
+    },
+    {
+      "name": "Rotasi 180°: orientasi tanda tangan sama dengan pratinjau",
+      "ok": true,
+      "detail": "PDF=20.8×7.2 mm pratinjau=21.0×7.9 mm"
+    },
+    {
+      "name": "Rotasi 270°: pratinjau memakai dimensi halaman yang terlihat",
+      "ok": true,
+      "detail": "297×210 mm (harapan 297×210)"
+    },
+    {
+      "name": "Rotasi 270°: PDF hasil dibuat",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Rotasi 270°: tanda tangan ada di PDF hasil",
+      "ok": true,
+      "detail": "kotak 34.4..55.2 mm"
+    },
+    {
+      "name": "Rotasi 270°: posisi tanda tangan sama dengan pratinjau",
+      "ok": true,
+      "detail": "beda mm: 0.06, 2.31, 0.04, 0.24"
+    },
+    {
+      "name": "Rotasi 270°: orientasi tanda tangan sama dengan pratinjau",
+      "ok": true,
+      "detail": "PDF=20.8×7.2 mm pratinjau=18.6×7.4 mm"
+    },
+    {
+      "name": "Posisi di luar halaman dijepit (tidak keluar dari kertas)",
+      "ok": true,
+      "detail": "x=160 w=50 (halaman 210) | y=279.81 h=17.19 (halaman 297)"
+    },
+    {
+      "name": "Kolom X/Y dikoreksi ke nilai yang dijepit",
+      "ok": true,
+      "detail": "kolom=160,279.81 state=160,279.81"
+    },
+    {
+      "name": "Tanda tangan hasil jepit benar-benar berada di dalam halaman",
+      "ok": true,
+      "detail": "x=164.4..185.2 y=284.9..292.1 (halaman 210×297)"
+    },
+    {
+      "name": "Pratinjau & PDF akhir sama-sama dijepit",
+      "ok": true,
+      "detail": "beda x=0.33 y=0.33"
+    },
+    {
+      "name": "Pratinjau mengenali semua halaman target",
+      "ok": true,
+      "detail": "halaman=3"
+    },
+    {
+      "name": "Halaman multi-ukuran: tanda tangan muat di semua halaman",
+      "ok": true,
+      "detail": "x=98 w=50 | y=190 h=17.19 (A5 = 148×210)"
+    },
+    {
+      "name": "PDF multi-halaman tetap dibuat",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Balapan render: tidak ada error 'same canvas'",
+      "ok": true,
+      "detail": "Tanda tangan belum ada — tulis di kanvas atau impor foto/QR code. X 30 mm · Y 20 mm · Leba"
+    },
+    {
+      "name": "Balapan render: pratinjau tetap tampil",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Balapan render (3x): pratinjau tetap tampil & tanpa error",
+      "ok": true,
+      "detail": "Tanda tangan belum ada — tulis di kanvas atau impor foto/QR code. X 30 mm · Y 20 mm · Leba"
+    },
+    {
+      "name": "Balapan render + ganti halaman: tanpa error, pratinjau tetap tampil",
+      "ok": true,
+      "detail": "Tanda tangan belum ada — tulis di kanvas atau impor foto/QR code. X 30 mm · Y 20 mm · Leba"
+    },
+    {
+      "name": "Pratinjau setelah balapan render benar-benar berisi gambar halaman",
+      "ok": true,
+      "detail": "piksel non-putih: 2393 / 144960"
+    },
+    {
+      "name": "Balapan render pada dokumen berteks: tanpa error",
+      "ok": true,
+      "detail": "Tanda tangan belum ada — tulis di kanvas atau impor foto/QR code. X 30 mm · Y 20"
+    },
+    {
+      "name": "Layar 375px: panggung pratinjau tidak meluber",
+      "ok": true,
+      "detail": "scrollWidth > viewport"
+    },
+    {
+      "name": "Layar 375px: pegangan tetap presisi di atas kotak tanda tangan",
+      "ok": true,
+      "detail": "dx=0.0 dy=0.0 dw=0.0"
+    },
+    {
+      "name": "Layar 375px: touch-action tetap none",
+      "ok": true,
+      "detail": "none"
+    },
+    {
+      "name": "Layar 375px: geser dengan jari tetap memindahkan posisi",
+      "ok": true,
+      "detail": "ΔX=19.50 mm"
+    },
+    {
+      "name": "PDF rusak: pegangan geser disembunyikan",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "PDF rusak: pesan error pratinjau ditampilkan",
+      "ok": true,
+      "detail": "PDF tidak bisa dibuka untuk pratinjau: Invalid PDF structure."
+    },
+    {
+      "name": "Dua berkas: pratinjau memakai PDF pertama dan memberi tahu",
+      "ok": true,
+      "detail": "jumlah=1"
+    },
+    {
+      "name": "Tidak ada error JavaScript selama audit",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

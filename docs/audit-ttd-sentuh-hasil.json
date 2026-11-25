@@ -1,0 +1,141 @@
+{
+  "pass": 27,
+  "fail": 0,
+  "results": [
+    {
+      "name": "Pegangan geser terlihat",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Pegangan ubah-lebar terlihat",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Area tangkap pegangan ≥ 44 px (standar Apple HIG) di kedua sisi",
+      "ok": true,
+      "detail": "94 × 55 px"
+    },
+    {
+      "name": "Area tangkap pegangan ubah-lebar ≥ 44 px",
+      "ok": true,
+      "detail": "62 × 62 px"
+    },
+    {
+      "name": "touch-action:none (halaman tidak ikut ter-scroll)",
+      "ok": true,
+      "detail": "none"
+    },
+    {
+      "name": "Penggilan konteks sentuhan dimatikan (-webkit-touch-callout)",
+      "ok": true,
+      "detail": "none"
+    },
+    {
+      "name": "Pemilihan teks dimatikan saat digeser",
+      "ok": true,
+      "detail": "none"
+    },
+    {
+      "name": "Geser dengan JARI memindahkan tanda tangan",
+      "ok": true,
+      "detail": "Δx=43.5 Δy=-20.0 mm"
+    },
+    {
+      "name": "Halaman TIDAK ter-scroll saat digeser",
+      "ok": true,
+      "detail": "scrollY 1716 → 1716"
+    },
+    {
+      "name": "Kolom X/Y ikut berubah",
+      "ok": true,
+      "detail": "kolom=73.49,0"
+    },
+    {
+      "name": "Jari yang meleset ~12 px dari kotak tetap tertangkap",
+      "ok": true,
+      "detail": "Δx=37.3 mm"
+    },
+    {
+      "name": "Tap (tanpa geser) tidak menggeser tanda tangan",
+      "ok": true,
+      "detail": "Δx=0.00"
+    },
+    {
+      "name": "Tap tidak merusak pratinjau",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Pegangan ubah-lebar tersedia",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Menyeret sudut kanan bawah mengubah LEBAR tanda tangan",
+      "ok": true,
+      "detail": "lebar 50 → 84.32 mm"
+    },
+    {
+      "name": "Rasio tinggi/lebar tetap terjaga saat lebar diubah",
+      "ok": true,
+      "detail": "rasio 0.344 → 0.344"
+    },
+    {
+      "name": "Kolom Lebar ikut berubah",
+      "ok": true,
+      "detail": "kolom=84.32 state=84.32"
+    },
+    {
+      "name": "Lebar baru tidak membuat tanda tangan keluar halaman",
+      "ok": true,
+      "detail": "x+w=195.1 / 210"
+    },
+    {
+      "name": "PDF hasil dibuat setelah digeser",
+      "ok": true,
+      "detail": "2346 byte"
+    },
+    {
+      "name": "Tanda tangan hasil geser ada di PDF akhir",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Tanda tangan hasil geser terlihat di pratinjau",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Posisi hasil geser dengan JARI sama dengan PDF akhir",
+      "ok": true,
+      "detail": "kafka x=124.4 y=8.5 | pratinjau x=124.0 y=8.5 | Δ=0.3/0.1 mm"
+    },
+    {
+      "name": "Layar 320px: pegangan tetap terlihat",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Layar 320px: area tangkap tetap ≥ 44 px",
+      "ok": true,
+      "detail": "78 × 49 px (kotak 63.8 × 22.0)"
+    },
+    {
+      "name": "Layar 320px: area tangkap ubah-lebar tetap ≥ 44 px",
+      "ok": true,
+      "detail": "62 × 62 px"
+    },
+    {
+      "name": "Layar 320px: geser dengan jari jalan",
+      "ok": true,
+      "detail": "Δx=39.2 Δy=-20.0 mm"
+    },
+    {
+      "name": "Tidak ada error JavaScript selama audit",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

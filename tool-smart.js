@@ -10,7 +10,7 @@
   const {
     PDFDocument, PDFName, PDFNumber, PDFArray, PDFString, PDFHexString, PDFDict,
     register, tick, MM, loadDoc, saveDoc, openPdfjs, renderPage, canvasToBytes,
-    pageText, extractText, fontFor, drawTextSafe,
+    pageText, extractText, fontFor, drawTextSafe, degrees,
   } = C;
 
   const enc = new TextEncoder();
@@ -500,6 +500,72 @@
   /* ============================================================
      3. Tanda tangan PDF
      ============================================================ */
+
+  /* Kotak halaman yang terlihat (setelah rotasi /Rotate) dalam unit
+     PDF (pt). pdf.js memakai CropBox yang dipotong MediaBox, jadi
+     perhitungannya harus sama supaya pratinjau = PDF akhir. */
+  function kotakTerlihat(p) {
+    const media = p.getMediaBox();
+    const crop = p.getCropBox();
+    const x0 = Math.max(media.x, crop.x);
+    const y0 = Math.max(media.y, crop.y);
+    const x1 = Math.min(media.x + media.width, crop.x + crop.width);
+    const y1 = Math.min(media.y + media.height, crop.y + crop.height);
+    const sudut = p.getRotation ? p.getRotation().angle : 0;
+    const rot = ((Math.round(sudut / 90) * 90) % 360 + 360) % 360;
+    return { x0: x0, y0: y0, x1: x1, y1: y1, w: x1 - x0, h: y1 - y0, rot: rot };
+  }
+
+  /* Batas (mm) supaya tanda tangan muat di semua halaman tujuan:
+     dipakai halaman terkecil di antara target. */
+  function batasTujuan(pages, targets) {
+    let w = Infinity, h = Infinity;
+    for (const n of targets) {
+      const k = kotakTerlihat(pages[n - 1]);
+      const wmm = k.w / MM, hmm = k.h / MM;
+      if (wmm < w) w = wmm;
+      if (hmm < h) h = hmm;
+    }
+    if (!isFinite(w) || !isFinite(h)) return { w: 0, h: 0 };
+    return { w: w, h: h };
+  }
+
+  /* Sesuaikan ukuran + posisi tanda tangan agar selalu di dalam
+     halaman (rasio gambar tetap terjaga). */
+  function muatTanda(wmm, hmm, xmm, ymm, batas) {
+    if (!batas.w || !batas.h) {
+      return { w: Math.max(1, wmm), h: Math.max(0, hmm), x: Math.max(0, xmm), y: Math.max(0, ymm) };
+    }
+    const r = wmm > 0 ? hmm / wmm : 1;
+    let w = Math.max(1, Math.min(wmm, batas.w));
+    let h = w * r;
+    if (h > batas.h) { h = batas.h; w = r > 0 ? h / r : w; }
+    return {
+      w: w, h: h,
+      x: Math.min(Math.max(0, xmm), Math.max(0, batas.w - w)),
+      y: Math.min(Math.max(0, ymm), Math.max(0, batas.h - h)),
+    };
+  }
+
+  /* Gambar tanda tangan pada halaman. Posisi (x, y) adalah koordinat
+     halaman yang terlihat (dari kiri / dari bawah) — sama dengan yang
+     dipakai pratinjau. Halaman berotasi 90/180/270 perlu image
+     diputar supaya tampilannya sama dengan pratinjau. */
+  function gambarTanda(p, img, ttd) {
+    const k = kotakTerlihat(p);
+    const w = ttd.w * MM, h = ttd.h * MM;
+    const vx = ttd.x * MM, vy = ttd.y * MM;
+    if (k.rot === 90) {
+      p.drawImage(img, { x: k.x1 - vy, y: k.y0 + vx, width: w, height: h, rotate: degrees(90) });
+    } else if (k.rot === 180) {
+      p.drawImage(img, { x: k.x1 - vx, y: k.y1 - vy, width: w, height: h, rotate: degrees(180) });
+    } else if (k.rot === 270) {
+      p.drawImage(img, { x: k.x0 + vy, y: k.y1 - vx, width: w, height: h, rotate: degrees(270) });
+    } else {
+      p.drawImage(img, { x: k.x0 + vx, y: k.y0 + vy, width: w, height: h });
+    }
+  }
+
   register({
     id: "sign",
     cat: "security",
@@ -543,16 +609,15 @@
         }
         if (!targets.length) throw new Error(`Halaman "${spec}" tidak ada.`);
         const img = sig.embed === "jpg" ? await doc.embedJpg(sig.bytes) : await doc.embedPng(sig.bytes);
+        /* Batas = halaman terkecil di antara target, lalu posisi &
+           ukuran dijepit di dalamnya supaya tanda tangan tidak pernah
+           keluar dari halaman (nilai ini sama dengan pratinjau). */
+        const batas = batasTujuan(pages, targets);
+        const wmm = Number(opts.w) || 50;
+        const ratio = (img.height || 1) / (img.width || 1);
+        const ttd = muatTanda(wmm, wmm * ratio, Number(opts.x) || 0, Number(opts.y) || 0, batas);
         for (const n of targets) {
-          const p = pages[n - 1];
-          const w = (Number(opts.w) || 50) * MM;
-          const ratio = (img.height || 1) / (img.width || 1);
-          p.drawImage(img, {
-            x: (Number(opts.x) || 0) * MM,
-            y: (Number(opts.y) || 0) * MM,
-            width: w,
-            height: w * ratio,
-          });
+          gambarTanda(pages[n - 1], img, ttd);
         }
         const bytes = await saveDoc(doc);
         out.push({ name: C.safeName(C.baseName(f.name)) + "-ttd.pdf", bytes });

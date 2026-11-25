@@ -75,7 +75,7 @@ persis seperti susunan screenshot.
 |---|---|---|---|
 | Unlock PDF | **new** | `tool-smart.js` `unlock` + `tool-decrypt.js` (dekriptor mandiri: Standard Security Handler R2–R6, RC4/AES, object stream + xref stream → tulis ulang tanpa `/Encrypt`) | `exp-decrypt.mjs` (16/16) + `deep-unlock.mjs` (21/21) + `validate_outputs.py` (14/14 pypdf/pikepdf) |
 | Protect PDF | **new** | `tool-smart.js:251` `protect` + `tool-crypto.js` (MD5/RC4/AES-128-CBC + Standard Security Handler ISO 32000-1 §7.6.3: Algorithm 1/2/3/5) | `protect-test.mjs` (17 pemeriksaan, reader independen pypdf) + `crypto-test.mjs` (12 vektor, nilai `/O`/kunci/`/U` identik dengan pypdf 7.1.1) |
-| Sign PDF | **new** | `tool-smart.js:319` `sign` (tanda tangan tulisan tangan, posisi & ukuran, multi halaman) | `tools2.mjs` → "tanda tangan menghasilkan PDF valid", "tanpa gambar ditolak" |
+| Sign PDF | **new** | `tool-smart.js:319` `sign` (tanda tangan tulisan tangan, posisi & ukuran, multi halaman, **sadar-rotasi `/Rotate` + jepit posisi**) | `tools2.mjs` → "tanda tangan menghasilkan PDF valid", "tanpa gambar ditolak"; `tools/audit-sign.mjs` → 65/0 |
 | Redact PDF | **new** | `tool-smart.js:413` `redact` (cari teks → render ulang halaman → teks benar-benar hilang) | `tools.mjs` → "redaksi menghasilkan berkas"; panel menampilkan jumlah hit |
 | Compare PDF | **new** | `tool-smart.js:502` `compare` (laporan HTML: berubah / sama / baru) | `tools.mjs` → "bandingkan PDF menghasilkan laporan" |
 
@@ -443,6 +443,117 @@ Bukti visual ada di `docs/audit-ocr-2026-11-23/`.
 
 Rincian lengkap: `docs/audit-deskew-2026-11-24.md`;
 bukti visual: `docs/audit-deskew-2026-11-24/`.
+
+### Audit "Tanda tangani PDF" — pratinjau terbalik 90 derajat — 24 November 2026
+
+Laporan bug: *"saat memuat dokumen pdf di preview dokumennya terbalik 90
+derajat"* pada alat **Tanda tangani PDF**.
+
+#### Akar masalah
+
+Pratinjau memakai **halaman yang terlihat** (`pdf.js` sudah memperhitungkan
+`/Rotate`), sedangkan PDF akhir digambar di **ruang pengguna** mentah
+(`pdf-lib` tidak tahu soal rotasi). Pada halaman biasa keduanya sama, tetapi
+pada halaman berotasi (umum pada hasil pindai) posisi tanda tangan di PDF
+akhir meleset sampai **245 mm** dan gambarnya ikut berputar.
+
+#### Yang diperbaiki
+
+| Temuan | Perbaikan |
+|---|---|
+| Pratinjau ≠ PDF akhir untuk halaman `/Rotate` 90/180/270° | Penempatan sadar-rotasi (`kotakTerlihat()` + `gambarTanda()`) memakai CropBox∩MediaBox dan memutar image agar tegak |
+| Tidak ada jepit posisi — `x = 400 mm` diterima, tanda tangan keluar kertas | Posisi **dan** ukuran dijepit ke halaman terkecil di antara target; rasio gambar terjaga; kolom X/Y/Lebar dikoreksi |
+| Pratinjau dan PDF akhir memakai perhitungan berbeda | Keduanya memakai sumber ukuran & batas yang sama → pratinjau = hasil |
+
+#### Tambahan: posisi tanda tangan bisa digeser dengan jari
+
+| Aspek | Hasil |
+|---|---|
+| Pegangan geser di pratinjau | sejajar **0,0 px** dengan kotak tanda tangan (desktop & 375 px) |
+| Geser dengan jari (Pointer Events + `touch-action:none`) | ΔX 24,85 mm untuk 40 px; ΔY −15,52 mm (arah bawah benar) |
+| Geser dengan tetikus | ΔX −18,64 mm untuk 30 px |
+| Keyboard | panah = 1 mm, `Shift`+panah = 5 mm |
+| Performa | drag **tidak** memicu render ulang PDF — halaman disalin ke kanvas `snap`, hanya satu frame digambar ulang |
+| End-to-end | posisi setelah **drag** benar-benar masuk ke PDF akhir (Δ 0,5 / 0,4 mm dari pratinjau) |
+| Aksesibilitas | `role="button"`, `tabindex="0"`, `aria-label`, `aria-describedby`, `aria-keyshortcuts`, live region `role="status"` |
+
+#### Bug kedua: "Cannot use the same canvas during multiple render() operations"
+
+Laporan: pratinjau gagal dirender dengan pesan
+
+```
+Halaman tidak bisa dirender: Cannot use the same canvas during multiple
+render() operations. Use different canvas or ensure previous operations
+were cancelled or completed.
+```
+
+**Akar masalah:** pdf.js menyimpan kumpulan kanvas yang sedang dipakai dan
+melempar error itu kalau dua `render()` memakai kanvas yang sama sebelum
+render sebelumnya selesai. Pratinjau tanda tangan menulis ke kanvas
+`preview` yang persisten, dan pemicu refresh bisa datang saat render itu
+masih jalan. Yang paling nyata: berkas baru masuk memicu **dua** refresh
+(`renderFiles()` → `onOptsChange` → jeda 160 ms, **dan** penangan berkas →
+`refreshPreview()` langsung) — sehingga error muncul tepat setelah
+memuat dokumen.
+
+| Temuan | Perbaikan |
+|---|---|
+| Render memakai kanvas yang sama → bentrok pdf.js | Tiap render memakai **kanvas baru**; hasilnya disalin ke kanvas terlihat setelah selesai |
+| Render lama masih jalan saat render baru mulai | Render lama **dibatalkan** dan ditunggu selesai; pembatalan tidak lagi dianggap error |
+| Dua render untuk isi yang sama | Dilewati lewat **kunci isi pratinjau** (berkas, halaman, posisi, ukuran, gambar tanda tangan) |
+| Render basi bisa menyembunyikan pratinjau baru (alat lain) | `renderPreview()` diberi token — hasil basi dibuang |
+
+Uji balapan render (2×, 3×, + ganti halaman) di harness: sebelum perbaikan
+**3 gagal**, sesudah **65 lulus / 0 gagal**.
+
+#### Audit sentuhan — target sentuh & area tangkap
+
+Laporan: *"fitur tanda tangani belum bisa digeser dengan jari, harus manual
+dengan input angka di menu pilihan."*
+
+Audit sentuhan (emulasi iPhone 13, 390 px, sentuhan asli via CDP)
+menemukan bahwa fitur geser **sudah ada**, tapi **area tangkapnya terlalu
+kecil untuk jempol**:
+
+| | Sebelum | Sesudah |
+|---|---|---|
+| Area tangkap (390 px) | 80 × **28** px | **94 × 55** px |
+| Area tangkap (320 px) | 64 × **22** px | **78 × 49** px |
+| Jari meleset 12 px dari kotak | **tidak tertangkap** | tertangkap |
+| `-webkit-touch-callout` | aktif | dimatikan |
+| Ubah lebar tanpa mengetik angka | tidak ada | pegangan pojok kanan bawah (62 × 62 px) |
+
+| Temuan | Perbaikan |
+|---|---|
+| Area tangkap setipis 28 px — di bawah ambang sentuh 44 px | `.sign-drag::before { inset:-15px }` memperbesar area tangkap; kotak terlihat tetap menandai posisi sebenarnya |
+| Tidak ada toleransi saat jari meleset | Area tangkap diperbesar 15 px per sisi (Δx 37,3 mm untuk meleset 12 px) |
+| Panggilan konteks iOS mengganggu gerakan | `-webkit-touch-callout:none` + `-webkit-tap-highlight-color:transparent` |
+| Lebar hanya bisa diisi angka | Pegangan **ubah-lebar** di pojok kanan bawah (62 × 62 px), rasio gambar tetap terjaga |
+| `pointermove` hanya di elemen pegangan | Listener `pointermove`/`pointerup`/`pointercancel` juga di `window` — drag tetap jalan walau pointer capture gagal |
+
+Harness `tools/audit-sign-touch.mjs` (baru, **26 pemeriksaan**): terhadap
+kode sebelum perbaikan **8 gagal**, terhadap kode sesudah **26 lulus / 0
+gagal**. Bukti: `docs/audit-ttd-sentuh-2026-11-25.md`.
+
+#### Hasil suite
+
+| Harness | Pemeriksaan | Gagal |
+|---|---|---|
+| `tools/audit-sign.mjs` (audit khusus tanda tangan) | 65 | 0 |
+| `tools/audit-sign-touch.mjs` (audit sentuhan / layar ponsel) | 26 | 0 |
+| `tools/audit-translate.mjs` | 30 | 1 — "Mesin bawaan peramban terdeteksi" (versi Chromium di lingkungan uji; bukan perubahan kode) |
+| `tools/audit-pagerange.mjs` | 106 | 0 |
+| `tools/audit-merge-preview.mjs` | 44 | 0 |
+| `tools/audit-deskew.mjs` | 56 | 0 |
+| `tools/audit-ocr.mjs` | 44 | 0 |
+| `tools/audit-preview-perf.mjs` | 39 | 0 |
+| `tools/verify-produksi.mjs` | 73 | 1 — cacat layout toolbar lama (sudah gagal di commit baseline) |
+
+Selisih posisi tanda tangan antara pratinjau dan PDF akhir setelah
+perbaikan: ≤ **2,31 mm** untuk semua rotasi (sebelumnya sampai 245 mm).
+
+Bukti visual ada di `docs/audit-ttd-2026-11-24/`; rincian lengkap di
+`docs/audit-ttd-2026-11-24.md`.
 
 ## Catatan
 

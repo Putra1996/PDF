@@ -77,7 +77,13 @@ export async function siapkanPustaka() {
   try {
     const lambdafsPath = path.join(dir, "build", "lambdafs.js");
     const mod = await import(pathToFileURL(lambdafsPath).href);
-    const inflate = mod.inflate || (mod.default && mod.default.inflate);
+    /* Bentuk ekspor berbeda-beda antar versi @sparticuz/chromium:
+         mod.inflate                  -> fungsi langsung
+         mod.default.inflate          -> dibungkus default
+         mod.default.default.inflate  -> kelas LambdaFS (static method) */
+    const inflate = mod.inflate
+      || (mod.default && (mod.default.inflate
+        || (mod.default.default && mod.default.default.inflate)));
     if (!inflate) return false;
     await inflate(src);
   } catch (err) {

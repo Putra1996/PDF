@@ -248,10 +248,14 @@
      Pratinjau dokumen di kolom utama
      ============================================================ */
   let previewDoc = null;
+  /* Token render pratinjau umum — render yang lebih lama tidak boleh
+     menutupi hasil render yang lebih baru. */
+  let previewToken = 0;
 
   async function renderPreview() {
     const box = $("#toolPreview");
     if (!box) return;
+    const token = ++previewToken;
     const tool = state.tool;
     const f = state.files[0];
     /* alat dengan panel khusus (editor, susun, tanda tangan, ...)
@@ -260,6 +264,7 @@
       /pdf/i.test(tool.accept || "application/pdf");
     if (!bisa) {
       box.hidden = true;
+      previewToken++;
       if (previewDoc) { try { previewDoc.destroy(); } catch (_) { } previewDoc = null; }
       return;
     }
@@ -271,8 +276,10 @@
     try {
       if (previewDoc) { try { previewDoc.destroy(); } catch (_) { } previewDoc = null; }
       const data = f.bytes.slice();
-      previewDoc = await window.pdfjsLib.getDocument({ data }).promise;
-      const page = await previewDoc.getPage(1);
+      const doc = await window.pdfjsLib.getDocument({ data }).promise;
+      if (token !== previewToken) { try { doc.destroy(); } catch (_) { } return; }
+      previewDoc = doc;
+      const page = await doc.getPage(1);
       const base = page.getViewport({ scale: 1 });
       const skala = Math.min(1.4, 520 / base.width);
       const vp = page.getViewport({ scale: skala });
@@ -283,10 +290,15 @@
       ctx.fillStyle = "#fff";
       ctx.fillRect(0, 0, cv.width, cv.height);
       await page.render({ canvasContext: ctx, viewport: vp }).promise;
+      /* render yang lebih baru sudah tampil -> yang ini dibuang */
+      if (token !== previewToken) return;
       frame.appendChild(cv);
       cap.textContent = `Pratinjau halaman 1 — ${f.name}` +
-        (previewDoc.numPages > 1 ? ` (dari ${previewDoc.numPages} halaman)` : "");
+        (doc.numPages > 1 ? ` (dari ${doc.numPages} halaman)` : "");
     } catch (e) {
+      /* render yang lebih baru jangan sampai tersembunyi oleh
+         kegagalan render yang lama */
+      if (token !== previewToken) return;
       box.hidden = true;
       frame.innerHTML = "";
     }
@@ -1206,8 +1218,21 @@
             <button type="button" class="btn btn-ghost btn-sm" id="signNext" title="Halaman berikutnya" aria-label="Halaman berikutnya">›</button>
           </span>
         </div>
-        <canvas id="signPreview" class="sign-preview-canvas" width="320" height="452"></canvas>
+        <div class="sign-stage" id="signStage">
+          <canvas id="signPreview" class="sign-preview-canvas" width="320" height="452"></canvas>
+          <div id="signDrag" class="sign-drag" role="button" tabindex="0" hidden
+               aria-label="Kotak tanda tangan — tekan dan geser untuk memindahkan posisi"
+               aria-describedby="signPreviewHint"
+               aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight">
+            <span class="sign-grip" aria-hidden="true"></span>
+          </div>
+          <div id="signResize" class="sign-resize" role="button" tabindex="0" hidden
+               aria-label="Sudut kanan bawah — tekan dan geser untuk mengubah lebar tanda tangan"
+               aria-describedby="signPreviewHint"
+               aria-keyshortcuts="ArrowLeft ArrowRight"></div>
+        </div>
         <p class="muted tiny" id="signPreviewHint">Pilih satu PDF untuk melihat pratinjau.</p>
+        <span class="sr-only" id="signDragStatus" role="status" aria-live="polite"></span>
       </div>`;
     host.appendChild(wrap);
     const pad = $("#signPad", wrap);
@@ -1248,9 +1273,18 @@
     const pageLbl = $("#signPreviewPage", wrap);
     const prevBtn = $("#signPrev", wrap);
     const nextBtn = $("#signNext", wrap);
+    const drag = $("#signDrag", wrap);
+    const resize = $("#signResize", wrap);
+    const statusEl = $("#signDragStatus", wrap);
+    /* Salinan halaman tanpa tanda tangan — supaya kotak tanda tangan bisa
+       digeser tanpa render ulang PDF (cukup satu frame). */
+    const snap = document.createElement("canvas");
+    const sctx = snap.getContext("2d");
     /* gambar tanda tangan yang aktif (dataURL) + lebar/tinggi piksel */
     let img = null;
     let imgW = 0, imgH = 0;
+    /* <img> siap pakai untuk menggambar ulang tanda tangan */
+    let sigImg = null;
     /* dokumen pratinjau (pdf.js) */
     let pdfDoc = null;
     let pdfBytesKey = "";
@@ -1258,8 +1292,65 @@
     let targets = [];
     let targetIdx = 0;
     let renderToken = 0;
+    /* Batas halaman terkecil di antara halaman tujuan (mm) — dipakai
+       untuk menjepit posisi & ukuran tanda tangan supaya tidak pernah
+       keluar dari halaman. Nilainya sama dengan yang dipakai saat
+       membuat PDF akhir (tool-smart.js), jadi pratinjau = hasil. */
+    let batas = { w: 0, h: 0 };
+    let batasKey = "";
+    /* Geometri terakhir (mm + piksel) — sumber tunggal untuk gambar,
+       geser, dan audit. */
+    let geo = null;
+    /* Seret yang sedang berjalan (id pointer + selisih jepitan). */
+    let seret = null;
+    /* Render pdf.js yang sedang berjalan + antrean render.
+       pdf.js menyimpan kumpulan kanvas yang sedang dipakai dan melempar
+       "Cannot use the same canvas during multiple render() operations"
+       kalau render() dipanggil lagi pada kanvas yang sama sebelum render
+       sebelumnya selesai. Karena itu: tiap render memakai kanvas BARU,
+       render yang lebih lama dibatalkan, dan render waited bergantian. */
+    let renderTask = null;
+    let renderSelesai = Promise.resolve();
+    /* Kunci isi pratinjau yang sedang tampil — dipakai supaya refresh
+       yang isinya sama tidak perlu render ulang. */
+    let kunciTampil = "";
 
     const setHint = (t) => { hint.textContent = t || ""; };
+    const bulat = (n) => Math.round(Number(n) * 100) / 100;
+    const setStatus = (t) => { if (statusEl) statusEl.textContent = t || ""; };
+    /* Ucapan posisi untuk pembaca layar. */
+    const teksPosisi = () => "Posisi tanda tangan: " + bulat(geo.xMm) + " milimeter dari kiri, "
+      + bulat(geo.yMm) + " milimeter dari bawah.";
+
+    /* Rasio tinggi/lebar tanda tangan (1 = kotak, belum ada gambar). */
+    const rasioTanda = () => (imgW && imgH ? imgH / imgW : 1);
+
+    /* Sesuaikan ukuran kotak tanda tangan supaya muat di halaman
+       terkecil; rasio gambar tetap terjaga. */
+    const muatKotak = (wmm, hmm) => {
+      if (!batas.w || !batas.h) return { w: Math.max(1, Number(wmm) || 0), h: Math.max(0, Number(hmm) || 0) };
+      const r = wmm > 0 ? hmm / wmm : 1;
+      let w = Math.max(1, Math.min(Number(wmm) || 0, batas.w));
+      let h = w * r;
+      if (h > batas.h) { h = batas.h; w = r > 0 ? h / r : w; }
+      return { w: w, h: h };
+    };
+
+    /* Jepit posisi agar seluruh kotak tanda tangan tetap di dalam
+       halaman (batas = halaman terkecil di antara target). */
+    const jepit = (x, y, w, h) => ({
+      x: Math.min(Math.max(0, Number(x) || 0), Math.max(0, batas.w - w)),
+      y: Math.min(Math.max(0, Number(y) || 0), Math.max(0, batas.h - h)),
+    });
+
+    /* Tulis kolom X / Y / Lebar supaya angka, pratinjau, dan PDF akhir
+       selalu sama. */
+    const setField = (id, v) => {
+      const el = document.getElementById("f_" + id);
+      if (!el) return;
+      if (document.activeElement === el) return;
+      el.value = String(v);
+    };
 
     /* Pratinjau digambar ulang saat opsi berubah — diberi jeda supaya
        mengetik angka tidak memicu render berkali-kali. */
@@ -1408,16 +1499,300 @@
       return out;
     }
 
+    /* Kunci isi pratinjau. Semua hal yang memengaruhi tampilan ikut
+       dihitung: berkas, halaman target, posisi, ukuran, dan gambar
+       tanda tangan. */
+    const kunciPreview = () => [
+      pdfBytesKey, targets.join(","), targetIdx,
+      bulat(Number(state.opts.x) || 0),
+      bulat(Number(state.opts.y) || 0),
+      bulat(Number(state.opts.w) || 50),
+      img || "",
+    ].join("|");
+
+    /* Batalkan render yang sedang berjalan (bila ada). */
+    const batalRender = () => {
+      if (renderTask) {
+        try { renderTask.cancel(); } catch (_) { /* abaikan */ }
+      }
+    };
+
+    /* Render satu halaman ke kanvas BARU.
+       - kanvas selalu baru, jadi tidak pernah bentrok dengan render lain
+       - render sebelumnya dibatalkan & ditunggu selesai (pdf.js lebih
+         aman kalau satu halaman tidak dirender dua kali sekaligus)
+       - balik null kalau render ini disusul render yang lebih baru
+         (bukan error — render yang lebih baru yang menang) */
+    async function renderHalaman(hal, vp, token) {
+      batalRender();
+      /* tunggu render sebelumnya benar-benar selesai */
+      await renderSelesai.catch(() => { /* abaikan */ });
+      if (token !== renderToken) return null;
+      const kanvas = document.createElement("canvas");
+      kanvas.width = Math.max(1, Math.round(vp.width));
+      kanvas.height = Math.max(1, Math.round(vp.height));
+      const kctx = kanvas.getContext("2d", { alpha: false });
+      kctx.fillStyle = "#ffffff";
+      kctx.fillRect(0, 0, kanvas.width, kanvas.height);
+      const tugas = hal.render({ canvasContext: kctx, viewport: vp });
+      renderTask = tugas;
+      renderSelesai = tugas.promise.then(() => { }, () => { });
+      try {
+        await tugas.promise;
+      } catch (err) {
+        const nama = (err && err.name) || "";
+        const pesan = (err && err.message) || "";
+        const dibatalkan = nama === "RenderingCancelledException"
+          || nama === "AbortException" || /cancel/i.test(pesan);
+        if (!dibatalkan) throw err;
+        return null;
+      }
+      if (token !== renderToken) return null;
+      return kanvas;
+    }
+
+    /* Gambar isi kanvas pratinjau: halaman + tanda tangan. Dipakai ulang
+       setiap kali posisi berubah supaya drag tidak perlu render ulang
+       PDF (render ulang halaman butuh 9-123 ms). */
+    const gambarTanda = () => {
+      if (!geo) return;
+      pctx.clearRect(0, 0, preview.width, preview.height);
+      if (snap.width && snap.height) pctx.drawImage(snap, 0, 0);
+      if (sigImg) {
+        pctx.save();
+        pctx.globalAlpha = 1;
+        pctx.drawImage(sigImg, geo.xPx, geo.yPx, geo.wPx, geo.hPx);
+        pctx.restore();
+      }
+    };
+
+    /* Letakkan pegangan geser tepat di atas kotak tanda tangan.
+       Dipakai persentase terhadap halaman supaya aman dari perubahan
+       ukuran kanvas (ponsel layar sempit, zoom, dan lain-lain). */
+    const posisiPegangan = () => {
+      /* Pegangan hanya muncul kalau ada tanda tangan untuk digeser. */
+      if (!geo || !geo.pageWmm || !geo.pageHmm || !sigImg) {
+        drag.hidden = true;
+        resize.hidden = true;
+        return;
+      }
+      drag.hidden = false;
+      drag.style.left = (geo.xMm / geo.pageWmm * 100) + "%";
+      drag.style.top = ((geo.pageHmm - geo.yMm - geo.hMm) / geo.pageHmm * 100) + "%";
+      drag.style.width = (geo.wMm / geo.pageWmm * 100) + "%";
+      drag.style.height = (geo.hMm / geo.pageHmm * 100) + "%";
+      /* Sudut kanan bawah untuk mengubah lebar (jarum jempol) */
+      resize.hidden = false;
+      resize.style.left = ((geo.xMm + geo.wMm) / geo.pageWmm * 100) + "%";
+      resize.style.top = ((geo.pageHmm - geo.yMm) / geo.pageHmm * 100) + "%";
+    };
+
+    /* Pindahkan kotak tanda tangan ke posisi mm tertentu (dijepit). */
+    const pindahkan = (xmm, ymm) => {
+      if (!geo) return;
+      const kotak = muatKotak(geo.wMm, geo.hMm);
+      const pos = jepit(xmm, ymm, kotak.w, kotak.h);
+      geo.xMm = pos.x; geo.yMm = pos.y;
+      geo.wMm = kotak.w; geo.hMm = kotak.h;
+      geo.xPx = geo.xMm * geo.k;
+      geo.wPx = geo.wMm * geo.k;
+      geo.hPx = geo.hMm * geo.k;
+      geo.yPx = geo.tinggiPx - (geo.yMm + geo.hMm) * geo.k;
+      gambarTanda();
+      posisiPegangan();
+      terapkanPosisi();
+    };
+
+    /* Ubah lebar tanda tangan (rasio tinggi/lebar tetap terjaga). */
+    const ubahLebar = (lebarMm) => {
+      if (!geo) return;
+      const r = geo.wMm > 0 ? geo.hMm / geo.wMm : 1;
+      let w = Math.max(10, Math.min(Number(lebarMm) || 0, batas.w || Infinity));
+      let h = w * r;
+      if (batas.h && h > batas.h) { h = batas.h; w = r > 0 ? h / r : w; }
+      geo.wMm = w; geo.hMm = h;
+      /* posisi ikut dijepit supaya kotak tetap muat di halaman */
+      const pos = jepit(geo.xMm, geo.yMm, w, h);
+      geo.xMm = pos.x; geo.yMm = pos.y;
+      geo.xPx = geo.xMm * geo.k;
+      geo.wPx = geo.wMm * geo.k;
+      geo.hPx = geo.hMm * geo.k;
+      geo.yPx = geo.tinggiPx - (geo.yMm + geo.hMm) * geo.k;
+      gambarTanda();
+      posisiPegangan();
+      terapkanPosisi();
+    };
+
+    /* Tulis kolom X / Y / Lebar supaya angka, pratinjau, dan PDF akhir
+       selalu sama. */
+    const terapkanPosisi = () => {
+      if (!geo) return;
+      const x = bulat(geo.xMm), y = bulat(geo.yMm), w = bulat(geo.wMm);
+      if (Number(state.opts.x) !== x) { state.opts.x = x; setField("x", x); }
+      if (Number(state.opts.y) !== y) { state.opts.y = y; setField("y", y); }
+      if (Number(state.opts.w) !== w) { state.opts.w = w; setField("w", w); }
+      perbaruiInfo();
+    };
+
+    /* Data geometri untuk audit & pengujian. */
+    const perbaruiInfo = () => {
+      if (!geo) { state.custom.previewInfo = null; return; }
+      state.custom.previewInfo = {
+        page: geo.page,
+        jumlah: targets.length,
+        pageWmm: bulat(geo.pageWmm),
+        pageHmm: bulat(geo.pageHmm),
+        batasWmm: bulat(batas.w),
+        batasHmm: bulat(batas.h),
+        xMm: bulat(geo.xMm), yMm: bulat(geo.yMm),
+        wMm: bulat(geo.wMm), hMm: bulat(geo.hMm),
+        xPx: bulat(geo.xPx), yPx: bulat(geo.yPx),
+        wPx: bulat(geo.wPx), hPx: bulat(geo.hPx),
+        adaGambar: !!img,
+        imgW: imgW, imgH: imgH,
+        seret: !!seret,
+      };
+    };
+
+    /* ---------- geser posisi tanda tangan (jari / mouse / pena) ---------- */
+    /* Ubah koordinat penunjuk (CSS px) menjadi mm pada halaman, dengan
+       Y dihitung dari bawah halaman. */
+    const titikMm = (e) => {
+      if (!geo) return null;
+      const r = preview.getBoundingClientRect();
+      if (!r.width || !r.height) return null;
+      const fx = (e.clientX - r.left) / r.width;
+      const fy = (e.clientY - r.top) / r.height;
+      return { x: fx * geo.pageWmm, y: geo.pageHmm - fy * geo.pageHmm };
+    };
+
+    /* Mulai gerakan. `mode` = "geser" (pindah posisi) atau "lebar"
+       (ubah ukuran). Selisih jepitan disimpan supaya tanda tangan
+       mengikuti titik sentuh secara relatif — tidak melompat. */
+    const mulaiSeret = (e, el, mode) => {
+      if (!geo) return;
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      const p = titikMm(e);
+      if (!p) return;
+      e.preventDefault();
+      seret = {
+        id: e.pointerId, mode: mode || "geser", el: el,
+        dx: p.x - geo.xMm, dy: p.y - geo.yMm,
+        xKiri: geo.xMm, wAwal: geo.wMm,
+      };
+      /* Pointer capture: drag tetap jalan walau jari keluar dari kotak.
+         Kalau browser tidak mendukung, listener window (di bawah) yang
+         menjaganya. */
+      try { el.setPointerCapture(e.pointerId); } catch (_) { /* abaikan */ }
+      drag.classList.add("is-drag");
+      resize.classList.add("is-drag");
+      try { el.focus({ preventScroll: true }); } catch (_) { /* abaikan */ }
+      if (seret.mode === "lebar") ubahLebar(p.x - seret.xKiri);
+      else pindahkan(p.x - seret.dx, p.y - seret.dy);
+    };
+
+    const jalanSeret = (e) => {
+      if (!seret || e.pointerId !== seret.id) return;
+      const p = titikMm(e);
+      if (!p) return;
+      if (seret.mode === "lebar") ubahLebar(p.x - seret.xKiri);
+      else pindahkan(p.x - seret.dx, p.y - seret.dy);
+    };
+
+    const selesaiSeret = (e) => {
+      if (!seret) return;
+      if (e && e.pointerId != null && e.pointerId !== seret.id) return;
+      const id = seret.id;
+      const el = seret.el;
+      seret = null;
+      drag.classList.remove("is-drag");
+      resize.classList.remove("is-drag");
+      try { el && el.releasePointerCapture(id); } catch (_) { /* abaikan */ }
+      perbaruiInfo();
+      if (geo) setStatus(teksPosisi());
+    };
+
+    drag.addEventListener("pointerdown", (e) => mulaiSeret(e, drag, "geser"));
+    resize.addEventListener("pointerdown", (e) => mulaiSeret(e, resize, "lebar"));
+    drag.addEventListener("pointerup", selesaiSeret);
+    drag.addEventListener("pointercancel", selesaiSeret);
+    drag.addEventListener("lostpointercapture", selesaiSeret);
+    resize.addEventListener("pointerup", selesaiSeret);
+    resize.addEventListener("pointercancel", selesaiSeret);
+    resize.addEventListener("lostpointercapture", selesaiSeret);
+    /* Cadangan: listener di window — jalan walau pointer capture gagal
+       (sebagian peramban seluler tidak meneruskan pointermove ke elemen
+       yang tidak lagi berada di bawah jari). */
+    window.addEventListener("pointermove", jalanSeret, { passive: true });
+    window.addEventListener("pointerup", selesaiSeret);
+    window.addEventListener("pointercancel", selesaiSeret);
+
+    /* Pindah posisi juga dengan keyboard (tanpa tetikus/jari). */
+    drag.addEventListener("keydown", (e) => {
+      if (!geo) return;
+      const langkah = e.shiftKey ? 5 : 1;
+      let dx = 0, dy = 0;
+      if (e.key === "ArrowLeft") dx = -langkah;
+      else if (e.key === "ArrowRight") dx = langkah;
+      else if (e.key === "ArrowUp") dy = langkah;
+      else if (e.key === "ArrowDown") dy = -langkah;
+      else return;
+      e.preventDefault();
+      pindahkan(geo.xMm + dx, geo.yMm + dy);
+      setStatus(teksPosisi());
+    });
+
+    /* Ubah lebar dengan keyboard (tanpa tetikus/jari). */
+    resize.addEventListener("keydown", (e) => {
+      if (!geo) return;
+      const langkah = e.shiftKey ? 5 : 1;
+      let d = 0;
+      if (e.key === "ArrowRight") d = langkah;
+      else if (e.key === "ArrowLeft") d = -langkah;
+      else return;
+      e.preventDefault();
+      ubahLebar(geo.wMm + d);
+      setStatus("Lebar tanda tangan " + bulat(geo.wMm) + " milimeter.");
+    });
+
+    /* Ukuran halaman terkecil di antara halaman tujuan (mm). Dipakai
+       sebagai batas supaya tanda tangan tidak keluar dari halaman
+       mana pun. */
+    async function hitungBatas() {
+      const key = pdfBytesKey + "|" + String((state.opts && state.opts.page) || "");
+      if (key === batasKey && batas.w) return batas;
+      const uk = { w: Infinity, h: Infinity };
+      for (const no of targets) {
+        try {
+          const pg = await pdfDoc.getPage(no);
+          const vp = pg.getViewport({ scale: 1 });
+          const wmm = (vp.width / (vp.scale || 1)) * 25.4 / 72;
+          const hmm = (vp.height / (vp.scale || 1)) * 25.4 / 72;
+          if (wmm < uk.w) uk.w = wmm;
+          if (hmm < uk.h) uk.h = hmm;
+        } catch (_) { /* abaikan */ }
+      }
+      if (!isFinite(uk.w) || !isFinite(uk.h)) { uk.w = 0; uk.h = 0; }
+      batas = uk;
+      batasKey = key;
+      return batas;
+    }
+
     async function refreshPreview() {
       const token = ++renderToken;
       const f = state.files[0];
       if (!f) {
         targets = []; targetIdx = 0;
+        batas = { w: 0, h: 0 }; batasKey = "";
+        geo = null; sigImg = null;
         pctx.fillStyle = "#f1f5f9";
         pctx.fillRect(0, 0, preview.width, preview.height);
         pageLbl.textContent = "—";
         setHint("Pilih satu PDF untuk melihat pratinjau.");
         prevBtn.disabled = nextBtn.disabled = true;
+        drag.hidden = true;
+        resize.hidden = true;
+        state.custom.previewInfo = null;
         return;
       }
       /* pratinjau hanya menampilkan berkas pertama */
@@ -1433,6 +1808,10 @@
           pdfBytesKey = key;
         } catch (err) {
           setHint("PDF tidak bisa dibuka untuk pratinjau: " + ((err && err.message) || err));
+          drag.hidden = true;
+          resize.hidden = true;
+          geo = null;
+          state.custom.previewInfo = null;
           return;
         }
       }
@@ -1445,6 +1824,10 @@
         pageLbl.textContent = "—";
         setHint("Halaman \"" + (state.opts.page || "1") + "\" tidak ada di PDF ini.");
         prevBtn.disabled = nextBtn.disabled = true;
+        drag.hidden = true;
+        resize.hidden = true;
+        geo = null;
+        state.custom.previewInfo = null;
         return;
       }
       if (targetIdx >= targets.length) targetIdx = 0;
@@ -1452,79 +1835,122 @@
       pageLbl.textContent = no + " / " + targets.length;
       prevBtn.disabled = targetIdx <= 0;
       nextBtn.disabled = targetIdx >= targets.length - 1;
-
-      /* render halaman lalu gambar tanda tangan di posisi yang diminta */
-      const maxW = 320;
-      let vp = null;
-      try {
-        const pg = await pdfDoc.getPage(no);
-        const base = pg.getViewport({ scale: 1 });
-        const scale = maxW / (base.width || 1);
-        vp = pg.getViewport({ scale });
-        if (token !== renderToken) return;
-        preview.width = Math.max(1, Math.round(vp.width));
-        preview.height = Math.max(1, Math.round(vp.height));
-        pctx.fillStyle = "#ffffff";
-        pctx.fillRect(0, 0, preview.width, preview.height);
-        await pg.render({ canvasContext: pctx, viewport: vp }).promise;
-        if (token !== renderToken) return;
-      } catch (err) {
-        setHint("Halaman tidak bisa dirender: " + ((err && err.message) || err));
+      /* Isi pratinjau sama persis dengan yang sudah tampil? Kalau ya,
+         tidak perlu render ulang. (Berkas baru memicu dua refresh:
+         renderFiles() menjadwalkan, lalu berkas memicu langsung.) */
+      const kunci = kunciPreview();
+      if (kunci === kunciTampil && !renderTask) {
+        if (geo) {
+          posisiPegangan();
+          perbaruiInfo();
+        }
         return;
       }
-      /* overlay tanda tangan */
-      const xMm = Number(state.opts.x) || 0;
-      const yMm = Number(state.opts.y) || 0;
-      const wMm = Number(state.opts.w) || 50;
+
+      /* Render halaman lalu gambar tanda tangan di posisi yang diminta.
+         Render dilakukan pada kanvas KHUSUS (bukan kanvas yang terlihat)
+         supaya dua render yang tumpang tindih tidak pernah memakai kanvas
+         yang sama — pdf.js melempar "Cannot use the same canvas during
+         multiple render() operations" kalau begitu. */
+      const maxW = 320;
+      let vp = null;
+      let hal = null;
+      try {
+        hal = await pdfDoc.getPage(no);
+        const base = hal.getViewport({ scale: 1 });
+        const scale = maxW / (base.width || 1);
+        vp = hal.getViewport({ scale });
+      } catch (err) {
+        setHint("Halaman tidak bisa dirender: " + ((err && err.message) || err));
+        drag.hidden = true;
+        resize.hidden = true;
+        geo = null;
+        state.custom.previewInfo = null;
+        return;
+      }
+      if (token !== renderToken) return;
+      let kanvas = null;
+      try {
+        kanvas = await renderHalaman(hal, vp, token);
+      } catch (err) {
+        setHint("Halaman tidak bisa dirender: " + ((err && err.message) || err));
+        drag.hidden = true;
+        resize.hidden = true;
+        geo = null;
+        state.custom.previewInfo = null;
+        return;
+      }
+      /* null = render ini disusul render yang lebih baru; yang baru saja
+         yang boleh tampil. */
+      if (!kanvas) return;
+      /* tampilkan hasil render di kanvas yang terlihat */
+      preview.width = kanvas.width;
+      preview.height = kanvas.height;
+      pctx.clearRect(0, 0, preview.width, preview.height);
+      pctx.drawImage(kanvas, 0, 0);
+      kunciTampil = kunci;
+      /* salinan halaman (dasar gambar ulang yang cepat saat digeser) */
+      snap.width = preview.width; snap.height = preview.height;
+      sctx.clearRect(0, 0, snap.width, snap.height);
+      sctx.drawImage(preview, 0, 0);
+      /* batas halaman terkecil di antara target (mm) */
+      await hitungBatas();
+      if (token !== renderToken) return;
+      /* overlay tanda tangan — posisi & ukuran dijepit agar tanda
+         tangan tidak keluar dari halaman mana pun */
+      const wMasuk = Number(state.opts.w) || 50;
+      const kotak = muatKotak(wMasuk, wMasuk * rasioTanda());
+      const pos = jepit(Number(state.opts.x) || 0, Number(state.opts.y) || 0, kotak.w, kotak.h);
+      const xMm = pos.x, yMm = pos.y, wMm = kotak.w, hMm = kotak.h;
       /* ukuran halaman dalam mm (1 pt = 25.4/72 mm) */
       const pageWmm = (vp.width / (vp.scale || 1)) * 25.4 / 72;
       const pageHmm = (vp.height / (vp.scale || 1)) * 25.4 / 72;
       const k = preview.width / pageWmm;
       const wPx = wMm * k;
-      const hPx = imgW && imgH ? wPx * (imgH / imgW) : wPx;
-      const hMm = hPx / k;
+      const hPx = hMm * k;
       const xPx = xMm * k;
       const yPx = preview.height - (yMm + hMm) * k;
-      /* expose geometri pratinjau (dipakai audit & pengujian) */
-      state.custom.previewInfo = {
+      geo = {
         page: no,
-        jumlah: targets.length,
-        pageWmm: Math.round(pageWmm * 100) / 100,
-        pageHmm: Math.round(pageHmm * 100) / 100,
-        xMm: xMm, yMm: yMm, wMm: wMm, hMm: Math.round(hMm * 100) / 100,
-        xPx: Math.round(xPx * 100) / 100,
-        yPx: Math.round(yPx * 100) / 100,
-        wPx: Math.round(wPx * 100) / 100,
-        hPx: Math.round(hPx * 100) / 100,
-        adaGambar: !!img,
-        imgW: imgW, imgH: imgH,
+        pageWmm: pageWmm, pageHmm: pageHmm,
+        k: k, tinggiPx: preview.height,
+        xMm: xMm, yMm: yMm, wMm: wMm, hMm: hMm,
+        xPx: xPx, yPx: yPx, wPx: wPx, hPx: hPx,
       };
+      /* nilai di luar halaman dikoreksi — kolom ikut diperbarui */
+      const disesuaikan = Math.abs((Number(state.opts.x) || 0) - xMm) > 0.01
+        || Math.abs((Number(state.opts.y) || 0) - yMm) > 0.01
+        || Math.abs((Number(state.opts.w) || 50) - wMm) > 0.01;
+      /* muat gambar tanda tangan (sekali) supaya bisa digambar ulang */
+      sigImg = null;
       if (img) {
         try {
-          const im = await new Promise((res, rej) => {
+          sigImg = await new Promise((res, rej) => {
             const q = new Image();
             q.onload = () => res(q);
             q.onerror = () => rej(new Error("gambar gagal dimuat"));
             q.src = img;
           });
           if (token !== renderToken) return;
-          pctx.save();
-          pctx.globalAlpha = 1;
-          pctx.drawImage(im, xPx, yPx, wPx, hPx);
-          pctx.restore();
-          /* garis bantu posisi (batas kotak tanda tangan) */
-          pctx.save();
-          pctx.strokeStyle = "rgba(37,99,235,.85)";
-          pctx.setLineDash([4, 3]);
-          pctx.lineWidth = 1;
-          pctx.strokeRect(xPx + 0.5, yPx + 0.5, wPx, hPx);
-          pctx.restore();
-          setHint("Lebar " + wMm + " mm · " + Math.round(wPx) + "×" + Math.round(hPx) + " px di layar." + banyak);
         } catch (_) {
           setHint("Gambar tanda tangan tidak bisa digambar.");
+          drag.hidden = true;
+          resize.hidden = true;
+          geo = null;
+          state.custom.previewInfo = null;
+          return;
         }
+      }
+      gambarTanda();
+      posisiPegangan();
+      terapkanPosisi();
+      const posisiTeks = "X " + bulat(xMm) + " mm · Y " + bulat(yMm) + " mm · Lebar " + bulat(wMm) + " mm";
+      if (!img) {
+        setHint("Tanda tangan belum ada — tulis di kanvas atau impor foto/QR code. " + posisiTeks + "." + banyak);
       } else {
-        setHint("Tanda tangan belum ada — tulis di kanvas atau impor foto/QR code." + banyak);
+        setHint((disesuaikan ? "Posisi disesuaikan agar tetap di dalam halaman. " : "")
+          + "Geser kotak tanda tangan dengan jari untuk memindahkan; seret titik bulat di pojok kanan bawah untuk mengubah lebar. "
+          + posisiTeks + " · " + Math.round(wPx) + "×" + Math.round(hPx) + " px di layar." + banyak);
       }
     }
 
@@ -1584,8 +2010,20 @@
     state.custom.dispose = () => {
       renderToken++;
       if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = 0; }
+      /* batalkan render yang sedang jalan sebelum dokumen ditutup */
+      batalRender();
+      kunciTampil = "";
+      /* lepaskan listener global (window) */
+      window.removeEventListener("pointermove", jalanSeret);
+      window.removeEventListener("pointerup", selesaiSeret);
+      window.removeEventListener("pointercancel", selesaiSeret);
+      resize.classList.remove("is-drag");
       if (pdfDoc) { try { pdfDoc.destroy(); } catch (_) { /* abaikan */ } pdfDoc = null; }
       pdfBytesKey = "";
+      seret = null;
+      drag.classList.remove("is-drag");
+      geo = null;
+      sigImg = null;
     };
     /* gambar dari kanvas ditulis tangan ikut dipakai pratinjau */
     setHint("Pilih satu PDF untuk melihat pratinjau.");
