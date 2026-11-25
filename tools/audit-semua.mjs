@@ -29,7 +29,7 @@ import { spawnSync } from "node:child_process";
 import { chromium } from "./browser.mjs";
 
 const require = createRequire(import.meta.url);
-const { PDFDocument } = require("pdf-lib");
+const { PDFDocument, PDFName } = require("pdf-lib");
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(path.join(HERE, ".."));
@@ -93,6 +93,22 @@ async function pdfInfo(bytes) {
     }),
     terenkripsi: false,
     adaAcroForm: false,
+    gambar: doc.getPages().map((p) => {
+      try {
+        const res = p.node.Resources();
+        const xo = res && res.lookup(PDFName.of("XObject"));
+        if (!xo) return 0;
+        let n = 0;
+        for (const [, ref] of xo.entries()) {
+          const obj = doc.context.lookup(ref);
+          /* PDFRawStream tidak punya .get(); kamusnya di .dict */
+          const kamus = obj && typeof obj.get === "function" ? obj : (obj && obj.dict) || null;
+          const st = kamus && kamus.get ? kamus.get(PDFName.of("Subtype")) : null;
+          if (st && st.toString() === "/Image") n++;
+        }
+        return n;
+      } catch (_) { return 0; }
+    }),
     trafik: bytes.toString("latin1"),
   };
   try {
@@ -140,6 +156,50 @@ async function teksPerHalaman(bytes) {
       return out;
     } catch (e) {
       return ["ERR:" + (e && e.message)];
+    }
+  }, Array.from(bytes));
+}
+
+/* posisi relatif teks (0 = atas, 1 = bawah) di halaman pertama */
+async function posisiTeks(bytes) {
+  if (!_pageRef) return [];
+  return await _pageRef.evaluate(async ({ b }) => {
+    try {
+      const doc = await window.pdfjsLib.getDocument({ data: new Uint8Array(b) }).promise;
+      const halaman = [];
+      for (let n = 1; n <= doc.numPages; n++) {
+        const page = await doc.getPage(n);
+        const vp = page.getViewport({ scale: 1 });
+        const tc = await page.getTextContent();
+        const items = [];
+        for (const it of tc.items) {
+          const t = (it.str || "").trim();
+          if (!t) continue;
+          const tr = it.transform;
+          items.push({ t, relY: tr[5] / vp.height, hal: n });
+        }
+        halaman.push(items);
+      }
+      await doc.destroy();
+      return halaman;
+    } catch (e) { return []; }
+  }, { b: Array.from(bytes) });
+}
+
+/* baca isi berkas ZIP/OOXML lewat JSZip yang ada di peramban */
+async function isiZip(bytes) {
+  if (!_pageRef) return {};
+  return await _pageRef.evaluate(async (b) => {
+    try {
+      const zip = await JSZip.loadAsync(new Uint8Array(b));
+      const out = {};
+      for (const name of Object.keys(zip.files)) {
+        if (zip.files[name].dir) continue;
+        out[name] = await zip.files[name].async("string");
+      }
+      return out;
+    } catch (e) {
+      return { __ERR: String((e && e.message) || e) };
     }
   }, Array.from(bytes));
 }
@@ -274,6 +334,13 @@ class Harness {
     };
   }
 
+  /* unggah beberapa berkas sekaligus */
+  async unggahMulti(files) {
+    await this.page.waitForSelector("#toolInput", { state: "attached", timeout: 8000 });
+    await this.page.setInputFiles("#toolInput", files);
+    await this.page.waitForTimeout(1400);
+  }
+
   async screenshot(nama) {
     fs.mkdirSync(SHOTS, { recursive: true });
     const p = path.join(SHOTS, nama + ".png");
@@ -301,21 +368,42 @@ const FITUR = [
     async validasi(h, out) {
       const t = await teksDariPdf(out[0].bytes);
       cek("numbers: nomor halaman muncul di teks", /\b1\b/.test(t) && /\b3\b/.test(t), JSON.stringify(t.slice(0, 60)));
+      /* nomor harus berada di bagian bawah halaman, dan tiap halaman
+         harus punya nomornya sendiri */
+      const posisi = await posisiTeks(out[0].bytes);
+      const nomor = posisi.flat().filter((p) => /^\d+\s*\/\s*\d+$/.test(p.t));
+      cek("numbers: tiap halaman punya nomor sendiri", nomor.length === 3,
+        "ditemukan=" + nomor.map((p) => p.t).join(","));
+      cek("numbers: nomor berada di bagian bawah halaman",
+        nomor.length === 3 && nomor.every((p) => p.relY < 0.15),
+        JSON.stringify(nomor.map((p) => p.relY.toFixed(3))).slice(0, 90));
     },
   },
   {
     id: "watermark", nama: "Watermark", file: "sample.pdf", opts: { mode: "text", text: "RAHASIA", opacity: "0.3" },
     async validasi(h, out) {
-      const t = await teksDariPdf(out[0].bytes);
-      cek("watermark: teks stempel masuk PDF", /RAHASIA/i.test(t), JSON.stringify(t.slice(0, 80)));
+      const per = await teksPerHalaman(out[0].bytes);
+      cek("watermark: teks stempel masuk PDF", /RAHASIA/i.test(per.join(" | ")), JSON.stringify(per).slice(0, 90));
+      cek("watermark: stempel ada di setiap halaman", per.length === 3 && per.every((t) => /RAHASIA/i.test(t)),
+        "halaman=" + per.length);
     },
   },
   {
-    id: "crop", nama: "Potong PDF", file: "sample.pdf", opts: { preset: "a4" },
+    id: "crop", nama: "Potong PDF", file: "sample.pdf",
+    opts: { preset: "margin", top: "20", bottom: "20", left: "20", right: "20" },
     async validasi(h, out) {
       const info = await pdfInfo(out[0].bytes);
-      cek("crop: ukuran halaman jadi A4", info.sizes.every((s) => Math.abs(s.w - 595.28) < 2 && Math.abs(s.h - 841.89) < 2),
-        JSON.stringify(info.sizes[0]));
+      const MM = 72 / 25.4;
+      /* CropBox harus menyusut 20 mm di tiap sisi; MediaBox tetap. */
+      const c = info.boxes[0].c, m = info.boxes[0].m;
+      cek("crop: CropBox menyusut 20 mm tiap sisi",
+        Math.abs(c[2] - (m[2] - 40 * MM)) < 2 && Math.abs(c[3] - (m[3] - 40 * MM)) < 2,
+        "cropBox=" + c.slice(2).map((x) => x.toFixed(1)).join("x") + " media=" + m.slice(2).map((x) => x.toFixed(1)).join("x"));
+      cek("crop: MediaBox tidak ikut berubah",
+        Math.abs(m[2] - 595.28) < 2 && Math.abs(m[3] - 841.89) < 2,
+        m.slice(2).map((x) => x.toFixed(1)).join("x"));
+      cek("crop: semua halaman dipotong", info.boxes.every((b) => Math.abs(b.c[2] - (b.m[2] - 40 * MM)) < 2),
+        "halaman=" + info.boxes.length);
     },
   },
   {
@@ -360,8 +448,10 @@ const FITUR = [
     async validasi(h, out) {
       const info = await pdfInfo(out[0].bytes);
       cek("pdfa: hasil valid & 3 halaman", info.halaman === 3, "halaman=" + info.halaman);
-      cek("pdfa: ada OutputIntent/metadata", /OutputIntent|xml\s*:/i.test(info.trafik) || info.trafik.includes("/Metadata"),
-        "");
+      cek("pdfa: ada OutputIntent (profil warna)", /\/OutputIntent/.test(info.trafik), "");
+      cek("pdfa: ada metadata XMP", /\/Metadata/.test(info.trafik) && /pdfaid:part/i.test(info.trafik),
+        /pdfaid:part/.test(info.trafik) ? "pdfaid:part ada" : "pdfaid:part tidak ada");
+      cek("pdfa: hasil tidak terenkripsi", !info.terenkripsi, "");
     },
   },
   {
@@ -389,6 +479,7 @@ const FITUR = [
     async validasi(h, out) {
       const info = await pdfInfo(out[0].bytes);
       cek("jpg2pdf: PDF A4 terbentuk", info.halaman === 1 && Math.abs(info.sizes[0].w - 595.28) < 2, JSON.stringify(info.sizes[0]));
+      cek("jpg2pdf: gambar tertanam di halaman", info.gambar[0] > 0, "xobject=" + info.gambar[0]);
     },
   },
   {
@@ -396,6 +487,7 @@ const FITUR = [
     async validasi(h, out) {
       const info = await pdfInfo(out[0].bytes);
       cek("scan: hasil PDF valid", info.halaman === 1, "halaman=" + info.halaman);
+      cek("scan: gambar tertanam di halaman", info.gambar[0] > 0, "xobject=" + info.gambar[0]);
     },
   },
   {
@@ -438,6 +530,9 @@ const FITUR = [
     async validasi(h, out) {
       cek("pdf2word: berkas .docx terbentuk", /\.docx$/i.test(out[0].nama), out[0].nama);
       cek("pdf2word: docx adalah zip valid", zipBytes(out[0].bytes), "");
+      const isi = await isiZip(out[0].bytes);
+      const doc = isi["word/document.xml"] || "";
+      cek("pdf2word: isi dokumen terbawa ke docx", /Uji halaman 1/i.test(doc), JSON.stringify(Object.keys(isi)).slice(0, 90));
     },
   },
   {
@@ -445,6 +540,9 @@ const FITUR = [
     async validasi(h, out) {
       cek("pdf2xls: berkas .xlsx terbentuk", /\.xlsx$/i.test(out[0].nama), out[0].nama);
       cek("pdf2xls: xlsx adalah zip valid", zipBytes(out[0].bytes), "");
+      const isi = await isiZip(out[0].bytes);
+      const gabung = Object.values(isi).join(" ");
+      cek("pdf2xls: isi PDF terbawa ke lembar kerja", /Uji halaman 1/i.test(gabung), JSON.stringify(Object.keys(isi)).slice(0, 90));
     },
   },
   {
@@ -452,6 +550,9 @@ const FITUR = [
     async validasi(h, out) {
       cek("pdf2ppt: berkas .pptx terbentuk", /\.pptx$/i.test(out[0].nama), out[0].nama);
       cek("pdf2ppt: pptx adalah zip valid", zipBytes(out[0].bytes), "");
+      const isi = await isiZip(out[0].bytes);
+      const gabung = Object.values(isi).join(" ");
+      cek("pdf2ppt: isi PDF terbawa ke slide", /Uji halaman 1/i.test(gabung), JSON.stringify(Object.keys(isi)).slice(0, 90));
     },
   },
   {
@@ -563,6 +664,10 @@ const FITUR = [
     async validasi(h, out) {
       cek("compare: laporan perbandingan dibuat", out.length >= 1, "jumlah=" + out.length);
       cek("compare: nama berkas masuk akal", /\.(txt|md|html|pdf)$/i.test(out[0].nama), out[0].nama);
+      const isi = out[0].bytes.toString("utf8");
+      cek("compare: laporan memuat isi kedua PDF", /satu|sample/i.test(isi), isi.slice(0, 90).replace(/\s+/g, " "));
+      cek("compare: laporan menandai bagian berbeda", /berbeda|diff|tambah|hapus|sama/i.test(isi),
+        isi.replace(/\s+/g, " ").slice(0, 110));
     },
   },
 
@@ -827,6 +932,159 @@ const FITUR = [
 ];
 
 /* ============================================================
+   Fase 2: jalur banyak-berkas & jalur galat
+   ============================================================ */
+const FASE2 = [
+  {
+    nama: "Banyak berkas: rotasi 2 PDF sekaligus",
+    async jalankan(h) {
+      await h.bukaAlat("rotate");
+      await h.isiFields({ angle: "90", dir: "cw" });
+      await h.unggahMulti([fx("sample.pdf"), fx("satu.pdf")]);
+      return await h.jalankan({ timeout: 90 });
+    },
+    async validasi(h, out) {
+      cek("multi: dua berkas menghasilkan dua PDF", out.length === 2, out.map((o) => o.nama).join(","));
+      let semuaOK = out.length === 2;
+      for (const o of out) {
+        const info = await pdfInfo(o.bytes);
+        if (!info.rot.every((r) => r === 90)) semuaOK = false;
+      }
+      cek("multi: setiap berkas diputar 90 derajat", semuaOK, "");
+    },
+  },
+  {
+    nama: "Banyak berkas: lindungi 2 PDF sekaligus",
+    async jalankan(h) {
+      await h.bukaAlat("protect");
+      await h.isiFields({ password: "Rahasia123" });
+      await h.unggahMulti([fx("sample.pdf"), fx("satu.pdf")]);
+      return await h.jalankan({ timeout: 90 });
+    },
+    async validasi(h, out) {
+      cek("multi: dua PDF terkunci dibuat", out.length === 2, out.map((o) => o.nama).join(","));
+      let semuaOK = out.length === 2;
+      for (const o of out) {
+        const info = await pdfInfo(o.bytes);
+        if (!info.terenkripsi) semuaOK = false;
+      }
+      cek("multi: keduanya benar-benar terenkripsi", semuaOK, "");
+    },
+  },
+  {
+    nama: "Galat: PDF diberikan ke alat gambar",
+    async jalankan(h) {
+      await h.bukaAlat("jpg2pdf");
+      await h.unggah(fx("sample.pdf"));
+      return await h.jalankan({ timeout: 60 });
+    },
+    async validasi(h, out) {
+      cek("galat: alat gambar menolak PDF dengan pesan ramah", !out.ok, (out.err || "").slice(0, 140));
+    },
+  },
+  {
+    nama: "Galat: kata kunci tidak ada saat redaksi",
+    async jalankan(h) {
+      await h.bukaAlat("redact");
+      await h.isiFields({ term: "KATAYANGDIAMUK" });
+      await h.unggah(fx("sample.pdf"));
+      return await h.jalankan({ timeout: 60 });
+    },
+    async validasi(h, out) {
+      cek("galat: redaksi menolak kata yang tidak ada", !out.ok, (out.err || "").slice(0, 140));
+    },
+  },
+  {
+    nama: "Galat: lindungi tanpa password",
+    async jalankan(h) {
+      await h.bukaAlat("protect");
+      await h.isiFields({ password: "" });
+      await h.unggah(fx("sample.pdf"));
+      return await h.jalankan({ timeout: 60 });
+    },
+    async validasi(h, out) {
+      cek("galat: lindungi menolak tanpa password", !out.ok, (out.err || "").slice(0, 140));
+    },
+  },
+  {
+    nama: "Galat: buka kunci dengan password salah",
+    async jalankan(h) {
+      await h.bukaAlat("unlock");
+      await h.unggah(fx("terkunci.pdf"));
+      await h.page.evaluate(() => {
+        const el = document.getElementById("f_unlockpw");
+        if (el) {
+          el.value = "PasswordSalah";
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+      });
+      await h.page.waitForTimeout(400);
+      return await h.jalankan({ timeout: 60 });
+    },
+    async validasi(h, out) {
+      cek("galat: buka kunci menolak password salah", !out.ok, (out.err || "").slice(0, 140));
+    },
+  },
+  {
+    nama: "Galat: halaman di luar jangkauan",
+    async jalankan(h) {
+      await h.bukaAlat("redact");
+      await h.isiFields({ term: "Uji", halaman: "99-120" });
+      await h.unggah(fx("sample.pdf"));
+      return await h.jalankan({ timeout: 60 });
+    },
+    async validasi(h, out) {
+      cek("galat: rentang halaman di luar jangkauan ditolak", !out.ok, (out.err || "").slice(0, 140));
+    },
+  },
+  {
+    nama: "Galat: bandingkan dengan satu berkas saja",
+    async jalankan(h) {
+      await h.bukaAlat("compare");
+      await h.unggah(fx("sample.pdf"));
+      return await h.jalankan({ timeout: 60 });
+    },
+    async validasi(h, out) {
+      cek("galat: bandingkan butuh dua berkas", !out.ok, (out.err || "").slice(0, 140));
+    },
+  },
+  {
+    nama: "Galat: tanda tangan tanpa gambar tanda tangan",
+    async jalankan(h) {
+      await h.bukaAlat("sign");
+      await h.unggah(fx("sample.pdf"));
+      await h.page.waitForTimeout(2000);
+      return await h.jalankan({ timeout: 60 });
+    },
+    async validasi(h, out) {
+      cek("galat: tanda tangan menolak tanpa tinta", !out.ok, (out.err || "").slice(0, 140));
+    },
+  },
+  {
+    nama: "Galat: berkas nol byte",
+    async jalankan(h) {
+      await h.bukaAlat("rotate");
+      await h.unggah(fx("nolbyte.pdf"));
+      return await h.jalankan({ timeout: 60 });
+    },
+    async validasi(h, out) {
+      cek("galat: berkas 0 byte ditolak dengan pesan ramah", !out.ok, (out.err || "").slice(0, 140));
+    },
+  },
+  {
+    nama: "Galat: PDF terkunci dibuka dengan alat biasa",
+    async jalankan(h) {
+      await h.bukaAlat("rotate");
+      await h.unggah(fx("terkunci.pdf"));
+      return await h.jalankan({ timeout: 60 });
+    },
+    async validasi(h, out) {
+      cek("galat: PDF terkunci ditolak alat biasa", !out.ok, (out.err || "").slice(0, 140));
+    },
+  },
+];
+
+/* ============================================================
    Main
    ============================================================ */
 async function main() {
@@ -888,6 +1146,13 @@ async function main() {
       }
       cek(`${label} menghasilkan berkas`, true,
         out.keluar.map((o) => `${o.nama} (${o.bytes.length} B)`).join(", ").slice(0, 110));
+      /* simpan keluaran sebagai bukti yang bisa diperiksa ulang */
+      const dirK = path.join(SHOTS, "keluaran");
+      fs.mkdirSync(dirK, { recursive: true });
+      for (const o of out.keluar) {
+        const bersih = String(o.nama).replace(/[^\w.\-]+/g, "_");
+        fs.writeFileSync(path.join(dirK, `${f.id}__${bersih}`), o.bytes);
+      }
       await f.validasi(h, out.keluar);
       if (f.screenshot) await h.screenshot(f.screenshot);
     } catch (e) {
@@ -895,11 +1160,29 @@ async function main() {
     }
   }
 
+  /* Galat yang muncul di fase 2 memang disengaja (uji jalur galat),
+     jadi pemeriksaan konsol hanya berlaku untuk fase 1. */
+  const galatFase1 = errors.slice();
+
+  /* ================= FASE 2: banyak berkas & jalur galat ================= */
+  console.log("\n=== Fase 2: jalur banyak-berkas & jalur galat ===\n");
+  for (const f of FASE2) {
+    const h = new Harness(page);
+    process.stdout.write(`\n--- ${f.nama} ---\n`);
+    try {
+      await h.muat();
+      const out = await f.jalankan(h);
+      await f.validasi(h, out.keluar || []);
+    } catch (e) {
+      cek(`${f.nama} berjalan`, false, e && e.message ? e.message : String(e));
+    }
+  }
+
   /* --- pemeriksaan statis: semua berkas sumber aplikasi harus bisa
          di-parse (menangkap bug seperti "functionX" tanpa spasi) --- */
-  const sumber = ["app.js", "tool-core.js", "tool-convert.js", "tool-pdf.js",
-    "tool-smart.js", "tool-ui.js", "tool-preview.js", "tool-translate.js"]
-    .filter((f) => fs.existsSync(path.join(ROOT, f)));
+  const sumber = fs.readdirSync(ROOT)
+    .filter((f) => f.endsWith(".js"))
+    .filter((f) => !/^(sw|service-worker)\.js$/.test(f));
   const rusakParse = [];
   for (const f of sumber) {
     const p = path.join(ROOT, f);
@@ -930,9 +1213,10 @@ async function main() {
   cek("Responsif: kotak pencarian alat ada", resp.adaCari, "");
   await page.setViewportSize({ width: 1440, height: 950 });
 
-  /* --- konsol bersih? --- */
-  const nyata = errors.filter((e) => !/favicon|ERR_FILE_NOT_FOUND.*favicon/i.test(e));
-  cek("Umum: tidak ada error konsol fatal", nyata.length === 0, nyata.slice(0, 3).join(" | ").slice(0, 200));
+  /* --- konsol bersih? (hanya fase 1; fase 2 memang sengaja gagal) --- */
+  const nyata = galatFase1.filter((e) => !/favicon|ERR_FILE_NOT_FOUND.*favicon/i.test(e));
+  cek("Umum: tidak ada error konsol fatal di jalur berhasil", nyata.length === 0,
+    nyata.slice(0, 3).join(" | ").slice(0, 200));
 
   console.log(`\n=== RINGKASAN: ${pass} lulus, ${fail} gagal (total ${pass + fail}) ===\n`);
 

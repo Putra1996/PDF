@@ -1,6 +1,6 @@
 {
-  "tanggal": "2026-11-25T03:23:09.924Z",
-  "pass": 100,
+  "tanggal": "2026-11-25T04:30:48.513Z",
+  "pass": 127,
   "fail": 0,
   "results": [
     {
@@ -29,6 +29,16 @@
       "detail": "\"Uji halaman 1  Kata kunci rahasia untuk uji penyensoran.  Ba\""
     },
     {
+      "nama": "numbers: tiap halaman punya nomor sendiri",
+      "ok": true,
+      "detail": "ditemukan=1 / 3,2 / 3,3 / 3"
+    },
+    {
+      "nama": "numbers: nomor berada di bagian bawah halaman",
+      "ok": true,
+      "detail": "[\"0.033\",\"0.033\",\"0.033\"]"
+    },
+    {
       "nama": "[watermark] menghasilkan berkas",
       "ok": true,
       "detail": "sample-watermark.pdf (2663 B)"
@@ -36,17 +46,32 @@
     {
       "nama": "watermark: teks stempel masuk PDF",
       "ok": true,
-      "detail": "\"Uji halaman 1  Kata kunci rahasia untuk uji penyensoran.  Baris isi dokumen kedu\""
+      "detail": "[\"Uji halaman 1  Kata kunci rahasia untuk uji penyensoran.  Baris isi dokumen kedua.  RAHA"
+    },
+    {
+      "nama": "watermark: stempel ada di setiap halaman",
+      "ok": true,
+      "detail": "halaman=3"
     },
     {
       "nama": "[crop] menghasilkan berkas",
       "ok": true,
-      "detail": "sample-potong.pdf (1824 B)"
+      "detail": "sample-potong.pdf (1823 B)"
     },
     {
-      "nama": "crop: ukuran halaman jadi A4",
+      "nama": "crop: CropBox menyusut 20 mm tiap sisi",
       "ok": true,
-      "detail": "{\"w\":595,\"h\":842}"
+      "detail": "cropBox=481.6x728.6 media=595.0x842.0"
+    },
+    {
+      "nama": "crop: MediaBox tidak ikut berubah",
+      "ok": true,
+      "detail": "595.0x842.0"
+    },
+    {
+      "nama": "crop: semua halaman dipotong",
+      "ok": true,
+      "detail": "halaman=3"
     },
     {
       "nama": "[edit] menghasilkan berkas",
@@ -104,7 +129,17 @@
       "detail": "halaman=3"
     },
     {
-      "nama": "pdfa: ada OutputIntent/metadata",
+      "nama": "pdfa: ada OutputIntent (profil warna)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "nama": "pdfa: ada metadata XMP",
+      "ok": true,
+      "detail": "pdfaid:part ada"
+    },
+    {
+      "nama": "pdfa: hasil tidak terenkripsi",
       "ok": true,
       "detail": ""
     },
@@ -116,7 +151,7 @@
     {
       "nama": "[organize] menghasilkan berkas",
       "ok": true,
-      "detail": "sample-susun.pdf (1423 B)"
+      "detail": "sample-susun.pdf (1424 B)"
     },
     {
       "nama": "organize: halaman yang dihapus hilang",
@@ -134,6 +169,11 @@
       "detail": "{\"w\":595.28,\"h\":841.89}"
     },
     {
+      "nama": "jpg2pdf: gambar tertanam di halaman",
+      "ok": true,
+      "detail": "xobject=1"
+    },
+    {
       "nama": "[scan] menghasilkan berkas",
       "ok": true,
       "detail": "pindai.pdf (11378 B)"
@@ -142,6 +182,11 @@
       "nama": "scan: hasil PDF valid",
       "ok": true,
       "detail": "halaman=1"
+    },
+    {
+      "nama": "scan: gambar tertanam di halaman",
+      "ok": true,
+      "detail": "xobject=1"
     },
     {
       "nama": "[pdf2jpg] menghasilkan berkas",
@@ -161,7 +206,7 @@
     {
       "nama": "[word2pdf] menghasilkan berkas",
       "ok": true,
-      "detail": "docu.pdf (990 B)"
+      "detail": "docu.pdf (991 B)"
     },
     {
       "nama": "word2pdf: PDF terbentuk",
@@ -176,7 +221,7 @@
     {
       "nama": "[ppt2pdf] menghasilkan berkas",
       "ok": true,
-      "detail": "presentasi.pdf (916 B)"
+      "detail": "presentasi.pdf (915 B)"
     },
     {
       "nama": "ppt2pdf: PDF terbentuk",
@@ -206,7 +251,7 @@
     {
       "nama": "[pdf2word] menghasilkan berkas",
       "ok": true,
-      "detail": "sample.docx (2476 B)"
+      "detail": "sample.docx (2477 B)"
     },
     {
       "nama": "pdf2word: berkas .docx terbentuk",
@@ -217,6 +262,11 @@
       "nama": "pdf2word: docx adalah zip valid",
       "ok": true,
       "detail": ""
+    },
+    {
+      "nama": "pdf2word: isi dokumen terbawa ke docx",
+      "ok": true,
+      "detail": "[\"[Content_Types].xml\",\"_rels/.rels\",\"word/document.xml\",\"word/styles.xml\",\"docProps/core."
     },
     {
       "nama": "[pdf2xls] menghasilkan berkas",
@@ -234,6 +284,11 @@
       "detail": ""
     },
     {
+      "nama": "pdf2xls: isi PDF terbawa ke lembar kerja",
+      "ok": true,
+      "detail": "[\"[Content_Types].xml\",\"_rels/.rels\",\"xl/workbook.xml\",\"xl/_rels/workbook.xml.rels\",\"xl/wo"
+    },
+    {
       "nama": "[pdf2ppt] menghasilkan berkas",
       "ok": true,
       "detail": "sample.pptx (6515 B)"
@@ -247,6 +302,11 @@
       "nama": "pdf2ppt: pptx adalah zip valid",
       "ok": true,
       "detail": ""
+    },
+    {
+      "nama": "pdf2ppt: isi PDF terbawa ke slide",
+      "ok": true,
+      "detail": "[\"[Content_Types].xml\",\"_rels/.rels\",\"ppt/presentation.xml\",\"ppt/_rels/presentation.xml.re"
     },
     {
       "nama": "[html2pdf] berjalan tanpa galat fatal",
@@ -306,7 +366,7 @@
     {
       "nama": "[redact] menghasilkan berkas",
       "ok": true,
-      "detail": "redact-redaksi.pdf (46949 B)"
+      "detail": "redact-redaksi.pdf (46950 B)"
     },
     {
       "nama": "redact: kata target hilang dari seluruh PDF",
@@ -342,6 +402,16 @@
       "nama": "compare: nama berkas masuk akal",
       "ok": true,
       "detail": "sample-banding.html"
+    },
+    {
+      "nama": "compare: laporan memuat isi kedua PDF",
+      "ok": true,
+      "detail": "<!DOCTYPE html><html lang=\"id\"><head><meta charset=\"utf-8\"><title>Perbandingan PDF</title>"
+    },
+    {
+      "nama": "compare: laporan menandai bagian berbeda",
+      "ok": true,
+      "detail": "<!DOCTYPE html><html lang=\"id\"><head><meta charset=\"utf-8\"><title>Perbandingan PDF</title> <style> body{font-f"
     },
     {
       "nama": "[markdown] menghasilkan berkas",
@@ -411,7 +481,7 @@
     {
       "nama": "[split] menghasilkan berkas",
       "ok": true,
-      "detail": "hasil-pisah.zip (3361 B), sample-hal-1.pdf (1005 B), sample-hal-2.pdf (1005 B), sample-hal-3.pdf (1005 B)"
+      "detail": "hasil-pisah.zip (3363 B), sample-hal-1.pdf (1006 B), sample-hal-2.pdf (1006 B), sample-hal-3.pdf (1005 B)"
     },
     {
       "nama": "split: arsip zip dibuat",
@@ -421,7 +491,7 @@
     {
       "nama": "split: zip valid",
       "ok": true,
-      "detail": "3361 B"
+      "detail": "3363 B"
     },
     {
       "nama": "split: 3 PDF per halaman",
@@ -479,6 +549,71 @@
       "detail": "halaman=3"
     },
     {
+      "nama": "multi: dua berkas menghasilkan dua PDF",
+      "ok": true,
+      "detail": "sample-putar.pdf,satu-putar.pdf"
+    },
+    {
+      "nama": "multi: setiap berkas diputar 90 derajat",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "nama": "multi: dua PDF terkunci dibuat",
+      "ok": true,
+      "detail": "sample-terkunci.pdf,satu-terkunci.pdf"
+    },
+    {
+      "nama": "multi: keduanya benar-benar terenkripsi",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "nama": "galat: alat gambar menolak PDF dengan pesan ramah",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "nama": "galat: redaksi menolak kata yang tidak ada",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "nama": "galat: lindungi menolak tanpa password",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "nama": "galat: buka kunci menolak password salah",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "nama": "galat: rentang halaman di luar jangkauan ditolak",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "nama": "galat: bandingkan butuh dua berkas",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "nama": "galat: tanda tangan menolak tanpa tinta",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "nama": "galat: berkas 0 byte ditolak dengan pesan ramah",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "nama": "galat: PDF terkunci ditolak alat biasa",
+      "ok": true,
+      "detail": ""
+    },
+    {
       "nama": "Statis: semua berkas sumber aplikasi bisa di-parse",
       "ok": true,
       "detail": ""
@@ -499,7 +634,7 @@
       "detail": ""
     },
     {
-      "nama": "Umum: tidak ada error konsol fatal",
+      "nama": "Umum: tidak ada error konsol fatal di jalur berhasil",
       "ok": true,
       "detail": ""
     }

@@ -1,0 +1,147 @@
+{
+  "tanggal": "2026-11-25T03:25:43.084Z",
+  "pass": 27,
+  "fail": 1,
+  "results": [
+    {
+      "nama": "editor: modul termuat & halaman terdeteksi",
+      "ok": true,
+      "detail": "halaman=3"
+    },
+    {
+      "nama": "editor: blok teks terdeteksi di halaman 1",
+      "ok": true,
+      "detail": "blok=3"
+    },
+    {
+      "nama": "editor: mode awal adalah Pilih",
+      "ok": true,
+      "detail": "mode=select"
+    },
+    {
+      "nama": "editor: kanvas halaman terender",
+      "ok": true,
+      "detail": "744x1053"
+    },
+    {
+      "nama": "editor: tombol halaman berikutnya pindah ke hal. 2",
+      "ok": true,
+      "detail": "pageNo=2"
+    },
+    {
+      "nama": "editor: tombol halaman sebelumnya kembali ke hal. 1",
+      "ok": true,
+      "detail": "pageNo=1"
+    },
+    {
+      "nama": "editor: tombol perbesar menaikkan skala",
+      "ok": true,
+      "detail": "1.25 -> 1.50"
+    },
+    {
+      "nama": "editor: tombol perkecil mengembalikan skala",
+      "ok": true,
+      "detail": "1.50 -> 1.25"
+    },
+    {
+      "nama": "editor: lapisan interaksi ada",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "nama": "editor: klik di mode Teks membuat blok teks baru",
+      "ok": true,
+      "detail": "ops=[\"text\"]"
+    },
+    {
+      "nama": "editor: panel inspeksi teks muncul",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "nama": "editor: isi teks tersimpan",
+      "ok": true,
+      "detail": "\"Teks Uji Editor\""
+    },
+    {
+      "nama": "editor: ukuran teks berubah jadi 24",
+      "ok": true,
+      "detail": "size=24"
+    },
+    {
+      "nama": "editor: warna teks berubah jadi merah",
+      "ok": true,
+      "detail": "warna=#ff0000"
+    },
+    {
+      "nama": "editor: undo mengurangi riwayat",
+      "ok": true,
+      "detail": "undoDepth=1 (awal 2)"
+    },
+    {
+      "nama": "editor: redo mengembalikan perubahan",
+      "ok": true,
+      "detail": "redoDepth=0 ops=1"
+    },
+    {
+      "nama": "editor: gambar bisa disisipkan ke halaman",
+      "ok": true,
+      "detail": "ops=[\"text\",\"image\"]"
+    },
+    {
+      "nama": "editor: panel ubah-semua-teks tersedia",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "nama": "editor: ubah semua teks menambah operasi per blok",
+      "ok": true,
+      "detail": "blok=4"
+    },
+    {
+      "nama": "editor: ukuran bulk diterapkan",
+      "ok": false,
+      "detail": "size=24"
+    },
+    {
+      "nama": "editor: ekspor .docx menghasilkan berkas",
+      "ok": true,
+      "detail": "sample-edit.docx"
+    },
+    {
+      "nama": "editor: ekspor .xlsx menghasilkan berkas",
+      "ok": true,
+      "detail": "sample-edit.docx,sample-edit.xlsx"
+    },
+    {
+      "nama": "editor: ekspor .pptx menghasilkan berkas",
+      "ok": true,
+      "detail": "sample-edit.docx,sample-edit.xlsx,sample-edit.pptx"
+    },
+    {
+      "nama": "editor: ekspor .xps menghasilkan berkas",
+      "ok": true,
+      "detail": "sample-edit.docx,sample-edit.xlsx,sample-edit.pptx,sample-edit.xps"
+    },
+    {
+      "nama": "editor: simpan proyek membuat berkas .json",
+      "ok": true,
+      "detail": "sample.edit.json"
+    },
+    {
+      "nama": "editor: PDF hasil punya 3 halaman",
+      "ok": true,
+      "detail": "halaman=3"
+    },
+    {
+      "nama": "editor: teks baru ikut terbawa ke PDF hasil",
+      "ok": true,
+      "detail": "\"Uji halaman 1  Kata kunci rahasia untuk uji penyensoran.  Baris isi dokumen kedua.  Teks Uji Editor  Uji  halaman  1  Ka\""
+    },
+    {
+      "nama": "editor: tidak ada error konsol fatal",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}
