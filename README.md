@@ -131,6 +131,12 @@ diduplikasi** — semuanya memakai tautan ke alur yang sudah ada:
 | **Konversi ke PDF** | JPG to PDF · WORD to PDF · POWERPOINT to PDF · EXCEL to PDF · HTML to PDF |
 | **Konversi dari PDF** | PDF to JPG · PDF to WORD · PDF to POWERPOINT · PDF to EXCEL · PDF to PDF/A |
 | **Edit PDF** | Rotate PDF · Add page numbers · Add watermark · Crop PDF · Edit PDF · PDF Forms |
+
+### Edit PDF visual: OCR dan edit langsung di preview
+
+Di **Edit PDF**, tombol **“OCR → edit teks”** mengenali teks halaman pindai secara offline (Tesseract Indonesia + Inggris). Setiap baris hasil OCR menjadi lapisan teks yang bisa dipilih di preview, lalu teks, font, ukuran, warna, gaya, dan posisi dapat diedit langsung seperti objek Word. Perubahan langsung terlihat pada preview; undo/redo, proyek editor, dan ekspor PDF tetap tersedia. Foto/ilustrasi tetap dipilih, digeser, diubah ukuran, diganti, atau dihapus melalui alat gambar yang sudah ada. OCR memakai 180 DPI dan satu worker untuk membatasi konsumsi memori; worker dihentikan setelah selesai.
+
+**Catatan:** OCR mengubah teks menjadi lapisan editable di atas scan (area lama ditutup dengan warna latar yang disampling). Ini bukan rekonstruksi konten foto yang tertutup; pada latar bertekstur, batas penutup mungkin terlihat. Fitur tetap berjalan lokal, tidak mengunggah dokumen. Audit otomatis: `node tools/mkfixture-editor-ocr.mjs` lalu `node tools/audit-editor-ocr.mjs`.
 | **Keamanan PDF** | Unlock PDF · Protect PDF · Sign PDF · Redact PDF · Compare PDF |
 | **Kecerdasan PDF** | AI Summarizer · Translate PDF · PDF to Markdown |
 

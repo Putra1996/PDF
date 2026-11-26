@@ -38,7 +38,7 @@ console.log("Pustaka Chromium: " + ((await siapkanPustaka()) ? "siap" : "belum (
 const PEMBUAT = ["mkfixtures.mjs", "mkfixtures-sign.mjs", "mkfixtures-translate.mjs",
   "mkfixtures-translate-ai.mjs", "mkfixtures-pagerange.mjs", "mkfixtures-merge.mjs",
   "mkfixtures-deskew.mjs", "mkfixtures-ocr.mjs", "mkfixtures-semua.mjs",
-  "mkfixtures-rapi.mjs"];
+  "mkfixtures-rapi.mjs", "mkfixture-editor-ocr.mjs"];
 for (const f of PEMBUAT) {
   const p = path.join(ROOT, "tools", f);
   if (!fs.existsSync(p)) { console.log("• " + f + " (tidak ada, dilewati)"); continue; }

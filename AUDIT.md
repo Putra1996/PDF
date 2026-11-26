@@ -762,3 +762,24 @@ pernah bocor** ke pesan galat · server AI gagal → turun ke mesin bawaan dan
 | `tools/audit-preview-perf.mjs` | 39 | 0 |
 | `tools/audit-deskew.mjs` | 56 | 0 |
 | `tools/audit-rapi.mjs` | 58 | 0 |
+
+---
+
+# Audit Edit PDF: OCR → ubah font/teks/gambar langsung di preview — 2026-11-26
+
+Fitur OCR berbasis scan terintegrasi dengan Editor PDF visual (seperti Word).
+OCR offline menghasilkan lapisan teks per baris yang dapat dipilih dan diedit
+langsung pada preview. Font, isi, ukuran, warna, dan posisi memakai inspector
+editor yang sudah ada. Objek gambar tetap dapat dipilih, diganti, diubah ukuran,
+dipindah, atau dihapus.
+
+- Harness baru: `tools/mkfixture-editor-ocr.mjs` + `tools/audit-editor-ocr.mjs`
+  → **9/0**; OCR 1 halaman, 180 DPI, selesai 2,4 dtk di runner audit; fixture adalah PDF scan yang isinya raster, bukan PDF teks.
+- Tesseract lokal `ind+eng`, 180 DPI, satu worker untuk menekan memori,
+  progress UI, SIMD dengan fallback core standar, worker selalu dihentikan.
+- Undo/redo dan ekspor/proyek menggunakan operasi editor normal.
+- Batasan UX didokumentasikan: scan text ditutup dengan warna sekitar; bukan
+  rekonstruksi konten/fill-aware pada latar foto atau bertekstur.
+- `verify-produksi.mjs` → **74/0** (toolbar sempit kembali maksimal 3 baris).
+- Rincian dan screenshot: `docs/audit-editor-ocr.md`,
+  `docs/audit-editor-ocr/ocr-preview.png`.

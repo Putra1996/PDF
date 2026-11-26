@@ -350,7 +350,7 @@
     id: "edit",
     cat: "edit",
     name: "Edit PDF",
-    desc: "Ubah font teks, sisipkan atau ganti gambar, dan hapus teks/gambar — seperti mengedit di Word.",
+    desc: "Edit teks dan gambar langsung di preview seperti Word; kenali teks pada halaman pindai dengan OCR offline lalu ubah isi, font, ukuran, dan warna.",
     icon: "edit",
     accept: ".pdf,application/pdf",
     multiple: false,
