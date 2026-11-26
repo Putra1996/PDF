@@ -872,6 +872,30 @@
       const meta = el("span", "res-meta");
       meta.textContent = (r.size ? sh().fmtSize ? sh().fmtSize(r.size) : r.size + " B" : "") + (r.note ? " · " + r.note : "");
       row.appendChild(meta);
+      if (state.tool && state.tool.id === "ocr" && r.bytes && /\.pdf$/i.test(r.name || "")) {
+        const edit = el("button", "btn btn-ghost btn-sm", "Edit hasil di preview");
+        edit.type = "button";
+        edit.setAttribute("aria-label", "Edit hasil OCR di preview");
+        edit.title = "Muat PDF hasil OCR ke preview untuk mengubah teks dan gambar";
+        edit.addEventListener("click", async () => {
+          try {
+            const bytes = r.bytes instanceof Uint8Array ? r.bytes
+              : new Uint8Array(r.bytes instanceof ArrayBuffer ? r.bytes : await r.blob.arrayBuffer());
+            state.files = [{ id: "tf" + (++toolFileSeq), name: r.name, bytes,
+              type: "application/pdf", size: bytes.length }];
+            if (state.custom && state.custom.opts) state.custom.opts.edits = {};
+            renderFiles();
+            if (state.custom && typeof state.custom.refreshEditor === "function") {
+              await state.custom.refreshEditor();
+            }
+            if (sh().toast) sh().toast("PDF hasil OCR dimuat ke preview. Klik teks atau gambar untuk mengedit; tekan Proses lagi untuk menyimpan.", "ok", 5500);
+            $("#toolView").scrollIntoView({ behavior: "smooth", block: "start" });
+          } catch (err) {
+            if (sh().toast) sh().toast("Gagal membuka hasil OCR: " + ((err && err.message) || err), "err", 5500);
+          }
+        });
+        row.appendChild(edit);
+      }
       host.appendChild(row);
     }
   }
@@ -909,6 +933,8 @@
         const blob = o.blob || new Blob([o.bytes], { type: guessType(o.name) });
         state.results.push({
           name: o.name,
+          bytes: o.bytes instanceof Uint8Array ? o.bytes : (o.bytes ? new Uint8Array(o.bytes) : null),
+          blob: o.blob || null,
           url: URL.createObjectURL(blob),
           size: blob.size,
           note: o.note || "",

@@ -103,6 +103,21 @@ try {
  },cleanHref);
  check("Mode latar putih mempertahankan teks edit di semua halaman",cleanOut.pages===4&&cleanOut.texts[0].includes("Edited OCR heading")&&cleanOut.texts.slice(1).every(t=>t.includes("SCAN TEST DOCUMENT")),cleanOut.texts.map(t=>t.slice(0,45)).join(" / "));
  check("Mode latar putih tetap menyertakan gambar yang diedit",cleanOut.images>=1,`image operators=${cleanOut.images}`);
+ await page.locator("#toolResults button",{hasText:"Edit hasil di preview"}).click();
+ await page.waitForFunction(()=>window.PDFToolsEditor&&window.PDFToolsEditor.debug().pages===4,{timeout:15000});
+ check("Hasil OCR dapat dibuka kembali ke preview editor",await page.locator("#toolFileList .tf-name").textContent().then(t=>t.includes("scan-ocr.pdf")));
+ await page.locator(".ed-box.ed-text").first().click(); await page.waitForTimeout(200);
+ const editable=page.locator('[data-field="text"] textarea');
+ check("Teks hasil OCR tetap dapat dipilih setelah diproses",await editable.count().then(n=>n===1));
+ await editable.fill("Post OCR direct edit"); await page.waitForTimeout(250);
+ await page.locator("#toolRunBtn").click();
+ await page.waitForFunction(()=>{const b=document.querySelector("#toolRunBtn");return b&&b.textContent==="Proses"},{timeout:120000});
+ const secondHref=await page.locator("#toolResults a").first().getAttribute("href");
+ const secondText=await page.evaluate(async(url)=>{
+   const bytes=new Uint8Array(await(await fetch(url)).arrayBuffer()), pdf=await window.pdfjsLib.getDocument({data:bytes}).promise;
+   const c=await(await pdf.getPage(1)).getTextContent();const t=c.items.map(i=>i.str).join(" ");await pdf.destroy();return t;
+ },secondHref);
+ check("Edit ulang sesudah OCR tersimpan ke PDF",secondText.replace(/\s+/g," ").includes("Post OCR direct edit"),secondText.slice(0,180));
 } catch(e){check("Audit run",false,e.stack||String(e));}
 await browser.close(); await new Promise(r=>srv.close(r));
 console.log(`\n=== OCR EDITOR: ${pass} lulus / ${fail} gagal ===`);

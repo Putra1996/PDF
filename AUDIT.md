@@ -774,7 +774,7 @@ editor yang sudah ada. Objek gambar tetap dapat dipilih, diganti, diubah ukuran,
 dipindah, atau dihapus.
 
 - Harness baru: `tools/mkfixture-editor-ocr.mjs` + `tools/audit-editor-ocr.mjs`
-  → **21/0**; fixture 4 halaman raster berotasi 0/90/180/270°, 180 DPI, termasuk pemeriksaan isi PDF keluaran dan edit ukuran gambar.
+  → **24/0**; fixture 4 halaman raster berotasi 0/90/180/270°, 200 DPI default, termasuk pemeriksaan isi PDF keluaran, edit ulang pasca-proses, dan edit ukuran gambar.
 - Tesseract lokal, bahasa/DPI mengikuti opsi pengguna (Indonesia/200 DPI default), satu worker untuk menekan memori,
   progress UI, SIMD dengan fallback core standar, worker selalu dihentikan.
 - Undo/redo dan ekspor/proyek menggunakan operasi editor normal.
