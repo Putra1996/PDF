@@ -788,7 +788,7 @@ ${rels.join("\n")}
         /* Teks yang berasal dari blok teks di PDF asli (bukan sisipan
            baru) menggantikan isi kotak yang sama. Kotak lama harus
            ditutup dulu, kalau tidak teks lama dan baru bertumpuk. */
-        if (!op.newItem && !op.moved) {
+        if ((!op.newItem && !op.moved) || op.maskOriginal) {
           const bg = o.bgFor ? o.bgFor(op) : null;
           try {
             page.drawRectangle({

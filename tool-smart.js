@@ -1667,18 +1667,55 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
        tamp : ruang tampilan (dipakai pada halaman yang dibangun ulang) */
   async function ocrHalaman(o) {
     const { pdfjs, nomor, worker, dpi, perbaiki, pakaiJpeg, laporkan } = o;
-    const { canvas, viewport } = await renderPage(pdfjs, nomor, dpi / 72);
+    /* Coba orientasi intrinsic lebih dulu. Pada PDF scan legacy
+       konten kadang sudah diputar berlawanan dengan /Rotate; bila
+       confidence rendah, uji orientasi tampilan juga lalu pilih hasil
+       yang lebih dipercaya. Rotasi viewport yang dipilih dipakai
+       kembali untuk memetakan kotak OCR ke koordinat PDF. */
+    const page = await pdfjs.getPage(nomor);
     const scale = dpi / 72;
+    const renderArah = async (rotation) => {
+      const vp = page.getViewport({ scale, rotation });
+      const cv = document.createElement("canvas");
+      cv.width = Math.max(1, Math.ceil(vp.width));
+      cv.height = Math.max(1, Math.ceil(vp.height));
+      const cx = cv.getContext("2d", { alpha: false });
+      cx.fillStyle = "#fff"; cx.fillRect(0, 0, cv.width, cv.height);
+      await page.render({ canvasContext: cx, viewport: vp }).promise;
+      let src = cv;
+      if (perbaiki) { try { src = perbaikiKontras(cv); } catch (_) { src = cv; } }
+      return { canvas: cv, viewport: vp, source: src };
+    };
+    const defaultRotation = ((Number(page.rotate) || 0) % 360 + 360) % 360;
+    let picked = await renderArah(0);
+    let res = null;
+    if (worker) {
+      res = await worker.recognize(picked.source, {}, { text: true, blocks: true });
+      const conf = Number(res && res.data && res.data.confidence) || 0;
+      /* Kandidat kedua hanya untuk kasus ambigu/teks nyaris tak terbaca. */
+      if (defaultRotation && conf < 85) {
+        const alternate = await renderArah(defaultRotation);
+        const altRes = await worker.recognize(alternate.source, {}, { text: true, blocks: true });
+        const altConf = Number(altRes && altRes.data && altRes.data.confidence) || 0;
+        if (altConf > conf) {
+          picked.canvas.width = picked.canvas.height = 0;
+          if (picked.source !== picked.canvas) { picked.source.width = picked.source.height = 0; }
+          picked = alternate;
+          res = altRes;
+        } else {
+          alternate.canvas.width = alternate.canvas.height = 0;
+          if (alternate.source !== alternate.canvas) { alternate.source.width = alternate.source.height = 0; }
+        }
+      }
+    }
+    const canvas = picked.canvas;
+    const viewport = picked.viewport;
+    const sumber = picked.source;
     const tinggiTampil = viewport.height / scale;
     const lebarTampil = viewport.width / scale;
-    let sumber = canvas;
-    if (perbaiki) {
-      try { sumber = perbaikiKontras(canvas); } catch (_) { sumber = canvas; }
-    }
 
     let kata = [];
     if (worker) {
-      const res = await worker.recognize(sumber, {}, { text: true, blocks: true });
       kata = kumpulkanKata(res && res.data);
     } else if ("TextDetector" in window) {
       try {
@@ -1740,10 +1777,11 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
     id: "ocr",
     cat: "optimize",
     name: "OCR PDF",
-    desc: "Tambahkan lapisan teks ke PDF hasil pindai dengan mesin OCR offline Tesseract (Indonesia/Inggris). Dokumen asli tetap utuh; teks bisa dicari & disalin.",
+    desc: "Kenali teks pindai, lalu edit teks/font dan gambar langsung di preview sebelum menyimpan PDF searchable.",
     icon: "ocr",
     accept: ".pdf,application/pdf",
-    multiple: true,
+    custom: "editor",
+    multiple: false,
     fields: [
       {
         type: "select", id: "lang", label: "Bahasa pengenalan", value: "ind",
@@ -1769,6 +1807,7 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
           ["force", "OCR juga — teks asli diganti hasil OCR"],
         ],
       },
+      { type: "note", text: "Preview di bawah ini bisa diedit langsung. Klik OCR → edit teks untuk mengenali halaman scan; klik baris hasil untuk mengubah teks/font. Gambar bisa diganti, dipindah, diubah ukuran, atau dihapus. Tekan Proses untuk membuat PDF dengan perubahan tersebut." },
       { type: "check", id: "contrast", label: "Perbaiki kontras hasil pindai (lebih akurat)", value: true },
       { type: "number", id: "workers", label: "Jumlah mesin OCR (paralel)", value: 2, min: 1, max: 4 },
       { type: "pagerange", id: "halaman", label: "Halaman yang di-OCR", value: { mode: "all", dari: 1, sampai: 0 } },
@@ -1815,6 +1854,10 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
           C.pastikanHalamanTerpilih(spec, jumlah, f.name);
           const terpilih = new Set(C.halamanTerpilih(spec, jumlah));
 
+          /* Baris yang sudah dikenali pada preview tidak perlu OCR ulang
+             saat menekan Proses: selain lebih cepat, isi edit pengguna tetap
+             menjadi satu-satunya sumber teks untuk halaman itu. */
+          const editsPreview = (ctx.opts && ctx.opts.edits) || {};
           /* 1. Petakan halaman: punya teks atau tidak. */
           const rencana = [];
           for (let i = 1; i <= jumlah; i++) {
@@ -1827,7 +1870,9 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
               adaTeks = n >= 30;
             } catch (_) { /* abaikan */ }
             const diLuar = !terpilih.has(i);
-            rencana.push({ nomor: i, adaTeks, lewati: diLuar || (adaTeks && !paksa) });
+            const previewOcr = (editsPreview[String(i)] || []).some((op) => op && op.ocrGenerated);
+            rencana.push({ nomor: i, adaTeks, previewOcr,
+              lewati: diLuar || previewOcr || (adaTeks && !paksa) });
             ctx.progress(Math.round((i / jumlah) * 5), `Memeriksa halaman ${i}/${jumlah}…`);
             await tick();
           }
@@ -1861,21 +1906,34 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
 
           /* 3. Tulis hasilnya ke halaman yang sesuai. */
           for (const r of rencana) {
-            if (r.lewati) continue;
+            if (r.lewati) {
+              if (r.previewOcr && mode === "clean") {
+                const target = doc.getPage(r.nomor - 1);
+                const srcPage = await pdfjs.getPage(r.nomor);
+                const vp = srcPage.getViewport({ scale: 1, rotation: 0 });
+                kosongkanHalaman(doc, target);
+                target.setMediaBox(0, 0, vp.width, vp.height);
+                target.setCropBox(0, 0, vp.width, vp.height);
+                target.setRotation(C.degrees(0));
+              }
+              continue;
+            }
             const h = hasil.get(r.nomor);
             if (!h || !h.kata.length) continue;
             const page = doc.getPage(r.nomor - 1);
+            const editHalaman = ((ctx.opts && ctx.opts.edits) || {})[String(r.nomor)] || [];
+            const adaOcrEdit = editHalaman.some((op) => op && op.ocrGenerated);
 
             if (mode === "searchable" && !r.adaTeks) {
               /* Halaman pindai: pertahankan gambar aslinya, tambahkan
                  lapisan teks tak terlihat. Tidak ada duplikasi dan
                  berkas tetap ramping. */
-              for (const kata of h.kata) {
+              if (!adaOcrEdit) for (const kata of h.kata) {
                 await tulisKata(page, kata.teks, kata.abs, { visible: false });
               }
             } else if (mode === "overlay" && !r.adaTeks) {
               /* Hasil pindai: teks OCR tampil di atas gambarnya. */
-              for (const kata of h.kata) {
+              if (!adaOcrEdit) for (const kata of h.kata) {
                 await tulisKata(page, kata.teks, kata.abs, { visible: true });
               }
             } else {
@@ -1902,7 +1960,7 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
                   });
                 }
               }
-              for (const kata of h.kata) {
+              if (!adaOcrEdit) for (const kata of h.kata) {
                 await tulisKata(page, kata.teks, kata.tamp, { visible: mode !== "searchable" });
               }
             }
@@ -1910,6 +1968,40 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
             await tick();
           }
 
+          /* Terapkan perubahan yang dibuat langsung pada preview OCR.
+             Lapisan OCR hasil editor menggantikan baris scan asal (maskOriginal)
+             sehingga teks hasil edit juga menjadi teks searchable PDF. */
+          for (const [halamanKey, daftarEdit] of Object.entries(editsPreview)) {
+            const no = Number(halamanKey);
+            const opsEdit = (daftarEdit || []).filter((op) => op &&
+              (op.k === "text" || op.k === "erase" || op.k === "image" || op.moved));
+            if (!Number.isInteger(no) || no < 1 || no > jumlah || !opsEdit.length) continue;
+            const target = doc.getPage(no - 1);
+            let bgCanvas = null, bgCtx = null, bgViewport = null;
+            const perluCrop = opsEdit.some((op) => op.k === "image" && op.copyFrom);
+            if (mode !== "clean" || perluCrop) {
+              const bg = await renderPage(pdfjs, no, 2);
+              bgCanvas = bg.canvas; bgCtx = bg.ctx; bgViewport = bg.viewport;
+            }
+            await C.applyVectorEdits(target, opsEdit, {
+              bgFor: (op) => {
+                if (mode === "clean") return "#ffffff";
+                const rect = op.copyFrom || op.box;
+                if (!rect || !bgCtx || !bgViewport) return "#ffffff";
+                try { return C.sampleBackground(bgCtx, C.pdfRectToCanvas(bgViewport, rect)); }
+                catch (_) { return "#ffffff"; }
+              },
+              cropBytes: async (op) => {
+                if (!op.copyFrom || !bgCanvas || !bgViewport) return null;
+                const r = C.pdfRectToCanvas(bgViewport, op.copyFrom);
+                const w = Math.max(1, Math.round(r.w)), h = Math.max(1, Math.round(r.h));
+                const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+                cv.getContext("2d").drawImage(bgCanvas, r.x, r.y, r.w, r.h, 0, 0, w, h);
+                return canvasToBytes(cv, "image/png");
+              },
+            });
+            if (bgCanvas) bgCanvas.width = bgCanvas.height = 0;
+          }
           try { await pdfjs.destroy(); } catch (_) { /* abaikan */ }
           const bytes = await saveDoc(doc);
           out.push({
