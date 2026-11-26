@@ -159,6 +159,7 @@
           <button type="button" class="ed-mode" data-mode="select">Pilih</button>
           <button type="button" class="ed-mode" data-mode="text">+ Teks</button>
           <button type="button" class="ed-mode" data-mode="image">+ Gambar</button>
+          <button type="button" class="btn btn-ghost btn-sm ed-long" data-ed="ocr" title="Kenali teks halaman pindai dengan OCR" aria-label="Kenali teks dengan OCR"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7V5a1 1 0 0 1 1-1h2M17 4h2a1 1 0 0 1 1 1v2M20 17v2a1 1 0 0 1-1 1h-2M7 20H5a1 1 0 0 1-1-1v-2"/><path d="M7 10h10M7 14h7"/></svg><span class="ed-txt">OCR → edit teks</span></button>
         </span>
         <span class="ed-group">
           <button type="button" class="btn btn-ghost btn-sm ed-long" data-ed="pick" title="Sisipkan gambar" aria-label="Sisipkan gambar">
@@ -273,6 +274,7 @@
       else if (act === "zoomin") setZoom(S.zoom + 0.25);
       else if (act === "zoomout") setZoom(S.zoom - 0.25);
       else if (act === "pick") { closeMenus(); wrap.querySelector("[data-ed=file]").click(); }
+      else if (act === "ocr") { recognizeCurrentPage(); }
       else if (act === "reset") {
         pushHistory(true);
         edits()[String(S.pageNo)] = [];
@@ -1220,6 +1222,99 @@
       msg.textContent = text;
       msg.style.display = text ? "" : "none";
       wrap.querySelector(".ed-stack").style.display = text ? "none" : "";
+    }
+
+    /* OCR satu halaman pindai lalu ubah setiap baris hasil pengenalan
+       menjadi lapisan teks yang langsung dapat dipilih, diedit, digeser,
+       diubah font/warna/ukuran, dan dihapus di panggung editor. */
+    let ocrBusy = false;
+    async function recognizeCurrentPage() {
+      if (!S.doc || ocrBusy) return;
+      const existingOps = pageOps();
+      if (existingOps.some((o) => o.ocrGenerated)) {
+        toast("Halaman ini sudah memiliki lapisan OCR. Batalkan dengan Undo atau hapus lapisannya dulu.", "err");
+        return;
+      }
+      ocrBusy = true;
+      const button = wrap.querySelector('[data-ed="ocr"]');
+      const buttonLabel = button && button.querySelector(".ed-txt");
+      if (button) button.disabled = true;
+      if (buttonLabel) buttonLabel.textContent = "Mengenali…";
+      let worker = null;
+      try {
+        if (!window.Tesseract) {
+          await new Promise((resolve, reject) => {
+            const script = document.createElement("script");
+            script.src = "vendor/tesseract/tesseract.min.js";
+            script.onload = resolve;
+            script.onerror = () => reject(new Error("Pustaka OCR offline tidak ditemukan."));
+            document.head.appendChild(script);
+          });
+        }
+        if (!window.Tesseract) throw new Error("Mesin OCR tidak termuat.");
+        const base = new URL("vendor/tesseract/", location.href).href;
+        let lastCoreError = null;
+        for (const core of ["tesseract-core-simd-lstm.wasm.js", "tesseract-core-lstm.wasm.js"]) {
+          try {
+            worker = await window.Tesseract.createWorker("ind+eng", 1, {
+              workerPath: base + "worker.min.js", corePath: base + core,
+              langPath: base + "lang", gzip: true,
+              logger: (m) => {
+                if (buttonLabel && m && m.status === "recognizing text") {
+                  buttonLabel.textContent = "OCR " + Math.round((m.progress || 0) * 100) + "%";
+                }
+              },
+            });
+            break;
+          } catch (err) { lastCoreError = err; }
+        }
+        if (!worker) throw lastCoreError || new Error("Mesin OCR tidak dapat dijalankan.");
+        const page = await S.doc.getPage(S.pageNo);
+        const dpi = 180;
+        const viewport = page.getViewport({ scale: dpi / 72 });
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.ceil(viewport.width);
+        canvas.height = Math.ceil(viewport.height);
+        await page.render({ canvasContext: canvas.getContext("2d", { alpha: false }), viewport }).promise;
+        toast("OCR halaman " + S.pageNo + " sedang berjalan…");
+        const result = await worker.recognize(canvas, {}, { text: true, blocks: true });
+        canvas.width = canvas.height = 0;
+        const found = [];
+        for (const block of (result.data.blocks || [])) {
+          for (const para of (block.paragraphs || [])) {
+            for (const line of (para.lines || [])) {
+              const text = (line.text || "").trim();
+              const bb = line.bbox;
+              if (!text || !bb) continue;
+              const a = page.getViewport({ scale: 1 }).convertToPdfPoint(bb.x0 / (dpi / 72), bb.y1 / (dpi / 72));
+              const b = page.getViewport({ scale: 1 }).convertToPdfPoint(bb.x1 / (dpi / 72), bb.y0 / (dpi / 72));
+              const box = { x: Math.min(a[0], b[0]), y: Math.min(a[1], b[1]),
+                w: Math.max(1, Math.abs(b[0] - a[0])), h: Math.max(1, Math.abs(b[1] - a[1])) };
+              found.push({ text, box });
+            }
+          }
+        }
+        if (!found.length) throw new Error("OCR tidak menemukan teks. Coba pindai dengan resolusi atau kontras yang lebih baik.");
+        pushHistory(true);
+        for (const item of found) {
+          const id = "ocr" + (++S.opSeq);
+          pageOps().push({ id, k: "text", newItem: true, ocrGenerated: true,
+            text: item.text, box: item.box, by: item.box.y + item.box.h * 0.8,
+            size: Math.max(6, Math.min(72, item.box.h * 0.78)),
+            font: "helvetica", color: "#111111", bold: false, italic: false,
+            align: "left", underline: false, strike: false, lineHeight: 1.2 });
+        }
+        S.sel = null;
+        await redraw();
+        toast(`${found.length} baris dikenali. Klik baris untuk mengedit teks/font; perubahan tampil langsung di preview.`);
+      } catch (err) {
+        toast("OCR gagal: " + ((err && err.message) || err), "err");
+      } finally {
+        if (worker) { try { await worker.terminate(); } catch (_) {} }
+        ocrBusy = false;
+        if (button) button.disabled = false;
+        if (buttonLabel) buttonLabel.textContent = "OCR → edit teks";
+      }
     }
 
     /* ---------- muat file ---------- */
