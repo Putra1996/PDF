@@ -765,21 +765,22 @@ pernah bocor** ke pesan galat · server AI gagal → turun ke mesin bawaan dan
 
 ---
 
-# Audit Edit PDF: OCR → ubah font/teks/gambar langsung di preview — 2026-11-26
+# Audit Edit PDF: OCR → ubah font/teks/gambar langsung di preview — 2026-11-22
 
-Fitur OCR berbasis scan terintegrasi dengan Editor PDF visual (seperti Word).
-OCR offline menghasilkan lapisan teks per baris yang dapat dipilih dan diedit
-langsung pada preview. Font, isi, ukuran, warna, dan posisi memakai inspector
+Fitur OCR PDF sendiri kini membuka editor visual inline (pengguna tidak harus
+pindah ke alat Edit PDF). OCR offline menghasilkan lapisan teks per baris yang
+bisa dipilih dan diedit langsung di preview OCR, lalu diterapkan ke PDF keluaran. Font, isi, ukuran, warna, dan posisi memakai inspector
 editor yang sudah ada. Objek gambar tetap dapat dipilih, diganti, diubah ukuran,
 dipindah, atau dihapus.
 
 - Harness baru: `tools/mkfixture-editor-ocr.mjs` + `tools/audit-editor-ocr.mjs`
-  → **9/0**; OCR 1 halaman, 180 DPI, selesai 2,4 dtk di runner audit; fixture adalah PDF scan yang isinya raster, bukan PDF teks.
-- Tesseract lokal `ind+eng`, 180 DPI, satu worker untuk menekan memori,
+  → **21/0**; fixture 4 halaman raster berotasi 0/90/180/270°, 180 DPI, termasuk pemeriksaan isi PDF keluaran dan edit ukuran gambar.
+- Tesseract lokal, bahasa/DPI mengikuti opsi pengguna (Indonesia/200 DPI default), satu worker untuk menekan memori,
   progress UI, SIMD dengan fallback core standar, worker selalu dihentikan.
 - Undo/redo dan ekspor/proyek menggunakan operasi editor normal.
 - Batasan UX didokumentasikan: scan text ditutup dengan warna sekitar; bukan
   rekonstruksi konten/fill-aware pada latar foto atau bertekstur.
-- `verify-produksi.mjs` → **74/0** (toolbar sempit kembali maksimal 3 baris).
+- OCR pada fixture 1 halaman @200 DPI: sekitar 2,3 detik termasuk init worker; PDF akhir dibandingkan dengan preview: **99,0%** piksel dalam toleransi Δ32.
+- `audit-ocr.mjs` → **44/0** (termasuk scan dengan rotasi legacy); `verify-produksi.mjs` → **74/0**; `audit-semua.mjs` → **129/0**.
 - Rincian dan screenshot: `docs/audit-editor-ocr.md`,
   `docs/audit-editor-ocr/ocr-preview.png`.

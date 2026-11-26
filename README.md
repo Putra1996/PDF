@@ -132,11 +132,11 @@ diduplikasi** — semuanya memakai tautan ke alur yang sudah ada:
 | **Konversi dari PDF** | PDF to JPG · PDF to WORD · PDF to POWERPOINT · PDF to EXCEL · PDF to PDF/A |
 | **Edit PDF** | Rotate PDF · Add page numbers · Add watermark · Crop PDF · Edit PDF · PDF Forms |
 
-### Edit PDF visual: OCR dan edit langsung di preview
+### OCR: edit teks dan gambar langsung di preview
 
-Di **Edit PDF**, tombol **“OCR → edit teks”** mengenali teks halaman pindai secara offline (Tesseract Indonesia + Inggris). Setiap baris hasil OCR menjadi lapisan teks yang bisa dipilih di preview, lalu teks, font, ukuran, warna, gaya, dan posisi dapat diedit langsung seperti objek Word. Perubahan langsung terlihat pada preview; undo/redo, proyek editor, dan ekspor PDF tetap tersedia. Foto/ilustrasi tetap dipilih, digeser, diubah ukuran, diganti, atau dihapus melalui alat gambar yang sudah ada. OCR memakai 180 DPI dan satu worker untuk membatasi konsumsi memori; worker dihentikan setelah selesai.
+Fitur **OCR PDF** kini punya panggung preview editor sendiri. Setelah memilih PDF scan, tekan **“OCR → edit teks”** pada toolbar preview. Setiap baris hasil OCR menjadi lapisan yang bisa dipilih dan diedit langsung seperti objek Word: ubah isi, font, ukuran, warna, gaya, posisi, dan perataan. Foto/ilustrasi bisa dipilih lalu digeser, diubah ukurannya, diganti, dihapus, atau disisipkan. Tekan **Proses** di panel OCR untuk membuat PDF; teks edit diterapkan ke hasil akhir dan tetap searchable. Perubahan mendukung undo/redo dan simpan/buka proyek.
 
-**Catatan:** OCR mengubah teks menjadi lapisan editable di atas scan (area lama ditutup dengan warna latar yang disampling). Ini bukan rekonstruksi konten foto yang tertutup; pada latar bertekstur, batas penutup mungkin terlihat. Fitur tetap berjalan lokal, tidak mengunggah dokumen. Audit otomatis: `node tools/mkfixture-editor-ocr.mjs` lalu `node tools/audit-editor-ocr.mjs`.
+OCR (Tesseract offline) memakai bahasa dan resolusi pilihan di panel (bawaan Indonesia, 200 DPI), satu worker. Pemilihan orientasi membandingkan orientasi intrinsik dan `/Rotate` saat keyakinan OCR rendah. **Catatan:** teks scan lama ditutup dengan warna latar sekitar lalu diganti lapisan teks; ini bukan content-aware fill, jadi bekas penutup dapat terlihat di latar foto/bertekstur. File tidak diunggah. Audit otomatis: `node tools/mkfixture-editor-ocr.mjs` lalu `node tools/audit-editor-ocr.mjs` (19/0; rotasi 0/90/180/270; PDF akhir cocok 99,0% piksel dengan preview dalam toleransi Δ32).
 | **Keamanan PDF** | Unlock PDF · Protect PDF · Sign PDF · Redact PDF · Compare PDF |
 | **Kecerdasan PDF** | AI Summarizer · Translate PDF · PDF to Markdown |
 

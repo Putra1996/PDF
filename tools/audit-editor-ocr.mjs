@@ -10,14 +10,14 @@ const check=(n,ok,d="")=>{ok?pass++:fail++;console.log(`${ok?"✓":"✗"} ${n}${
 const mime={".html":"text/html",".js":"text/javascript",".css":"text/css",".wasm":"application/wasm",".gz":"application/gzip",".traineddata":"application/octet-stream",".pdf":"application/pdf"};
 const srv=http.createServer((req,res)=>{const u=decodeURIComponent((req.url||"/").split("?")[0]);let f=path.join(ROOT,u==="/"?"index.html":u);if(!f.startsWith(ROOT)||!fs.existsSync(f))return res.writeHead(404).end();res.writeHead(200,{"content-type":mime[path.extname(f)]||"application/octet-stream"});fs.createReadStream(f).pipe(res)});
 await new Promise(r=>srv.listen(PORT,"127.0.0.1",r));
-const browser=await chromium(); const page=await browser.newPage({viewport:{width:1440,height:1000}}); const errors=[];
+const browser=await chromium(); const page=await browser.newPage({viewport:{width:1440,height:1000}}); const errors=[]; let previewPage1="";
 page.on("pageerror",e=>errors.push(String(e)));
 try {
  await page.goto(`http://127.0.0.1:${PORT}/index.html`,{waitUntil:"load"}); await page.waitForTimeout(700);
  await page.evaluate(()=>window.PDFApp.setTab("tools")); await page.waitForTimeout(250);
- await page.click('#toolCategories [data-tool="edit"]'); await page.waitForTimeout(400);
+ await page.click('#toolCategories [data-tool="ocr"]'); await page.waitForTimeout(400);
  await page.setInputFiles("#toolInput",FIX); await page.waitForTimeout(2500);
- check("Editor loads scanned PDF",await page.evaluate(()=>window.PDFToolsEditor.debug().pages===1));
+ check("OCR feature loads scanned PDF with its live editor",await page.evaluate(()=>window.PDFToolsEditor.debug().pages===4));
  const ocrStarted=Date.now();
  await page.click('[data-ed="ocr"]');
  await page.waitForFunction(()=>{const b=document.querySelector('[data-ed="ocr"]');return b&&!b.disabled},{timeout:90000});
@@ -27,8 +27,7 @@ try {
  const ops=d.ops.filter(o=>o.ocrGenerated);
  check("OCR recognizes multiple editable lines",ops.length>=2,`lines=${ops.length}; ${ops.map(o=>o.text).join(" / ")}`);
  check("OCR results are editable text layers",ops.length>0&&ops.every(o=>o.k==="text"&&o.newItem&&o.box.w>0&&o.box.h>0));
- await page.waitForTimeout(1500);
- await page.screenshot({path:path.join(SHOT,"ocr-preview.png"),fullPage:true});
+ check("OCR feature preview detects separate image object",d.images>=2,`images=${d.images}`);
  if(ops.length){
    await page.locator('.ed-box.ed-new').first().click(); await page.waitForTimeout(200);
    check("Click OCR text selects inspector",await page.locator('[data-field="font"]').count().then(n=>n>0));
@@ -38,9 +37,72 @@ try {
    check("Text and font edits update preview state",d.ops.some(o=>o.ocrGenerated&&o.text==="Edited OCR heading"&&o.font!=="helvetica"),JSON.stringify(d.ops.find(o=>o.text==="Edited OCR heading")||{}));
    check("Undo history available after OCR/edit",d.undoDepth>0,`undo=${d.undoDepth}`);
  }
+ await page.locator(".ed-box.ed-img").last().click(); await page.waitForTimeout(150);
+ const imageWidth=Number(await page.locator('[data-field="width"] input').inputValue());
+ await page.locator('[data-field="width"] input').fill(String(imageWidth+15)); await page.waitForTimeout(250);
+ const imageEdit=await page.evaluate(()=>window.PDFToolsEditor.debug().ops.find(o=>o.k==="image"));
+ check("Image size is directly editable in OCR preview",!!imageEdit&&imageEdit.box.w>imageEdit.copyFrom.w,JSON.stringify(imageEdit||{}));
+ await page.waitForTimeout(350);
+ previewPage1=await page.locator('.ed-canvas').evaluate(c=>c.toDataURL('image/png'));
+ await page.screenshot({path:path.join(SHOT,"ocr-preview.png"),fullPage:true});
+ for (let pageNo=2;pageNo<=4;pageNo++) {
+   await page.click('[data-ed="next"]'); await page.waitForTimeout(180);
+   await page.click('[data-ed="ocr"]');
+   await page.waitForFunction(()=>{const b=document.querySelector('[data-ed="ocr"]');return b&&!b.disabled},{timeout:90000});
+   const pageOps=await page.evaluate(()=>window.PDFToolsEditor.debug().ops.filter(o=>o.ocrGenerated).length);
+   check(`Rotasi ${[0,90,180,270][pageNo-1]}°: OCR menghasilkan lapisan edit`,pageOps>=3,`baris=${pageOps}`);
+ }
  const canvas=await page.locator('.ed-canvas').evaluate(c=>({w:c.width,h:c.height}));
  check("Editor preview rendered after OCR",canvas.w>500&&canvas.h>500,`${canvas.w}x${canvas.h}`);
  check("No fatal page errors",errors.length===0,errors.join(" | "));
+ await page.locator("#toolRunBtn").click();
+ await page.waitForSelector("#toolResults a",{timeout:120000});
+ const href=await page.locator("#toolResults a").first().getAttribute("href");
+ const finalOutput=await page.evaluate(async (url)=>{
+   const bytes=new Uint8Array(await (await fetch(url)).arrayBuffer());
+   const pdf=await window.pdfjsLib.getDocument({data:bytes}).promise;
+   const texts=[], imageCounts=[];
+   for(let n=1;n<=pdf.numPages;n++){
+     const p=await pdf.getPage(n), content=await p.getTextContent(), list=await p.getOperatorList();
+     texts.push(content.items.map(i=>i.str).join(" "));
+     const ops=window.pdfjsLib.OPS;
+     imageCounts.push(list.fnArray.filter(fn=>fn===ops.paintImageXObject||fn===ops.paintInlineImageXObject).length);
+   }
+   await pdf.destroy(); return {texts,imageCounts,pages:pdf.numPages};
+ },href);
+ check("OCR tool output contains edited preview text",finalOutput.texts[0].includes("Edited OCR heading"),finalOutput.texts[0].slice(0,300));
+ check("Edited OCR output replaces old recognized heading",!finalOutput.texts[0].includes("SCAN TEST DOCUMENT"),finalOutput.texts[0].slice(0,300));
+ check("Edited image is included in the exported PDF",finalOutput.imageCounts[0]>=3,`image operators=${finalOutput.imageCounts[0]}`);
+ check("OCR-edited lines persist through all four page rotations",finalOutput.pages===4&&finalOutput.texts.slice(1).every(t=>t.includes("SCAN TEST DOCUMENT")),finalOutput.texts.map(t=>t.slice(0,55)).join(" / "));
+ const visualMatch=await page.evaluate(async({url,preview})=>{
+   const bytes=new Uint8Array(await(await fetch(url)).arrayBuffer());
+   const pdf=await window.pdfjsLib.getDocument({data:bytes}).promise, p=await pdf.getPage(1);
+   const ref=new Image(); ref.src=preview; await ref.decode();
+   const scale=ref.width/p.getViewport({scale:1}).width, vp=p.getViewport({scale});
+   const out=document.createElement("canvas");out.width=ref.width;out.height=ref.height;
+   await p.render({canvasContext:out.getContext("2d"),viewport:vp}).promise;
+   const a=ref.getContext?null:null;
+   const ca=document.createElement("canvas");ca.width=ref.width;ca.height=ref.height;ca.getContext("2d").drawImage(ref,0,0);
+   const x=ca.getContext("2d").getImageData(0,0,ca.width,ca.height).data;
+   const y=out.getContext("2d").getImageData(0,0,out.width,out.height).data;
+   let near=0;for(let i=0;i<x.length;i+=4){if(Math.abs(x[i]-y[i])<32&&Math.abs(x[i+1]-y[i+1])<32&&Math.abs(x[i+2]-y[i+2])<32)near++;}
+   await pdf.destroy();return {ratio:near/(x.length/4),size:`${out.width}x${out.height}`};
+ },{url:href,preview:previewPage1});
+ check("Rendered PDF visually matches edited OCR preview",visualMatch.ratio>0.88,`${(visualMatch.ratio*100).toFixed(1)}% pixels within Δ32; ${visualMatch.size}`);
+ await page.locator('[data-field="mode"] select').selectOption("clean");
+ await page.locator("#toolRunBtn").click();
+ await page.waitForFunction(()=>{const b=document.querySelector("#toolRunBtn");return b&&b.textContent==="Proses"},{timeout:120000});
+ const cleanHref=await page.locator("#toolResults a").first().getAttribute("href");
+ const cleanOut=await page.evaluate(async(url)=>{
+   const bytes=new Uint8Array(await(await fetch(url)).arrayBuffer());
+   const pdf=await window.pdfjsLib.getDocument({data:bytes}).promise, texts=[];
+   for(let n=1;n<=pdf.numPages;n++){const c=await(await pdf.getPage(n)).getTextContent();texts.push(c.items.map(i=>i.str).join(" "));}
+   const list=await(await pdf.getPage(1)).getOperatorList(),ops=window.pdfjsLib.OPS;
+   const images=list.fnArray.filter(fn=>fn===ops.paintImageXObject||fn===ops.paintInlineImageXObject).length;
+   await pdf.destroy();return {pages:texts.length,texts,images};
+ },cleanHref);
+ check("Mode latar putih mempertahankan teks edit di semua halaman",cleanOut.pages===4&&cleanOut.texts[0].includes("Edited OCR heading")&&cleanOut.texts.slice(1).every(t=>t.includes("SCAN TEST DOCUMENT")),cleanOut.texts.map(t=>t.slice(0,45)).join(" / "));
+ check("Mode latar putih tetap menyertakan gambar yang diedit",cleanOut.images>=1,`image operators=${cleanOut.images}`);
 } catch(e){check("Audit run",false,e.stack||String(e));}
 await browser.close(); await new Promise(r=>srv.close(r));
 console.log(`\n=== OCR EDITOR: ${pass} lulus / ${fail} gagal ===`);

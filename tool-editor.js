@@ -1252,11 +1252,14 @@
           });
         }
         if (!window.Tesseract) throw new Error("Mesin OCR tidak termuat.");
+        const ocrPrefs = (ui() && ui().opts) || {};
+        const langs = String(ocrPrefs.lang || "ind+eng");
+        const dpi = Math.min(400, Math.max(100, Number(ocrPrefs.scale) || 180));
         const base = new URL("vendor/tesseract/", location.href).href;
         let lastCoreError = null;
         for (const core of ["tesseract-core-simd-lstm.wasm.js", "tesseract-core-lstm.wasm.js"]) {
           try {
-            worker = await window.Tesseract.createWorker("ind+eng", 1, {
+            worker = await window.Tesseract.createWorker(langs, 1, {
               workerPath: base + "worker.min.js", corePath: base + core,
               langPath: base + "lang", gzip: true,
               logger: (m) => {
@@ -1270,8 +1273,9 @@
         }
         if (!worker) throw lastCoreError || new Error("Mesin OCR tidak dapat dijalankan.");
         const page = await S.doc.getPage(S.pageNo);
-        const dpi = 180;
-        const viewport = page.getViewport({ scale: dpi / 72 });
+        /* Baca orientasi intrinsik; metadata /Rotate hanya mengubah
+           tampilan, bukan orientasi glyph pada raster scan. */
+        const viewport = page.getViewport({ scale: dpi / 72, rotation: 0 });
         const canvas = document.createElement("canvas");
         canvas.width = Math.ceil(viewport.width);
         canvas.height = Math.ceil(viewport.height);
@@ -1286,8 +1290,9 @@
               const text = (line.text || "").trim();
               const bb = line.bbox;
               if (!text || !bb) continue;
-              const a = page.getViewport({ scale: 1 }).convertToPdfPoint(bb.x0 / (dpi / 72), bb.y1 / (dpi / 72));
-              const b = page.getViewport({ scale: 1 }).convertToPdfPoint(bb.x1 / (dpi / 72), bb.y0 / (dpi / 72));
+              const pdfViewport = page.getViewport({ scale: 1, rotation: 0 });
+              const a = pdfViewport.convertToPdfPoint(bb.x0 / (dpi / 72), bb.y1 / (dpi / 72));
+              const b = pdfViewport.convertToPdfPoint(bb.x1 / (dpi / 72), bb.y0 / (dpi / 72));
               const box = { x: Math.min(a[0], b[0]), y: Math.min(a[1], b[1]),
                 w: Math.max(1, Math.abs(b[0] - a[0])), h: Math.max(1, Math.abs(b[1] - a[1])) };
               found.push({ text, box });
@@ -1298,7 +1303,7 @@
         pushHistory(true);
         for (const item of found) {
           const id = "ocr" + (++S.opSeq);
-          pageOps().push({ id, k: "text", newItem: true, ocrGenerated: true,
+          pageOps().push({ id, k: "text", newItem: true, ocrGenerated: true, maskOriginal: true,
             text: item.text, box: item.box, by: item.box.y + item.box.h * 0.8,
             size: Math.max(6, Math.min(72, item.box.h * 0.78)),
             font: "helvetica", color: "#111111", bold: false, italic: false,
