@@ -1794,7 +1794,7 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
         ],
       },
       { type: "number", id: "scale", label: "Resolusi OCR (DPI)", value: 250, min: 100, max: 400 },
-      { type: "number", id: "confidence", label: "Ambang keyakinan OCR (%)", value: 30, min: 0, max: 95 },
+      { type: "number", id: "confidence", label: "Ambang keyakinan OCR (%)", value: 55, min: 0, max: 95 },
       {
         type: "select", id: "mode", label: "Hasil", value: "searchable",
         options: [
@@ -2027,5 +2027,5 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
     },
   });
 
-  window.PDFToolsSmart = { encryptPdf, diffLines, findMatches, groupLines, pickSummary };
+  window.PDFToolsSmart = { encryptPdf, diffLines, findMatches, groupLines, pickSummary, perbaikiKontras };
 })();
