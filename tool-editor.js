@@ -1257,6 +1257,7 @@
         const langs = String(ocrPrefs.lang || "ind+eng");
         const dpi = Math.min(400, Math.max(100, Number(ocrPrefs.scale) || 250));
         const minConfidence = Math.max(0, Math.min(95, Number(ocrPrefs.confidence) || 0));
+        const useContrast = ocrPrefs.contrast !== false;
         const base = new URL("vendor/tesseract/", location.href).href;
         let lastCoreError = null;
         for (const core of ["tesseract-core-simd-lstm.wasm.js", "tesseract-core-lstm.wasm.js"]) {
@@ -1275,16 +1276,44 @@
         }
         if (!worker) throw lastCoreError || new Error("Mesin OCR tidak dapat dijalankan.");
         const page = await S.doc.getPage(S.pageNo);
-        /* Baca orientasi intrinsik; metadata /Rotate hanya mengubah
-           tampilan, bukan orientasi glyph pada raster scan. */
-        const viewport = page.getViewport({ scale: dpi / 72, rotation: 0 });
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.ceil(viewport.width);
-        canvas.height = Math.ceil(viewport.height);
-        await page.render({ canvasContext: canvas.getContext("2d", { alpha: false }), viewport }).promise;
+        /* Render orientasi intrinsik dahulu. Terapkan kontras bila
+           opsi OCR aktif (sebelumnya preview editor mengabaikan opsi
+           Perbaiki kontras); bila confidence rendah, coba juga /Rotate. */
+        const scale = dpi / 72;
+        const renderCandidate = async (rotation) => {
+          const viewport = page.getViewport({ scale, rotation });
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.ceil(viewport.width);
+          canvas.height = Math.ceil(viewport.height);
+          await page.render({ canvasContext: canvas.getContext("2d", { alpha: false }), viewport }).promise;
+          let source = canvas;
+          if (useContrast && window.PDFToolsSmart && typeof window.PDFToolsSmart.perbaikiKontras === "function") {
+            try { source = window.PDFToolsSmart.perbaikiKontras(canvas); } catch (_) { source = canvas; }
+          }
+          return { canvas, source, viewport, rotation };
+        };
+        const defaultRotation = ((Number(page.rotate) || 0) % 360 + 360) % 360;
+        let picked = await renderCandidate(0);
         toast("OCR halaman " + S.pageNo + " sedang berjalan…");
-        const result = await worker.recognize(canvas, {}, { text: true, blocks: true });
-        canvas.width = canvas.height = 0;
+        let result = await worker.recognize(picked.source, {}, { text: true, blocks: true });
+        const initialConfidence = Number(result && result.data && result.data.confidence) || 0;
+        if (defaultRotation && initialConfidence < 85) {
+          const alternate = await renderCandidate(defaultRotation);
+          const altResult = await worker.recognize(alternate.source, {}, { text: true, blocks: true });
+          const altConfidence = Number(altResult && altResult.data && altResult.data.confidence) || 0;
+          if (altConfidence > initialConfidence) {
+            picked.canvas.width = picked.canvas.height = 0;
+            if (picked.source !== picked.canvas) picked.source.width = picked.source.height = 0;
+            picked = alternate;
+            result = altResult;
+          } else {
+            alternate.canvas.width = alternate.canvas.height = 0;
+            if (alternate.source !== alternate.canvas) alternate.source.width = alternate.source.height = 0;
+          }
+        }
+        const pdfViewport = page.getViewport({ scale: 1, rotation: picked.rotation });
+        const canvas = picked.canvas;
+        const source = picked.source;
         const found = [];
         let skippedLowConfidence = 0;
         for (const block of (result.data.blocks || [])) {
@@ -1298,15 +1327,16 @@
                 skippedLowConfidence++;
                 continue;
               }
-              const pdfViewport = page.getViewport({ scale: 1, rotation: 0 });
-              const a = pdfViewport.convertToPdfPoint(bb.x0 / (dpi / 72), bb.y1 / (dpi / 72));
-              const b = pdfViewport.convertToPdfPoint(bb.x1 / (dpi / 72), bb.y0 / (dpi / 72));
+              const a = pdfViewport.convertToPdfPoint(bb.x0 / scale, bb.y1 / scale);
+              const b = pdfViewport.convertToPdfPoint(bb.x1 / scale, bb.y0 / scale);
               const box = { x: Math.min(a[0], b[0]), y: Math.min(a[1], b[1]),
                 w: Math.max(1, Math.abs(b[0] - a[0])), h: Math.max(1, Math.abs(b[1] - a[1])) };
               found.push({ text, box });
             }
           }
         }
+        canvas.width = canvas.height = 0;
+        if (source !== canvas) source.width = source.height = 0;
         if (!found.length) throw new Error(skippedLowConfidence
           ? `Semua ${skippedLowConfidence} baris berada di bawah ambang keyakinan ${minConfidence}%. Turunkan ambang OCR atau tingkatkan kualitas scan.`
           : "OCR tidak menemukan teks. Coba pindai dengan resolusi atau kontras yang lebih baik.");
