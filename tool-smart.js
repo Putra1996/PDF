@@ -1486,8 +1486,9 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
   }
 
   /* Kumpulkan kata + kotaknya dari hasil pengenalan Tesseract. */
-  function kumpulkanKata(data) {
+  function kumpulkanKata(data, ambang) {
     const out = [];
+    const minConf = Math.max(0, Math.min(95, Number(ambang) || 0));
     const blocks = (data && data.blocks) || [];
     for (const b of blocks) {
       for (const p of (b.paragraphs || [])) {
@@ -1495,9 +1496,10 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
           for (const w of (l.words || [])) {
             const bb = w.bbox;
             const text = (w.text || "").trim();
-            if (!text || !bb) continue;
+            const confidence = Number(w.confidence);
+            if (!text || !bb || (isFinite(confidence) && confidence >= 0 && confidence < minConf)) continue;
             out.push({
-              text,
+              text, confidence: isFinite(confidence) ? confidence : null,
               x0: bb.x0, y0: bb.y0, x1: bb.x1, y1: bb.y1,
             });
           }
@@ -1666,7 +1668,7 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
        abs  : PDF user space (dipakai pada halaman asli yang dipertahankan)
        tamp : ruang tampilan (dipakai pada halaman yang dibangun ulang) */
   async function ocrHalaman(o) {
-    const { pdfjs, nomor, worker, dpi, perbaiki, pakaiJpeg, laporkan } = o;
+    const { pdfjs, nomor, worker, dpi, perbaiki, pakaiJpeg, laporkan, minConfidence } = o;
     /* Coba orientasi intrinsic lebih dulu. Pada PDF scan legacy
        konten kadang sudah diputar berlawanan dengan /Rotate; bila
        confidence rendah, uji orientasi tampilan juga lalu pilih hasil
@@ -1716,7 +1718,7 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
 
     let kata = [];
     if (worker) {
-      kata = kumpulkanKata(res && res.data);
+      kata = kumpulkanKata(res && res.data, minConfidence);
     } else if ("TextDetector" in window) {
       try {
         const detektor = new window.TextDetector();
@@ -1791,7 +1793,8 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
           ["ind+eng", "Indonesia + Inggris (paling akurat, lebih lambat)"],
         ],
       },
-      { type: "number", id: "scale", label: "Resolusi OCR (DPI)", value: 200, min: 100, max: 400 },
+      { type: "number", id: "scale", label: "Resolusi OCR (DPI)", value: 250, min: 100, max: 400 },
+      { type: "number", id: "confidence", label: "Ambang keyakinan OCR (%)", value: 30, min: 0, max: 95 },
       {
         type: "select", id: "mode", label: "Hasil", value: "searchable",
         options: [
@@ -1807,7 +1810,7 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
           ["force", "OCR juga — teks asli diganti hasil OCR"],
         ],
       },
-      { type: "note", text: "Sebelum Proses: klik OCR → edit teks, lalu klik baris untuk mengubah teks/font dan gambar di preview. Setelah PDF jadi, klik Edit hasil di preview untuk mengedit lagi. Tekan Proses kembali untuk menyimpan perubahan." },
+      { type: "note", text: "Sebelum Proses: klik OCR → edit teks, lalu klik baris untuk mengubah teks/font dan gambar di preview. OCR mengabaikan baris dengan keyakinan di bawah ambang; turunkan ambang bila teks scan sangat pudar. Setelah PDF jadi, klik Edit hasil di preview untuk mengedit lagi. Tekan Proses kembali untuk menyimpan perubahan." },
       { type: "check", id: "contrast", label: "Perbaiki kontras hasil pindai (lebih akurat)", value: true },
       { type: "number", id: "workers", label: "Jumlah mesin OCR (paralel)", value: 2, min: 1, max: 4 },
       { type: "pagerange", id: "halaman", label: "Halaman yang di-OCR", value: { mode: "all", dari: 1, sampai: 0 } },
@@ -1818,6 +1821,7 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
       const mode = String(ctx.opts.mode || "searchable");
       const paksa = ctx.opts.existing === "force";
       const perbaiki = ctx.opts.contrast !== false;
+      const minConfidence = Math.max(0, Math.min(95, Number(ctx.opts.confidence) || 0));
       const jumlahMesin = Math.min(4, Math.max(1, Number(ctx.opts.workers) || 2));
       const out = [];
       const workers = [];
@@ -1887,6 +1891,7 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
               const h = await ocrHalaman({
                 pdfjs, nomor: r.nomor, worker: w, dpi, perbaiki,
                 pakaiJpeg: mode !== "clean" && r.adaTeks,
+                minConfidence,
                 laporkan: (jumlahKata) => {
                   selesai++;
                   ctx.progress(5 + Math.round((selesai / total) * 75),

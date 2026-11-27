@@ -784,3 +784,24 @@ dipindah, atau dihapus.
 - `audit-ocr.mjs` → **44/0** (termasuk scan dengan rotasi legacy); `verify-produksi.mjs` → **74/0**; `audit-semua.mjs` → **129/0**.
 - Rincian dan screenshot: `docs/audit-editor-ocr.md`,
   `docs/audit-editor-ocr/ocr-preview.png`.
+
+
+---
+
+# Audit OCR scan padat/noisy — 2026-11-22
+
+Screenshot pengguna memperlihatkan halaman scan sebagai gambar penuh (tanpa
+lapisan teks) dengan kotak OCR yang terlalu ramai. Perbaikan UX dan akurasi:
+ambang confidence baru (30% default, 0–95, bisa diatur), confidence rendah
+dilewati pada preview maupun PDF, DPI default 250 (100–400), dan kotak OCR
+nonselected kini transparan/tipis. OCR tetap offline dan satu worker pada editor.
+
+- `tools/audit-editor-ocr.mjs` → **26/0**, termasuk mock confidence 92 dipertahankan,
+  confidence 9 diabaikan, edit sebelum/sesudah Proses, 4 orientasi, gambar,
+  output searchable, serta render final cocok 99% piksel dengan preview (Δ32).
+- `tools/audit-ocr.mjs` → **44/0**.
+- Rincian: `docs/audit-ocr-image-quality-2026-11-22.md`.
+
+**Batas audit:** attachment adalah screenshot antarmuka, bukan sumber PDF scan.
+Akurasi OCR spesifik untuk dokumen pada screenshot belum dapat dinilai tanpa
+PDF asli (data pribadi boleh disamarkan).

@@ -27,6 +27,8 @@ try {
  const ops=d.ops.filter(o=>o.ocrGenerated);
  check("OCR recognizes multiple editable lines",ops.length>=2,`lines=${ops.length}; ${ops.map(o=>o.text).join(" / ")}`);
  check("OCR results are editable text layers",ops.length>0&&ops.every(o=>o.k==="text"&&o.newItem&&o.box.w>0&&o.box.h>0));
+ const outline=await page.locator(".ed-box.ed-ocr-box").first().evaluate(e=>({background:getComputedStyle(e).backgroundColor,border:getComputedStyle(e).borderStyle,selected:e.classList.contains("sel")}));
+ check("Unselected OCR boxes do not tint/hide the scan",outline.border==="dashed"&&!outline.selected&&/(rgba\(.*?,\s*0\)|transparent)/.test(outline.background),JSON.stringify(outline));
  check("OCR feature preview detects separate image object",d.images>=2,`images=${d.images}`);
  if(ops.length){
    await page.locator('.ed-box.ed-new').first().click(); await page.waitForTimeout(200);
@@ -104,10 +106,11 @@ try {
  check("Mode latar putih mempertahankan teks edit di semua halaman",cleanOut.pages===4&&cleanOut.texts[0].includes("Edited OCR heading")&&cleanOut.texts.slice(1).every(t=>t.includes("SCAN TEST DOCUMENT")),cleanOut.texts.map(t=>t.slice(0,45)).join(" / "));
  check("Mode latar putih tetap menyertakan gambar yang diedit",cleanOut.images>=1,`image operators=${cleanOut.images}`);
  await page.locator("#toolResults button",{hasText:"Edit hasil di preview"}).click();
- await page.waitForFunction(()=>window.PDFToolsEditor&&window.PDFToolsEditor.debug().pages===4,{timeout:15000});
+ await page.waitForFunction(()=>window.PDFToolsEditor&&window.PDFToolsEditor.debug().pages===4&&window.PDFToolsEditor.debug().texts>0&&document.querySelectorAll(".ed-box.ed-text").length>0,{timeout:15000});
  check("Hasil OCR dapat dibuka kembali ke preview editor",await page.locator("#toolFileList .tf-name").textContent().then(t=>t.includes("scan-ocr.pdf")));
- await page.locator(".ed-box.ed-text").first().click(); await page.waitForTimeout(200);
+ await page.locator(".ed-box.ed-text").first().click();
  const editable=page.locator('[data-field="text"] textarea');
+ await editable.waitFor({state:"visible",timeout:5000});
  check("Teks hasil OCR tetap dapat dipilih setelah diproses",await editable.count().then(n=>n===1));
  await editable.fill("Post OCR direct edit"); await page.waitForTimeout(250);
  await page.locator("#toolRunBtn").click();
@@ -118,6 +121,22 @@ try {
    const c=await(await pdf.getPage(1)).getTextContent();const t=c.items.map(i=>i.str).join(" ");await pdf.destroy();return t;
  },secondHref);
  check("Edit ulang sesudah OCR tersimpan ke PDF",secondText.replace(/\s+/g," ").includes("Post OCR direct edit"),secondText.slice(0,180));
+ await page.click('[data-ed="reset"]'); await page.waitForTimeout(180);
+ await page.evaluate(()=>{
+   window.__realOcrCreateWorker=window.Tesseract.createWorker;
+   window.Tesseract.createWorker=async()=>({
+     recognize:async()=>({data:{blocks:[{paragraphs:[{lines:[
+       {text:"HIGH CONFIDENCE",confidence:92,bbox:{x0:120,y0:160,x1:720,y1:230}},
+       {text:"LOW NOISE",confidence:9,bbox:{x0:120,y0:260,x1:500,y1:320}},
+     ]}]}]}}),
+     terminate:async()=>{},
+   });
+ });
+ await page.click('[data-ed="ocr"]');
+ await page.waitForFunction(()=>{const b=document.querySelector('[data-ed="ocr"]');return b&&!b.disabled},{timeout:15000});
+ const confidenceOps=await page.evaluate(()=>window.PDFToolsEditor.debug().ops.filter(o=>o.ocrGenerated).map(o=>o.text));
+ check("Ambang confidence membuang baris OCR yang meragukan",confidenceOps.length===1&&confidenceOps[0]==="HIGH CONFIDENCE",confidenceOps.join(" / "));
+ await page.evaluate(()=>{window.Tesseract.createWorker=window.__realOcrCreateWorker;delete window.__realOcrCreateWorker;});
 } catch(e){check("Audit run",false,e.stack||String(e));}
 await browser.close(); await new Promise(r=>srv.close(r));
 console.log(`\n=== OCR EDITOR: ${pass} lulus / ${fail} gagal ===`);

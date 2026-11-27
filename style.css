@@ -1333,6 +1333,11 @@ code{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;
 .ed-box.ed-new{border-style:solid;border-color:#f59e0b;background:rgba(245,158,11,.08)}
 .ed-box.edited{border-color:#f59e0b}
 .ed-box.sel{background:rgba(59,91,253,.14);border-color:var(--brand);border-style:solid}
+/* OCR menghasilkan banyak kotak. Jangan isi/tint semua scan sekaligus:
+   kotak OCR tak terpilih dibuat tipis, hover/seleksi baru disorot. */
+.ed-box.ed-ocr-box{border:1px dashed rgba(37,99,235,.34);background:transparent}
+.ed-box.ed-ocr-box:hover{background:rgba(59,91,253,.10);border-color:var(--brand)}
+.ed-box.ed-ocr-box.sel{background:rgba(59,91,253,.16);border-color:var(--brand);border-style:solid}
 .ed-handle{
   position:absolute;right:-5px;bottom:-5px;width:11px;height:11px;border-radius:3px;
   background:#f59e0b;border:1.5px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3);cursor:nwse-resize;
