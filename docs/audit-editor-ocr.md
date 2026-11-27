@@ -37,6 +37,6 @@ Harness `tools/mkfixture-editor-ocr.mjs` membuat PDF scan raster 4 halaman berot
 9. Halaman yang sudah dikenali di preview tidak di-OCR ulang saat Proses.
 10. Tombol **Edit hasil di preview** membuka ulang PDF OCR; teks yang diubah setelah proses kedua juga masuk ke PDF akhir.
 
-Hasil terbaru: **24 lulus / 0 gagal**; audit OCR yang lama **44/0** setelah perbaikan rotasi adaptif. Bukti visual: `docs/audit-editor-ocr/ocr-preview.png`.
+Hasil terbaru: **26 lulus / 0 gagal**; audit OCR yang lama **44/0** setelah perbaikan rotasi adaptif. Bukti visual: `docs/audit-editor-ocr/ocr-preview.png`.
 
 Regresi terkait: OCR lama **44/0**; editor **29/0**; produksi **74/0**; audit payung **129/0**.

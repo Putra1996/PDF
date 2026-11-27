@@ -492,6 +492,7 @@
         d.style.height = r.h + "px";
         d.dataset.opid = o.id;
         d.title = o.k === "text" ? (o.text || "") : "Gambar baru";
+        if (o.ocrGenerated) d.classList.add("ed-ocr-box");
         const h = el("span", "ed-handle");
         d.appendChild(h);
         layer.appendChild(d);
@@ -1254,7 +1255,8 @@
         if (!window.Tesseract) throw new Error("Mesin OCR tidak termuat.");
         const ocrPrefs = (ui() && ui().opts) || {};
         const langs = String(ocrPrefs.lang || "ind+eng");
-        const dpi = Math.min(400, Math.max(100, Number(ocrPrefs.scale) || 180));
+        const dpi = Math.min(400, Math.max(100, Number(ocrPrefs.scale) || 250));
+        const minConfidence = Math.max(0, Math.min(95, Number(ocrPrefs.confidence) || 0));
         const base = new URL("vendor/tesseract/", location.href).href;
         let lastCoreError = null;
         for (const core of ["tesseract-core-simd-lstm.wasm.js", "tesseract-core-lstm.wasm.js"]) {
@@ -1284,12 +1286,18 @@
         const result = await worker.recognize(canvas, {}, { text: true, blocks: true });
         canvas.width = canvas.height = 0;
         const found = [];
+        let skippedLowConfidence = 0;
         for (const block of (result.data.blocks || [])) {
           for (const para of (block.paragraphs || [])) {
             for (const line of (para.lines || [])) {
               const text = (line.text || "").trim();
               const bb = line.bbox;
+              const confidence = Number(line.confidence);
               if (!text || !bb) continue;
+              if (isFinite(confidence) && confidence >= 0 && confidence < minConfidence) {
+                skippedLowConfidence++;
+                continue;
+              }
               const pdfViewport = page.getViewport({ scale: 1, rotation: 0 });
               const a = pdfViewport.convertToPdfPoint(bb.x0 / (dpi / 72), bb.y1 / (dpi / 72));
               const b = pdfViewport.convertToPdfPoint(bb.x1 / (dpi / 72), bb.y0 / (dpi / 72));
@@ -1299,7 +1307,9 @@
             }
           }
         }
-        if (!found.length) throw new Error("OCR tidak menemukan teks. Coba pindai dengan resolusi atau kontras yang lebih baik.");
+        if (!found.length) throw new Error(skippedLowConfidence
+          ? `Semua ${skippedLowConfidence} baris berada di bawah ambang keyakinan ${minConfidence}%. Turunkan ambang OCR atau tingkatkan kualitas scan.`
+          : "OCR tidak menemukan teks. Coba pindai dengan resolusi atau kontras yang lebih baik.");
         pushHistory(true);
         for (const item of found) {
           const id = "ocr" + (++S.opSeq);
@@ -1311,7 +1321,7 @@
         }
         S.sel = null;
         await redraw();
-        toast(`${found.length} baris dikenali. Klik baris untuk mengedit teks/font; perubahan tampil langsung di preview.`);
+        toast(`${found.length} baris dikenali${skippedLowConfidence ? `; ${skippedLowConfidence} baris berkeyakinan rendah dilewati` : ""}. Klik baris untuk mengedit teks/font; perubahan tampil langsung di preview.`);
       } catch (err) {
         toast("OCR gagal: " + ((err && err.message) || err), "err");
       } finally {

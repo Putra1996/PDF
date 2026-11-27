@@ -884,9 +884,15 @@
             state.files = [{ id: "tf" + (++toolFileSeq), name: r.name, bytes,
               type: "application/pdf", size: bytes.length }];
             if (state.custom && state.custom.opts) state.custom.opts.edits = {};
+            /* renderFiles normally refreshes custom editors asynchronously.
+               Suppress that implicit call here so we can await exactly one
+               refresh and avoid a brief stale-preview race. */
+            const refreshEditor = state.custom && state.custom.refreshEditor;
+            if (state.custom) state.custom.refreshEditor = null;
             renderFiles();
-            if (state.custom && typeof state.custom.refreshEditor === "function") {
-              await state.custom.refreshEditor();
+            if (state.custom && typeof refreshEditor === "function") {
+              state.custom.refreshEditor = refreshEditor;
+              await refreshEditor();
             }
             if (sh().toast) sh().toast("PDF hasil OCR dimuat ke preview. Klik teks atau gambar untuk mengedit; tekan Proses lagi untuk menyimpan.", "ok", 5500);
             $("#toolView").scrollIntoView({ behavior: "smooth", block: "start" });
