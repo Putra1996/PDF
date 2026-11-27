@@ -34,8 +34,9 @@ Harness `tools/mkfixture-editor-ocr.mjs` membuat PDF scan raster 4 halaman berot
 6. Keempat orientasi berhasil dikenali dan hasil OCR tetap searchable pada PDF keluaran.
 7. Render halaman PDF akhir dibandingkan dengan canvas preview hasil edit: **99,0% piksel** dalam toleransi Δ32.
 8. Mode latar putih mempertahankan teks yang diedit di semua halaman dan menyertakan kembali gambar yang diubah ukurannya.
-9. Halaman yang sudah dikenali di preview tidak di-OCR ulang saat Proses (hemat waktu dan mencegah teks lama dipakai lagi).
+9. Halaman yang sudah dikenali di preview tidak di-OCR ulang saat Proses.
+10. Tombol **Edit hasil di preview** membuka ulang PDF OCR; teks yang diubah setelah proses kedua juga masuk ke PDF akhir.
 
-Hasil terbaru: **21 lulus / 0 gagal**; audit OCR yang lama **44/0** setelah perbaikan rotasi adaptif. Bukti visual: `docs/audit-editor-ocr/ocr-preview.png`.
+Hasil terbaru: **24 lulus / 0 gagal**; audit OCR yang lama **44/0** setelah perbaikan rotasi adaptif. Bukti visual: `docs/audit-editor-ocr/ocr-preview.png`.
 
 Regresi terkait: OCR lama **44/0**; editor **29/0**; produksi **74/0**; audit payung **129/0**.

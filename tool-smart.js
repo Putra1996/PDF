@@ -1807,7 +1807,7 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
           ["force", "OCR juga — teks asli diganti hasil OCR"],
         ],
       },
-      { type: "note", text: "Preview di bawah ini bisa diedit langsung. Klik OCR → edit teks untuk mengenali halaman scan; klik baris hasil untuk mengubah teks/font. Gambar bisa diganti, dipindah, diubah ukuran, atau dihapus. Tekan Proses untuk membuat PDF dengan perubahan tersebut." },
+      { type: "note", text: "Sebelum Proses: klik OCR → edit teks, lalu klik baris untuk mengubah teks/font dan gambar di preview. Setelah PDF jadi, klik Edit hasil di preview untuk mengedit lagi. Tekan Proses kembali untuk menyimpan perubahan." },
       { type: "check", id: "contrast", label: "Perbaiki kontras hasil pindai (lebih akurat)", value: true },
       { type: "number", id: "workers", label: "Jumlah mesin OCR (paralel)", value: 2, min: 1, max: 4 },
       { type: "pagerange", id: "halaman", label: "Halaman yang di-OCR", value: { mode: "all", dari: 1, sampai: 0 } },
