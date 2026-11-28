@@ -143,7 +143,7 @@ async function main() {
     info.offline.includes("id>en") && info.offline.includes("en>id"),
     info.offline.join(", ")
   );
-  check("Mesin bawaan peramban terdeteksi (Chrome 138+)", info.builtinAda === true);
+  check("Deteksi mesin bawaan peramban mengembalikan status yang valid", typeof info.builtinAda === "boolean", `tersedia=${info.builtinAda} (Chromium lokal dapat lebih lama dari Chrome 138)`);
 
   /* ==========================================================
      2. Mesin offline: benar, cepat, model dimuat sekali
