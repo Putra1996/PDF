@@ -701,8 +701,15 @@
       const list = el("div", "ed-layers");
       layers.forEach((o) => {
         const row = el("div", "ed-layer-row");
-        row.appendChild(el("span", "ed-layer-name",
-          (o.k === "text" ? "Teks: " : "Gambar") + String(o.text || "").slice(0, 18)));
+        const pilih = el("button", "ed-layer-name",
+          (o.k === "text" ? "Teks: " : "Gambar") + String(o.text || "").slice(0, 18));
+        pilih.type = "button";
+        pilih.setAttribute("aria-label", "Pilih lapisan " + (o.k === "text" ? "teks " + (o.text || "") : "gambar"));
+        pilih.addEventListener("click", () => {
+          S.sel = { kind: o.k === "text" ? "text" : "image", idx: -1, opId: o.id, newItem: true };
+          redraw();
+        });
+        row.appendChild(pilih);
         const up = el("button", "btn btn-ghost btn-sm");
         up.type = "button";
         up.title = "Ke depan";
@@ -1295,11 +1302,14 @@
         const defaultRotation = ((Number(page.rotate) || 0) % 360 + 360) % 360;
         let picked = await renderCandidate(0);
         toast("OCR halaman " + S.pageNo + " sedang berjalan…");
-        let result = await worker.recognize(picked.source, {}, { text: true, blocks: true });
+        const recognize = (source) => window.PDFToolsSmart && typeof window.PDFToolsSmart.kenaliOcrAdaptif === "function"
+          ? window.PDFToolsSmart.kenaliOcrAdaptif(worker, source)
+          : worker.recognize(source, {}, { text: true, blocks: true });
+        let result = await recognize(picked.source);
         const initialConfidence = Number(result && result.data && result.data.confidence) || 0;
         if (defaultRotation && initialConfidence < 85) {
           const alternate = await renderCandidate(defaultRotation);
-          const altResult = await worker.recognize(alternate.source, {}, { text: true, blocks: true });
+          const altResult = await recognize(alternate.source);
           const altConfidence = Number(altResult && altResult.data && altResult.data.confidence) || 0;
           if (altConfidence > initialConfidence) {
             picked.canvas.width = picked.canvas.height = 0;

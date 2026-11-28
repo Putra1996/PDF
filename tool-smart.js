@@ -1559,6 +1559,87 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
     return c;
   }
 
+  /* Binarisasi Otsu untuk scan dengan latar tidak rata/teks pudar. Ini
+     hanya dipakai sebagai kandidat OCR; piksel PDF asli tidak diubah. */
+  function binarisasiOtsu(src) {
+    /* Jangan gandakan buffer raksasa di ponsel: render resolusi tinggi
+       tetap mendapat PSM alternatif, tetapi lewati salinan ImageData. */
+    if (src.width * src.height > 16000000) return null;
+    const c = document.createElement("canvas");
+    c.width = src.width; c.height = src.height;
+    const ctx = c.getContext("2d", { alpha: false });
+    ctx.drawImage(src, 0, 0);
+    let image;
+    try { image = ctx.getImageData(0, 0, c.width, c.height); }
+    catch (_) { return c; }
+    const d = image.data, hist = new Uint32Array(256);
+    let sum = 0, total = d.length / 4;
+    for (let i = 0; i < d.length; i += 4) {
+      const gray = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000 | 0;
+      d[i] = d[i + 1] = d[i + 2] = gray;
+      hist[gray]++; sum += gray;
+    }
+    let bg = 0, sumBg = 0, best = -1, threshold = 160;
+    for (let t = 0; t < 256; t++) {
+      bg += hist[t]; if (!bg) continue;
+      const fg = total - bg; if (!fg) break;
+      sumBg += t * hist[t];
+      const meanBg = sumBg / bg, meanFg = (sum - sumBg) / fg;
+      const between = bg * fg * (meanBg - meanFg) * (meanBg - meanFg);
+      if (between > best) { best = between; threshold = t; }
+    }
+    for (let i = 0; i < d.length; i += 4) {
+      const v = d[i] < threshold ? 0 : 255;
+      d[i] = d[i + 1] = d[i + 2] = v;
+    }
+    ctx.putImageData(image, 0, 0);
+    return c;
+  }
+
+  function skorOcr(result) {
+    const data = result && result.data || {};
+    const confidence = Number(data.confidence) || 0;
+    let words = 0;
+    for (const block of data.blocks || []) for (const para of block.paragraphs || [])
+      for (const line of para.lines || []) words += (line.words || []).filter((w) => (w.text || "").trim()).length;
+    /* Sedikit preferensi pada hasil yang menemukan lebih banyak kata,
+       tanpa membiarkan halaman penuh noise mengalahkan confidence. */
+    return confidence + Math.min(words, 40) * 0.2;
+  }
+
+  /* Jalur cepat untuk scan mudah; pada hasil lemah, coba binarisasi dan
+     segmentasi blok/teks-tersebar. Tiap kandidat memakai worker sama,
+     tetapi tiap recognizer menerima PSM secara lokal agar tidak ada state
+     parameter yang bocor ke halaman berikutnya. */
+  async function kenaliOcrAdaptif(worker, src) {
+    const first = await worker.recognize(src, {}, { text: true, blocks: true });
+    const confidence = Number(first && first.data && first.data.confidence) || 0;
+    const wordCount = (first && first.data && first.data.words || []).length;
+    if (confidence >= 72 && wordCount >= 8) return first;
+    let binary = null, best = first, bestScore = skorOcr(first);
+    try {
+      binary = binarisasiOtsu(src);
+      const candidates = [
+        await worker.recognize(src, { tessedit_pageseg_mode: "6" }, { text: true, blocks: true }),
+      ];
+      if (binary) {
+        candidates.push(
+          await worker.recognize(binary, { tessedit_pageseg_mode: "6" }, { text: true, blocks: true }),
+          await worker.recognize(binary, { tessedit_pageseg_mode: "11" }, { text: true, blocks: true }),
+        );
+      } else {
+        candidates.push(await worker.recognize(src, { tessedit_pageseg_mode: "11" }, { text: true, blocks: true }));
+      }
+      for (const candidate of candidates) {
+        const score = skorOcr(candidate);
+        if (score > bestScore) { best = candidate; bestScore = score; }
+      }
+    } finally {
+      if (binary) binary.width = binary.height = 0;
+    }
+    return best;
+  }
+
   /* Kotak kata (px kanvas) -> posisi PDF user space (absolut).
      Memakai viewport pdf.js supaya rotasi halaman (/Rotate) dan
      perbedaan CropBox/MediaBox ikut tertangani — tanpa ini lapisan
@@ -1692,12 +1773,12 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
     let picked = await renderArah(0);
     let res = null;
     if (worker) {
-      res = await worker.recognize(picked.source, {}, { text: true, blocks: true });
+      res = await kenaliOcrAdaptif(worker, picked.source);
       const conf = Number(res && res.data && res.data.confidence) || 0;
       /* Kandidat kedua hanya untuk kasus ambigu/teks nyaris tak terbaca. */
       if (defaultRotation && conf < 85) {
         const alternate = await renderArah(defaultRotation);
-        const altRes = await worker.recognize(alternate.source, {}, { text: true, blocks: true });
+        const altRes = await kenaliOcrAdaptif(worker, alternate.source);
         const altConf = Number(altRes && altRes.data && altRes.data.confidence) || 0;
         if (altConf > conf) {
           picked.canvas.width = picked.canvas.height = 0;
@@ -2027,5 +2108,5 @@ td.tag{font-weight:600;white-space:nowrap;width:90px}
     },
   });
 
-  window.PDFToolsSmart = { encryptPdf, diffLines, findMatches, groupLines, pickSummary, perbaikiKontras };
+  window.PDFToolsSmart = { encryptPdf, diffLines, findMatches, groupLines, pickSummary, perbaikiKontras, kenaliOcrAdaptif };
 })();
