@@ -254,7 +254,7 @@ async function main() {
       const a = await analisis(r.bytes);
       const h = a.halaman[0];
       check("Lapisan teks ditambahkan", h.items.length > 10, `item=${h.items.length}`);
-      check("Teks terbaca: judul sertifikat", /SERTIFIKAT|WEBINAR/.test(h.teksRapi), h.teks.slice(0, 70));
+      check("OCR membedakan judul sertifikat dengan akurat", /SERTIFIKAT\s*WEBINAR\s*PGRI/.test(h.teks), h.teks.slice(0, 70));
       check("Teks terbaca: nama sekolah", /Nusawungu|Klumpri/.test(h.teksRapi), h.teks.slice(0, 70));
       const kata = h.items.filter((i) => i.s.length > 3 && i.w > 0);
       const lebarRata = kata.reduce((s, i) => s + i.w, 0) / (kata.length || 1);

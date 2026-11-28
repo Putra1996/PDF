@@ -27,6 +27,12 @@ try {
  const ops=d.ops.filter(o=>o.ocrGenerated);
  check("OCR recognizes multiple editable lines",ops.length>=2,`lines=${ops.length}; ${ops.map(o=>o.text).join(" / ")}`);
  check("OCR results are editable text layers",ops.length>0&&ops.every(o=>o.k==="text"&&o.newItem&&o.box.w>0&&o.box.h>0));
+ await page.evaluate(()=>window.PDFToolsEditor.deselect()); await page.waitForTimeout(250);
+ const layerChoice=page.locator(".ed-layer-name").first();
+ if(await layerChoice.count()){await layerChoice.click();await page.waitForTimeout(200);}
+ const layerSelected=await page.evaluate(()=>{const d=window.PDFToolsEditor.debug();return !!d.sel&&!!d.sel.opId;});
+ check("OCR layer list can select text even when boxes overlap",layerSelected);
+ await page.evaluate(()=>window.PDFToolsEditor.deselect()); await page.waitForTimeout(150);
  const outline=await page.locator(".ed-box.ed-ocr-box").first().evaluate(e=>({background:getComputedStyle(e).backgroundColor,border:getComputedStyle(e).borderStyle,selected:e.classList.contains("sel")}));
  check("Unselected OCR boxes do not tint/hide the scan",outline.border==="dashed"&&!outline.selected&&/(rgba\(.*?,\s*0\)|transparent)/.test(outline.background),JSON.stringify(outline));
  check("OCR feature preview detects separate image object",d.images>=2,`images=${d.images}`);
