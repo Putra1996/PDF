@@ -202,7 +202,7 @@ async function main() {
 
   /* ---------- 7. ubah semua teks (bulk) ---------- */
   await page.evaluate(() => window.PDFToolsEditor.deselect());
-  await page.waitForTimeout(600);
+  await page.waitForSelector('[data-field="bulkSize"] input', { timeout: 10000 }).catch(() => {});
   const bulk = await page.evaluate(() => {
     const f = document.querySelector('[data-field="bulkSize"] input');
     if (!f) return false;
@@ -247,7 +247,7 @@ async function main() {
       const el = document.querySelector('[data-ed="' + b + '"]');
       if (el) el.click();
     }, btn);
-    await page.waitForTimeout(3500);
+    await page.waitForFunction((extension) => (window.__unduh || []).some((u) => u.nama.toLowerCase().endsWith(extension)), ext, { timeout: 30000 }).catch(() => {});
     const got = await page.evaluate(() => (window.__unduh || []).map((u) => u.nama));
     const ada = got.some((n) => new RegExp(ext.replace(".", "\\.") + "$", "i").test(n));
     cek(`editor: ekspor ${ext} menghasilkan berkas`, ada, got.join(","));
